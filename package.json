@@ -7,7 +7,8 @@
     "packages/*"
   ],
   "scripts": {
-    "lint": "echo 'todo: add lint'",
-    "test": "echo 'todo: add tests'"
+    "lint": "npm -w apps/asteria-desktop run lint",
+    "test": "npm -w apps/asteria-desktop run test",
+    "build": "npm -w apps/asteria-desktop run build"
   }
 }

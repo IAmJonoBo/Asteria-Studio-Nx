@@ -2,3 +2,32 @@
 
 #Ignore vscode AI rules
 .github/instructions/codacy.instructions.md
+
+# Node & tooling
+node_modules/
+dist/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.DS_Store
+.pnp.*
+coverage/
+.turbo/
+.parcel-cache/
+
+# App build outputs
+apps/asteria-desktop/dist/
+apps/asteria-desktop/.vite/
+apps/asteria-desktop/node_modules/
+packages/ui-kit/dist/
+packages/ui-kit/node_modules/
+
+# Local env
+.env
+.env.*
+
+# Project artefacts we keep local
+projects/mind-myth-and-magick/output/
+projects/mind-myth-and-magick/work/
+projects/mind-myth-and-magick/input/**/Pages/
