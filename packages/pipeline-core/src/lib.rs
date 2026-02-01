@@ -1,8 +1,16 @@
 //! Pipeline core stub for Asteria Studio.
-//! Deterministic CV primitives for future N-API integration.
+//! Deterministic CV primitives for N-API integration.
+
+use napi::bindgen_prelude::Buffer;
+use napi_derive::napi;
 
 pub fn process_page_stub(page_id: &str) -> String {
     format!("Processing not yet implemented for {page_id}")
+}
+
+#[napi(js_name = "processPageStub")]
+pub fn process_page_stub_js(page_id: String) -> String {
+    process_page_stub(&page_id)
 }
 
 /// Compute horizontal projection profile (sum of pixels per row).
@@ -19,6 +27,17 @@ pub fn projection_profile_y(data: &[u8], width: usize, height: usize) -> Vec<u32
     rows
 }
 
+#[napi(js_name = "projectionProfileY")]
+pub fn projection_profile_y_js(data: Buffer, width: u32, height: u32) -> Vec<u32> {
+    let width = width as usize;
+    let height = height as usize;
+    let bytes = data.as_ref();
+    if width == 0 || height == 0 || bytes.len() < width * height {
+        return vec![];
+    }
+    projection_profile_y(&bytes[..width * height], width, height)
+}
+
 /// Compute vertical projection profile (sum of pixels per column).
 pub fn projection_profile_x(data: &[u8], width: usize, height: usize) -> Vec<u32> {
     let mut cols = vec![0u32; width];
@@ -29,6 +48,17 @@ pub fn projection_profile_x(data: &[u8], width: usize, height: usize) -> Vec<u32
         }
     }
     cols
+}
+
+#[napi(js_name = "projectionProfileX")]
+pub fn projection_profile_x_js(data: Buffer, width: u32, height: u32) -> Vec<u32> {
+    let width = width as usize;
+    let height = height as usize;
+    let bytes = data.as_ref();
+    if width == 0 || height == 0 || bytes.len() < width * height {
+        return vec![];
+    }
+    projection_profile_x(&bytes[..width * height], width, height)
 }
 
 /// Compute Sobel edge magnitude (grayscale) returning u16 values.
@@ -62,6 +92,17 @@ pub fn sobel_magnitude(data: &[u8], width: usize, height: usize) -> Vec<u16> {
     out
 }
 
+#[napi(js_name = "sobelMagnitude")]
+pub fn sobel_magnitude_js(data: Buffer, width: u32, height: u32) -> Vec<u16> {
+    let width = width as usize;
+    let height = height as usize;
+    let bytes = data.as_ref();
+    if width == 0 || height == 0 || bytes.len() < width * height {
+        return vec![0u16; width.saturating_mul(height)];
+    }
+    sobel_magnitude(&bytes[..width * height], width, height)
+}
+
 /// Compute a 9x8 dHash from a downsampled 9x8 grayscale image.
 pub fn dhash_9x8(data: &[u8]) -> u64 {
     if data.len() != 9 * 8 {
@@ -80,6 +121,16 @@ pub fn dhash_9x8(data: &[u8]) -> u64 {
         }
     }
     hash
+}
+
+#[napi(js_name = "dhash9x8")]
+pub fn dhash_9x8_js(data: Buffer) -> String {
+    let bytes = data.as_ref();
+    if bytes.len() < 9 * 8 {
+        return "0".to_string();
+    }
+    let hash = dhash_9x8(&bytes[..9 * 8]);
+    format!("{:016x}", hash)
 }
 
 #[cfg(test)]
