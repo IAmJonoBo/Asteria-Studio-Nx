@@ -53,8 +53,9 @@ export const scanCorpus = async (
     throw new Error("No supported page images found in corpus");
   }
 
+  const sortedFiles = imageFiles.slice().sort((a: string, b: string) => a.localeCompare(b));
   const pages = await Promise.all(
-    imageFiles.sort().map(async (file, index) => {
+    sortedFiles.map(async (file: string, index: number) => {
       const confidenceScores: Record<string, number> = {};
       const checksum = options?.includeChecksums ? await hashFile(file) : undefined;
       const id = path.basename(file, path.extname(file)) || `page-${index + 1}`;

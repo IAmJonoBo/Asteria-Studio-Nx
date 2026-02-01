@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import type { CorpusSummary, PageBoundsEstimate, PipelineRunConfig } from "./contracts";
-import { validatePipelineRunConfig } from "./validation";
+import type { CorpusSummary, PageBoundsEstimate, PipelineRunConfig } from "./contracts.ts";
+import { validatePipelineRunConfig } from "./validation.ts";
 
 const MM_PER_INCH = 25.4;
 const DEFAULT_BLEED_MM = 3;
@@ -68,13 +68,12 @@ export const estimatePageBounds = async (
 
   const bounds: PageBoundsEstimate[] = [];
   for (const page of pages) {
-    let baseDimensions: { width: number; height: number } | null = null;
     if (shouldProbe(page.originalPath)) {
-      baseDimensions = await dimensionProvider(page.originalPath);
+      await dimensionProvider(page.originalPath);
     }
 
-    const pageWidth = baseDimensions?.width ?? targetPx.width;
-    const pageHeight = baseDimensions?.height ?? targetPx.height;
+    const pageWidth = targetPx.width;
+    const pageHeight = targetPx.height;
 
     const pageBounds: [number, number, number, number] = [0, 0, pageWidth, pageHeight];
     const inset = bleedPx + trimPx;

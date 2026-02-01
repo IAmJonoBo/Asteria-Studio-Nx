@@ -66,6 +66,16 @@
             "confidence": { "type": "number" },
             "darkness": { "type": "number" }
           }
+        },
+        "shading": {
+          "type": "object",
+          "properties": {
+            "method": { "type": "string" },
+            "backgroundModel": { "type": "string" },
+            "spineShadowModel": { "type": "string" },
+            "params": { "type": "object" },
+            "confidence": { "type": "number", "minimum": 0, "maximum": 1 }
+          }
         }
       }
     },
@@ -115,7 +125,128 @@
         "maskCoverage": { "type": "number" },
         "shadowScore": { "type": "number" },
         "backgroundStd": { "type": "number" },
-        "backgroundMean": { "type": "number" }
+        "backgroundMean": { "type": "number" },
+        "illuminationResidual": { "type": "number" },
+        "spineShadowScore": { "type": "number" },
+        "baseline": {
+          "type": "object",
+          "properties": {
+            "medianSpacingPx": { "type": "number" },
+            "spacingMAD": { "type": "number" },
+            "lineStraightnessResidual": { "type": "number" },
+            "confidence": { "type": "number", "minimum": 0, "maximum": 1 }
+          }
+        }
+      }
+    },
+    "bookModel": {
+      "type": "object",
+      "properties": {
+        "trimBoxPx": {
+          "type": "object",
+          "properties": {
+            "median": {
+              "type": "array",
+              "items": { "type": "number" },
+              "minItems": 4,
+              "maxItems": 4
+            },
+            "dispersion": {
+              "type": "array",
+              "items": { "type": "number" },
+              "minItems": 4,
+              "maxItems": 4
+            }
+          }
+        },
+        "contentBoxPx": {
+          "type": "object",
+          "properties": {
+            "median": {
+              "type": "array",
+              "items": { "type": "number" },
+              "minItems": 4,
+              "maxItems": 4
+            },
+            "dispersion": {
+              "type": "array",
+              "items": { "type": "number" },
+              "minItems": 4,
+              "maxItems": 4
+            }
+          }
+        },
+        "runningHeadTemplates": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string" },
+              "bbox": {
+                "type": "array",
+                "items": { "type": "number" },
+                "minItems": 4,
+                "maxItems": 4
+              },
+              "hash": { "type": "string" },
+              "confidence": { "type": "number", "minimum": 0, "maximum": 1 }
+            }
+          }
+        },
+        "folioModel": {
+          "type": "object",
+          "properties": {
+            "positionBands": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "side": { "type": "string", "enum": ["left", "center", "right"] },
+                  "band": {
+                    "type": "array",
+                    "items": { "type": "number" },
+                    "minItems": 2,
+                    "maxItems": 2
+                  },
+                  "confidence": { "type": "number", "minimum": 0, "maximum": 1 }
+                }
+              }
+            },
+            "numeralStyle": { "type": "string" },
+            "ocrConfidenceSummary": {
+              "type": "object",
+              "properties": {
+                "mean": { "type": "number" },
+                "median": { "type": "number" },
+                "p90": { "type": "number" }
+              }
+            }
+          }
+        },
+        "ornamentLibrary": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "hash": { "type": "string" },
+              "bbox": {
+                "type": "array",
+                "items": { "type": "number" },
+                "minItems": 4,
+                "maxItems": 4
+              },
+              "confidence": { "type": "number", "minimum": 0, "maximum": 1 }
+            }
+          }
+        },
+        "baselineGrid": {
+          "type": "object",
+          "properties": {
+            "dominantSpacingPx": { "type": "number" },
+            "spacingMAD": { "type": "number" },
+            "confidence": { "type": "number", "minimum": 0, "maximum": 1 }
+          }
+        }
       }
     },
     "decisions": {

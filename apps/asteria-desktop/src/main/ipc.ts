@@ -1,6 +1,13 @@
 import { ipcMain } from "electron";
 import type { IpcMainInvokeEvent } from "electron";
-import type { PipelineRunConfig, PipelineRunResult } from "../ipc/contracts";
+import type {
+  PipelineRunConfig,
+  PipelineRunResult,
+  ReviewDecision,
+  ReviewQueue,
+} from "../ipc/contracts";
+import fs from "node:fs/promises";
+import path from "node:path";
 import {
   validateExportFormat,
   validateOverrides,
@@ -81,6 +88,38 @@ export function registerIpcHandlers(): void {
       validateExportFormat(format);
       console.warn("IPC: export-run", { runId, format });
       return `/output/${runId}`;
+    }
+  );
+
+  ipcMain.handle(
+    "asteria:fetch-review-queue",
+    async (_event: IpcMainInvokeEvent, runId: string): Promise<ReviewQueue> => {
+      validateRunId(runId);
+      const reviewPath = path.join(process.cwd(), "pipeline-results", `${runId}-review-queue.json`);
+      try {
+        const data = await fs.readFile(reviewPath, "utf-8");
+        return JSON.parse(data) as ReviewQueue;
+      } catch {
+        return {
+          runId,
+          projectId: "unknown",
+          generatedAt: new Date().toISOString(),
+          items: [],
+        };
+      }
+    }
+  );
+
+  ipcMain.handle(
+    "asteria:submit-review",
+    async (
+      _event: IpcMainInvokeEvent,
+      runId: string,
+      decisions: ReviewDecision[]
+    ): Promise<void> => {
+      validateRunId(runId);
+      validateOverrides({ decisions });
+      console.warn("IPC: submit-review", { runId, count: decisions.length });
     }
   );
 }

@@ -19,10 +19,13 @@ Electron desktop app with React front end, Rust CV/ML core exposed to Node via N
 2. Preprocess: denoise, contrast-normalize, binarize hint layers; estimate orientation.
 3. Deskew: Hough/phase-correlation to detect angle; rotate to upright.
 4. Dewarp: page contour detection + UNet-based surface estimation; warp correction.
-5. Layout Detection: detect page bounds, text blocks, titles, ornaments, folios; compute confidence scores.
-6. Normalize: apply target dimensions/DPI; scale/crop with bleed/trim rules; align elements to consistent grids.
-7. QA: produce overlays, thumbnails, and metrics for reviewer queue.
-8. Export: write normalized images and JSON sidecars; record manifest.
+5. Spread Split: detect two-page scans; split at gutter when confidence is high.
+6. Layout Detection: detect page bounds, text blocks, titles, ornaments, folios; compute confidence scores.
+7. Normalize: apply target dimensions/DPI; scale/crop with bleed/trim rules; align elements to consistent grids.
+8. Shading Correct: estimate low-frequency illumination field and correct spine shadow.
+9. Book Priors: derive median trim/content boxes, running heads, and baseline grid; re-apply.
+10. QA: produce overlays, thumbnails, and metrics for reviewer queue.
+11. Export: write normalized images and JSON sidecars; record manifest.
 
 ## Projects & Storage
 
@@ -34,7 +37,7 @@ Electron desktop app with React front end, Rust CV/ML core exposed to Node via N
 
 ## Pipelines & Stages
 
-- **Configurable Stages**: toggle/threshold per stage; stop-on-low-confidence rules.
+- **Configurable Stages**: toggle/threshold per stage; stop-on-low-confidence rules, including spread split, shading correction, and book priors.
 - **Parallelism**: per-page parallel tasks; per-batch ordering when needed.
 - **Determinism**: seeds + versioned models; manifest captures hashes of binaries and models.
 

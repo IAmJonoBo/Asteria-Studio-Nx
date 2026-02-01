@@ -44,12 +44,36 @@ steps:
     enabled: true
     confidence_threshold: 0.4
     nms_iou: 0.3
+  spread_split:
+    enabled: false
+    confidence_threshold: 0.7
+    gutter_min_width_px: 12
+    gutter_max_width_px: 80
   normalize:
     enabled: true
     snap_to_grid: true
     preserve_aspect: true
     bleed_mm: 3
     trim_mm: 0
+  shading_correct:
+    enabled: true
+    max_residual_increase: 0.12
+    max_highlight_shift: 0.08
+    confidence_floor: 0.55
+    spine_shadow_min_width_px: 10
+    spine_shadow_max_width_px: 120
+  book_priors:
+    enabled: true
+    sample_pages: 40
+    max_trim_drift_px: 18
+    max_content_drift_px: 24
+    min_confidence: 0.6
+  ornament_hash:
+    enabled: true
+    min_confidence: 0.65
+  baseline_grid:
+    enabled: true
+    confidence_floor: 0.6
   qa:
     enabled: true
     route_low_confidence: true

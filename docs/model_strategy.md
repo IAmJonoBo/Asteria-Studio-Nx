@@ -25,11 +25,29 @@
 - **OCR assist**: Tesseract/ONNX textline detector to refine text region masks; optional language model for semantic hints (title vs body).
 - **Confidence**: per-element scores; ensemble when local+remote disagree.
 
+## Spread Split (Two-Page Scans)
+
+- **Methods**: detect central gutter bands via low-frequency intensity dips and symmetry checks.
+- **Guardrails**: split only when confidence is high; otherwise route to QA.
+- **Outputs**: stable page IDs with `_L`/`_R` suffixes, retained checksums.
+
 ## Normalization & Scaling
 
 - Inputs: user-provided dimensions (mm/cm/in) + target DPI.
 - Compute scale factor and crop window; enforce bleed/trim rules; align baseline grid where applicable.
 - Apply color normalization (white balance, contrast) with conservative defaults.
+
+## Illumination & Shading Correction
+
+- **Methods**: estimate low-frequency background field from border sampling + regression.
+- **Spine Shadows**: directional gradient/band models with confidence scoring.
+- **Guardrails**: revert when residual noise increases beyond threshold; route to QA.
+
+## Book Priors (Consistency Engine)
+
+- **Pass A**: sample first N pages to estimate median trim/content boxes and baseline spacing.
+- **Pass B**: snap crops to medians within drift bounds; flag anomalies.
+- **Determinism**: priors stored in manifests and reused for later batches.
 
 ## Remote vs Local Execution
 

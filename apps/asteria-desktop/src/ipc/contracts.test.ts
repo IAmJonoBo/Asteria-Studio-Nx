@@ -29,9 +29,12 @@ describe("IPC Contracts", () => {
         "asteria:apply-override",
         "asteria:export-run",
         "asteria:analyze-corpus",
+        "asteria:scan-corpus",
+        "asteria:fetch-review-queue",
+        "asteria:submit-review",
       ];
 
-      expect(channelNames).toHaveLength(6);
+      expect(channelNames).toHaveLength(9);
     });
   });
 });

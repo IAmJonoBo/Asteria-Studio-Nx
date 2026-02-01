@@ -1,39 +1,100 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import type { PipelineRunnerResult } from "./pipeline-runner";
-import type { PageData } from "../ipc/contracts";
-import { runPipeline, evaluateResults } from "./pipeline-runner";
+import type { PipelineRunnerResult } from "./pipeline-runner.ts";
+import type { PageData } from "../ipc/contracts.ts";
+import { runPipeline, evaluateResults } from "./pipeline-runner.ts";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import sharp from "sharp";
 
+const buildMockNormalization = (page: PageData) => {
+  const id = page.id;
+  const isBlank = id.includes("blank");
+  const isVeryLowMask = id.includes("very-low");
+  const isLowMask = id.includes("low-mask");
+  const isLowSkew = id.includes("low-skew");
+  const isShadow = id.includes("shadow");
+  const isNoise = id.includes("noise");
+  const isResidual = id.includes("residual");
+  const isDoubleColumn = id.includes("double");
+
+  return {
+    pageId: page.id,
+    normalizedPath: "/tmp/normalized.png",
+    cropBox: [0, 0, 100, 100] as [number, number, number, number],
+    maskBox: [0, 0, 100, 100] as [number, number, number, number],
+    dimensionsMm: { width: 210, height: 297 },
+    dpi: 300,
+    dpiSource: "fallback" as const,
+    trimMm: 3,
+    bleedMm: 3,
+    skewAngle: 0,
+    shadow: isShadow
+      ? { present: true, side: "left", widthPx: 8, confidence: 0.8, darkness: 40 }
+      : { present: false, side: "none", widthPx: 0, confidence: 0, darkness: 0 },
+    stats: {
+      backgroundMean: 240,
+      backgroundStd: isNoise ? 40 : 5,
+      maskCoverage: isBlank
+        ? 0.05
+        : isVeryLowMask
+          ? 0.25
+          : isLowMask
+            ? 0.4
+            : isDoubleColumn
+              ? 0.65
+              : 0.9,
+      skewConfidence: isLowSkew ? 0.2 : 0.8,
+      shadowScore: isShadow ? 40 : 0,
+    },
+    corrections: isResidual
+      ? {
+          deskewAngle: 1.2,
+          skewResidualAngle: 0.25,
+          skewRefined: true,
+          edgeFallbackApplied: false,
+          alignment: {
+            box: [0, 0, 100, 100],
+            drift: 0.05,
+            applied: true,
+          },
+          morphology: {
+            denoise: true,
+            contrastBoost: false,
+            sharpen: true,
+            reason: ["text-dense"],
+          },
+        }
+      : undefined,
+  };
+};
+
+vi.mock("./normalization.ts", () => ({
+  normalizePages: vi.fn(async (pages: PageData[]) => {
+    if (pages.some((page) => page.id.includes("throw-normalize"))) {
+      throw new Error("batch-normalize-failure");
+    }
+    return new Map(pages.map((page) => [page.id, buildMockNormalization(page)]));
+  }),
+  normalizePage: vi.fn(async (page: PageData) => buildMockNormalization(page)),
+}));
 vi.mock("./normalization", () => ({
   normalizePages: vi.fn(async (pages: PageData[]) => {
-    return new Map(
-      pages.map((page) => [
-        page.id,
-        {
-          pageId: page.id,
-          normalizedPath: "/tmp/normalized.png",
-          cropBox: [0, 0, 100, 100],
-          maskBox: [0, 0, 100, 100],
-          dimensionsMm: { width: 210, height: 297 },
-          dpi: 300,
-          dpiSource: "fallback",
-          trimMm: 3,
-          bleedMm: 3,
-          skewAngle: 0,
-          shadow: { present: false, side: "none", widthPx: 0, confidence: 0, darkness: 0 },
-          stats: {
-            backgroundMean: 240,
-            backgroundStd: 5,
-            maskCoverage: 0.9,
-            skewConfidence: 0.8,
-            shadowScore: 0,
-          },
-        },
-      ])
-    );
+    if (pages.some((page) => page.id.includes("throw-normalize"))) {
+      throw new Error("batch-normalize-failure");
+    }
+    return new Map(pages.map((page) => [page.id, buildMockNormalization(page)]));
   }),
+  normalizePage: vi.fn(async (page: PageData) => buildMockNormalization(page)),
+}));
+vi.mock("./normalization.js", () => ({
+  normalizePages: vi.fn(async (pages: PageData[]) => {
+    if (pages.some((page) => page.id.includes("throw-normalize"))) {
+      throw new Error("batch-normalize-failure");
+    }
+    return new Map(pages.map((page) => [page.id, buildMockNormalization(page)]));
+  }),
+  normalizePage: vi.fn(async (page: PageData) => buildMockNormalization(page)),
 }));
 
 describe("Pipeline Runner", () => {
@@ -65,6 +126,11 @@ describe("Pipeline Runner", () => {
     expect(result.scanConfig.pages).toHaveLength(3);
     expect(result.analysisSummary.estimates).toHaveLength(3);
     expect(result.pipelineResult.status).toBe("success");
+    const normalizationMetrics = (
+      result.pipelineResult.metrics as { normalization?: Record<string, number> }
+    ).normalization;
+    expect(normalizationMetrics?.reviewQueueCount).toBe(1);
+    expect(normalizationMetrics?.strictAcceptRate).toBe(1);
   });
 
   it("runPipeline handles target DPI override", async () => {
@@ -77,6 +143,219 @@ describe("Pipeline Runner", () => {
 
     expect(result.success).toBe(true);
     expect(result.analysisSummary.dpi).toBe(600);
+  });
+
+  it("runPipeline uses full corpus and target dimensions override", async () => {
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "asteria-full-"));
+    await Promise.all(
+      ["a.jpg", "b.jpg", "c.jpg"].map((file) =>
+        fs.writeFile(path.join(tmpDir, file), Buffer.from([0xff, 0xd8, 0xff]))
+      )
+    );
+
+    const result = await runPipeline({
+      projectRoot: tmpDir,
+      projectId: "full-corpus",
+      targetDimensionsMm: { width: 200, height: 300 },
+    });
+
+    expect(result.pageCount).toBe(3);
+    expect(result.scanConfig.targetDimensionsMm).toMatchObject({ width: 200, height: 300 });
+  });
+
+  it("runPipeline writes reports and sidecars when outputDir is set", async () => {
+    const outputDir = await fs.mkdtemp(path.join(os.tmpdir(), "asteria-output-"));
+    const result = await runPipeline({
+      projectRoot,
+      projectId: "test-output",
+      sampleCount: 2,
+      outputDir,
+    });
+
+    expect(result.success).toBe(true);
+    const files = await fs.readdir(outputDir);
+    expect(files.some((file) => file.endsWith("-report.json"))).toBe(true);
+    expect(files.some((file) => file.endsWith("-review-queue.json"))).toBe(true);
+    const sidecarDir = path.join(outputDir, "sidecars");
+    const sidecars = await fs.readdir(sidecarDir);
+    expect(sidecars.length).toBeGreaterThan(0);
+  });
+
+  it("splits two-page spreads when enabled", async () => {
+    const spreadDir = await fs.mkdtemp(path.join(os.tmpdir(), "asteria-spread-"));
+    const width = 220;
+    const height = 120;
+    const buffer = Buffer.alloc(width * height * 3, 255);
+    const bandStart = Math.floor(width / 2) - 5;
+    const bandEnd = bandStart + 10;
+    for (let y = 0; y < height; y++) {
+      for (let x = bandStart; x < bandEnd; x++) {
+        const idx = (y * width + x) * 3;
+        buffer[idx] = 40;
+        buffer[idx + 1] = 40;
+        buffer[idx + 2] = 40;
+      }
+    }
+    const spreadPath = path.join(spreadDir, "spread.png");
+    await sharp(buffer, { raw: { width, height, channels: 3 } })
+      .png()
+      .toFile(spreadPath);
+
+    const outputDir = await fs.mkdtemp(path.join(os.tmpdir(), "asteria-spread-out-"));
+    const result = await runPipeline({
+      projectRoot: spreadDir,
+      projectId: "spread-test",
+      enableSpreadSplit: true,
+      spreadSplitConfidence: 0.6,
+      outputDir,
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.scanConfig.pages.length).toBe(2);
+  });
+
+  it("fails closed when spread confidence is low", async () => {
+    const spreadDir = await fs.mkdtemp(path.join(os.tmpdir(), "asteria-nospread-"));
+    const width = 220;
+    const height = 120;
+    const buffer = Buffer.alloc(width * height * 3, 255);
+    const spreadPath = path.join(spreadDir, "single.png");
+    await sharp(buffer, { raw: { width, height, channels: 3 } })
+      .png()
+      .toFile(spreadPath);
+
+    const result = await runPipeline({
+      projectRoot: spreadDir,
+      projectId: "no-split",
+      enableSpreadSplit: true,
+      spreadSplitConfidence: 0.7,
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.scanConfig.pages.length).toBe(1);
+  });
+
+  it("runPipeline cleans stale normalized exports when checksums change", async () => {
+    const outputDir = await fs.mkdtemp(path.join(os.tmpdir(), "asteria-cleanup-"));
+    const normalizedDir = path.join(outputDir, "normalized");
+    const previewDir = path.join(outputDir, "previews");
+    await fs.mkdir(normalizedDir, { recursive: true });
+    await fs.mkdir(previewDir, { recursive: true });
+
+    const staleFile = path.join(normalizedDir, "stale.png");
+    const stalePreview = path.join(previewDir, "stale-preview.png");
+    await fs.writeFile(staleFile, Buffer.alloc(10));
+    await fs.writeFile(stalePreview, Buffer.alloc(10));
+
+    const manifest = {
+      pages: [
+        {
+          pageId: "page-0",
+          checksum: "old-checksum",
+          normalizedFile: "stale.png",
+          previews: ["stale-preview.png"],
+        },
+      ],
+    };
+    await fs.writeFile(
+      path.join(normalizedDir, "manifest.json"),
+      JSON.stringify(manifest, null, 2)
+    );
+
+    const result = await runPipeline({
+      projectRoot,
+      projectId: "cleanup-test",
+      outputDir,
+      sampleCount: 1,
+    });
+
+    expect(result.success).toBe(true);
+    await expect(fs.stat(staleFile)).rejects.toThrow();
+    await expect(fs.stat(stalePreview)).rejects.toThrow();
+  });
+
+  it("runPipeline applies second-pass corrections for low-acceptance pages", async () => {
+    const testDir = await fs.mkdtemp(path.join(os.tmpdir(), "asteria-second-pass-"));
+    const filenames = ["low-mask.jpg", "low-skew.jpg", "shadow.jpg", "body.jpg"];
+    await Promise.all(
+      filenames.map((name) => fs.writeFile(path.join(testDir, name), Buffer.alloc(100)))
+    );
+
+    const result = await runPipeline({
+      projectRoot: testDir,
+      projectId: "second-pass-test",
+    });
+
+    expect(result.success).toBe(true);
+    const normalizationMetrics = (
+      result.pipelineResult.metrics as { normalization?: Record<string, number> }
+    ).normalization;
+    expect(normalizationMetrics?.secondPassCount).toBeGreaterThan(0);
+
+    await fs.rm(testDir, { recursive: true, force: true });
+  });
+
+  it("runPipeline records per-page normalization failures without aborting", async () => {
+    const testDir = await fs.mkdtemp(path.join(os.tmpdir(), "asteria-normalize-fallback-"));
+    const filenames = ["throw-normalize.jpg", "body.jpg"];
+    await Promise.all(
+      filenames.map((name) => fs.writeFile(path.join(testDir, name), Buffer.alloc(100)))
+    );
+
+    const result = await runPipeline({
+      projectRoot: testDir,
+      projectId: "normalize-fallback",
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.pipelineResult.status).toBe("success");
+    expect(result.errors.some((e) => e.phase === "normalization")).toBe(false);
+
+    await fs.rm(testDir, { recursive: true, force: true });
+  });
+
+  it("runPipeline handles layout profiles and quality gate branches", async () => {
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "asteria-layout-"));
+    const files = [
+      "cover.jpg",
+      "title.jpg",
+      "chapter.jpg",
+      "body.jpg",
+      "low-mask.jpg",
+      "low-skew.jpg",
+      "shadow.jpg",
+      "noise.jpg",
+    ];
+
+    await Promise.all(
+      files.map((file) => fs.writeFile(path.join(tmpDir, file), Buffer.from([0xff, 0xd8, 0xff])))
+    );
+
+    const outputDir = await fs.mkdtemp(path.join(os.tmpdir(), "asteria-layout-out-"));
+    const result = await runPipeline({
+      projectRoot: tmpDir,
+      projectId: "layout-test",
+      outputDir,
+    });
+
+    expect(result.success).toBe(true);
+    const normalizationMetrics = (
+      result.pipelineResult.metrics as { normalization?: Record<string, number> }
+    ).normalization;
+    expect(normalizationMetrics?.reviewQueueCount).toBeGreaterThan(0);
+  });
+
+  it("runPipeline returns error result for invalid root", async () => {
+    const tempFile = path.join(projectRoot, "not-a-dir.txt");
+    await fs.writeFile(tempFile, "invalid");
+
+    const result = await runPipeline({
+      projectRoot: tempFile,
+      projectId: "bad-root",
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.errors.length).toBeGreaterThan(0);
   });
 
   it("evaluateResults provides observations and recommendations", () => {
@@ -131,6 +410,100 @@ describe("Pipeline Runner", () => {
     expect(evaluation.metrics.throughputPagesPerSecond).toBeCloseTo(20);
   });
 
+  it("evaluateResults flags normalization issues and fallback bleed/trim", () => {
+    const evaluation = evaluateResults({
+      success: true,
+      runId: "run-metrics",
+      projectId: "metrics-test",
+      pageCount: 120,
+      durationMs: 1000,
+      scanConfig: {
+        projectId: "metrics-test",
+        pages: Array.from({ length: 120 }, (_, i) => ({
+          id: `p${i}`,
+          filename: `page${i}.jpg`,
+          originalPath: "",
+          confidenceScores: {},
+        })),
+        targetDpi: 300,
+        targetDimensionsMm: { width: 210, height: 297 },
+      },
+      analysisSummary: {
+        projectId: "metrics-test",
+        pageCount: 120,
+        dpi: 300,
+        targetDimensionsMm: { width: 210, height: 297 },
+        targetDimensionsPx: { width: 2480, height: 3508 },
+        estimates: Array.from({ length: 120 }, (_, i) => ({
+          pageId: `p${i}`,
+          widthPx: 2480,
+          heightPx: 3508,
+          bleedPx: 0,
+          trimPx: 0,
+          pageBounds: [0, 0, 2480, 3508] as [number, number, number, number],
+          contentBounds: [0, 0, 2480, 3508] as [number, number, number, number],
+        })),
+      },
+      pipelineResult: {
+        runId: "run-metrics",
+        status: "success",
+        pagesProcessed: 120,
+        errors: [],
+        metrics: {
+          durationMs: 1000,
+          normalization: {
+            avgSkewDeg: 2.2,
+            avgMaskCoverage: 0.6,
+            shadowRate: 0.2,
+            lowCoverageCount: 5,
+            reviewQueueCount: 10,
+            strictAcceptRate: 0.5,
+          },
+        },
+      },
+      errors: [],
+    });
+
+    expect(evaluation.recommendations.some((rec) => rec.includes("mask coverage"))).toBe(true);
+    expect(evaluation.recommendations.some((rec) => rec.includes("Spine/edge shadows"))).toBe(true);
+    expect(evaluation.observations.some((obs) => obs.includes("Review queue size"))).toBe(true);
+  });
+
+  it("evaluateResults handles failed pipeline", () => {
+    const evaluation = evaluateResults({
+      success: false,
+      runId: "run-fail",
+      projectId: "fail-test",
+      pageCount: 0,
+      durationMs: 0,
+      scanConfig: {
+        projectId: "fail-test",
+        pages: [],
+        targetDpi: 300,
+        targetDimensionsMm: { width: 210, height: 297 },
+      },
+      analysisSummary: {
+        projectId: "fail-test",
+        pageCount: 0,
+        dpi: 300,
+        targetDimensionsMm: { width: 210, height: 297 },
+        targetDimensionsPx: { width: 0, height: 0 },
+        estimates: [],
+      },
+      pipelineResult: {
+        runId: "run-fail",
+        status: "error",
+        pagesProcessed: 0,
+        errors: [{ pageId: "pipeline", message: "fail" }],
+        metrics: { durationMs: 0 },
+      },
+      errors: [{ phase: "pipeline", message: "fail" }],
+    });
+
+    expect(evaluation.success).toBe(false);
+    expect(evaluation.recommendations.length).toBeGreaterThan(0);
+  });
+
   it("evaluateResults flags high variance", () => {
     const estimates = Array.from({ length: 10 }, (_, i) => ({
       pageId: `p${i}`,
@@ -179,5 +552,43 @@ describe("Pipeline Runner", () => {
 
     const evaluation = evaluateResults(mockResult);
     expect(evaluation.recommendations.some((r) => r.includes("variance"))).toBe(true);
+  });
+
+  it("covers layout classification and baseline validation branches", async () => {
+    const testDir = await fs.mkdtemp(path.join(os.tmpdir(), "asteria-layout-profiles-"));
+    const filenames = [
+      "000-cover.jpg",
+      "010-title.jpg",
+      "020-toc.jpg",
+      "030-preface.jpg",
+      "040-appendix.jpg",
+      "050-index.jpg",
+      "060-glossary.jpg",
+      "070-plate.jpg",
+      "080-table.jpg",
+      "090-chapter.jpg",
+      "100-blank.jpg",
+      "110-very-low-art.jpg",
+      "120-body.jpg",
+      "130-residual-body.jpg",
+      "140-low-skew-noise-body.jpg",
+      "005-low-mask-prologue.jpg",
+      "900-low-mask-epilogue.jpg",
+    ];
+
+    await Promise.all(
+      filenames.map((name) => fs.writeFile(path.join(testDir, name), Buffer.alloc(100)))
+    );
+
+    const result = await runPipeline({
+      projectRoot: testDir,
+      projectId: "layout-profiles",
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.pageCount).toBe(filenames.length);
+    expect(result.pipelineResult.metrics).toBeDefined();
+
+    await fs.rm(testDir, { recursive: true, force: true });
   });
 });

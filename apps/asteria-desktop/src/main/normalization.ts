@@ -1,12 +1,12 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import sharp from "sharp";
-import type { CorpusSummary, PageBoundsEstimate, PageData } from "../ipc/contracts.ts";
+import type { BookModel, CorpusSummary, PageBoundsEstimate, PageData } from "../ipc/contracts.ts";
 
 const MAX_PREVIEW_DIM = 1600;
-const DEFAULT_PADDING_PX = 6;
-const BORDER_SAMPLE_RATIO = 0.04;
-const EDGE_THRESHOLD_SCALE = 1.4;
+const DEFAULT_PADDING_PX = 12;
+const BORDER_SAMPLE_RATIO = 0.05;
+const EDGE_THRESHOLD_SCALE = 1.15;
 const MAX_SKEW_DEGREES = 8;
 const COMMON_SIZES_MM = [
   { name: "A4", width: 210, height: 297 },
@@ -15,6 +15,8 @@ const COMMON_SIZES_MM = [
   { name: "A5", width: 148, height: 210 },
   { name: "A3", width: 297, height: 420 },
 ];
+
+const clamp01 = (value: number): number => Math.max(0, Math.min(1, value));
 
 interface PreviewImage {
   data: Uint8Array;
@@ -31,6 +33,79 @@ interface ShadowDetection {
   darkness: number;
 }
 
+interface ShadingModel {
+  method: string;
+  backgroundModel: string;
+  spineShadowModel: string;
+  params: Record<string, number>;
+  confidence: number;
+  spineShadowScore: number;
+  borderMean: number;
+  borderStd: number;
+  residual?: number;
+  applied: boolean;
+}
+
+export interface NormalizationPriors {
+  targetAspectRatio: number;
+  medianBleedPx: number;
+  medianTrimPx: number;
+  adaptivePaddingPx: number;
+  edgeThresholdScale: number;
+  intensityThresholdBias: number;
+  shadowTrimScale: number;
+  maxAspectRatioDrift: number;
+}
+
+export interface NormalizationOptions {
+  priors?: NormalizationPriors;
+  generatePreviews?: boolean;
+  skewRefinement?: "off" | "on" | "forced";
+  shading?: {
+    enabled?: boolean;
+    maxResidualIncrease?: number;
+    maxHighlightShift?: number;
+    confidenceFloor?: number;
+  };
+  bookPriors?: {
+    model?: BookModel;
+    maxTrimDriftPx?: number;
+    maxContentDriftPx?: number;
+    minConfidence?: number;
+  };
+}
+
+interface MorphologyPlan {
+  denoise: boolean;
+  contrastBoost: boolean;
+  sharpen: boolean;
+  reason: string[];
+}
+
+interface AlignmentResult {
+  box: [number, number, number, number];
+  drift: number;
+  applied: boolean;
+  reason?: string;
+}
+
+interface BookSnapResult {
+  applied: boolean;
+  drift: number;
+  reason?: string;
+}
+
+interface BaselineMetrics {
+  residualAngle: number;
+  lineConsistency: number;
+  textLineCount: number;
+}
+
+interface ColumnMetrics {
+  columnCount: number;
+  columnSeparation: number;
+}
+
 export interface NormalizationResult {
   pageId: string;
   normalizedPath: string;
@@ -43,13 +118,34 @@ export interface NormalizationResult {
   bleedMm: number;
   skewAngle: number;
   shadow: ShadowDetection;
+  previews?: {
+    source?: { path: string; width: number; height: number };
+    normalized?: { path: string; width: number; height: number };
+  };
+  corrections?: {
+    deskewAngle: number;
+    skewResidualAngle?: number;
+    skewRefined?: boolean;
+    edgeFallbackApplied?: boolean;
+    edgeAnchorApplied?: boolean;
+    baseline?: BaselineMetrics;
+    columns?: ColumnMetrics;
+    alignment?: AlignmentResult;
+    bookSnap?: BookSnapResult;
+    morphology?: MorphologyPlan;
+  };
   stats: {
     backgroundMean: number;
     backgroundStd: number;
     maskCoverage: number;
     skewConfidence: number;
     shadowScore: number;
+    baselineConsistency?: number;
+    columnCount?: number;
+    illuminationResidual?: number;
+    spineShadowScore?: number;
   };
+  shading?: ShadingModel;
 }
 
 const pxToMm = (px: number, dpi: number): number => (px / dpi) * 25.4;
@@ -59,18 +155,46 @@ const inferPhysicalSize = (
   widthPx: number,
   heightPx: number,
   density?: number,
-  fallbackDpi = 300
+  fallbackDpi = 300,
+  targetDimensionsMm?: { width: number; height: number },
+  targetDpi?: number
 ): { widthMm: number; heightMm: number; dpi: number; source: NormalizationResult["dpiSource"] } => {
+  const ratio = widthPx / Math.max(1, heightPx);
+  const targetAspect = targetDimensionsMm
+    ? targetDimensionsMm.width / Math.max(1, targetDimensionsMm.height)
+    : undefined;
+
   if (density && density > 1) {
+    if (targetAspect) {
+      const drift = Math.abs(ratio - targetAspect) / Math.max(0.01, targetAspect);
+      if (drift < 0.05) {
+        return {
+          widthMm: pxToMm(widthPx, density),
+          heightMm: pxToMm(heightPx, density),
+          dpi: density,
+          source: "metadata",
+        };
+      }
+    } else {
+      return {
+        widthMm: pxToMm(widthPx, density),
+        heightMm: pxToMm(heightPx, density),
+        dpi: density,
+        source: "metadata",
+      };
+    }
+  }
+
+  if (targetDimensionsMm && targetDpi) {
+    const drift = targetAspect ? Math.abs(ratio - targetAspect) / Math.max(0.01, targetAspect) : 0;
     return {
-      widthMm: pxToMm(widthPx, density),
-      heightMm: pxToMm(heightPx, density),
-      dpi: density,
-      source: "metadata",
+      widthMm: targetDimensionsMm.width,
+      heightMm: targetDimensionsMm.height,
+      dpi: targetDpi,
+      source: drift < 0.05 ? "inferred" : "fallback",
     };
   }
 
-  const ratio = widthPx / Math.max(1, heightPx);
   let best = { score: Number.POSITIVE_INFINITY, widthMm: 0, heightMm: 0, dpi: fallbackDpi };
 
   for (const size of COMMON_SIZES_MM) {
@@ -174,6 +298,17 @@ const loadPreview = async (imagePath: string): Promise<PreviewImage> => {
   return { data: new Uint8Array(data), width: info.width, height: info.height, scale };
 };
 
+const buildPreviewFromSharp = async (image: sharp.Sharp): Promise<PreviewImage> => {
+  const { data, info } = await image
+    .clone()
+    .ensureAlpha()
+    .removeAlpha()
+    .grayscale()
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+  return { data: new Uint8Array(data), width: info.width, height: info.height, scale: 1 };
+};
+
 const estimateSkewAngle = (preview: PreviewImage): { angle: number; confidence: number } => {
   const histogram = computeGradientHistogram(preview);
   const { width, height } = preview;
@@ -228,6 +363,215 @@ const computeBorderStats = (preview: PreviewImage): { mean: number; std: number 
   const mean = count > 0 ? sum / count : 255;
   const variance = count > 0 ? Math.max(0, sumSq / count - mean * mean) : 0;
   return { mean, std: Math.sqrt(variance) };
+};
+
+const computeEdgeDensity = (preview: PreviewImage, bounds: { x0: number; x1: number }): number => {
+  const { data, width, height } = preview;
+  const gxKernel = [-1, 0, 1, -2, 0, 2, -1, 0, 1];
+  const gyKernel = [1, 2, 1, 0, 0, 0, -1, -2, -1];
+  const threshold = computeEdgeThreshold(preview);
+  let count = 0;
+  let hits = 0;
+  for (let y = 1; y < height - 1; y++) {
+    for (let x = Math.max(1, bounds.x0); x < Math.min(width - 1, bounds.x1); x++) {
+      const { magnitude } = gradientAt(data, width, x, y, gxKernel, gyKernel);
+      if (magnitude > threshold) hits++;
+      count++;
+    }
+  }
+  return count > 0 ? hits / count : 0;
+};
+
+const buildLowFrequencyField = (
+  preview: PreviewImage,
+  maxSize = 96
+): { data: Float32Array; width: number; height: number; mean: number; std: number } => {
+  const { data, width, height } = preview;
+  const fieldWidth = Math.max(8, Math.min(maxSize, width));
+  const fieldHeight = Math.max(8, Math.min(maxSize, height));
+  const field = new Float32Array(fieldWidth * fieldHeight);
+
+  const xScale = width / fieldWidth;
+  const yScale = height / fieldHeight;
+
+  let sum = 0;
+  let sumSq = 0;
+  for (let fy = 0; fy < fieldHeight; fy++) {
+    for (let fx = 0; fx < fieldWidth; fx++) {
+      const xStart = Math.floor(fx * xScale);
+      const xEnd = Math.min(width, Math.floor((fx + 1) * xScale));
+      const yStart = Math.floor(fy * yScale);
+      const yEnd = Math.min(height, Math.floor((fy + 1) * yScale));
+      let cellSum = 0;
+      let cellCount = 0;
+      for (let y = yStart; y < yEnd; y++) {
+        const row = y * width;
+        for (let x = xStart; x < xEnd; x++) {
+          cellSum += data[row + x];
+          cellCount++;
+        }
+      }
+      const value = cellCount > 0 ? cellSum / cellCount : 255;
+      field[fy * fieldWidth + fx] = value;
+      sum += value;
+      sumSq += value * value;
+    }
+  }
+
+  const count = field.length;
+  const mean = count > 0 ? sum / count : 255;
+  const variance = count > 0 ? Math.max(0, sumSq / count - mean * mean) : 0;
+
+  return { data: field, width: fieldWidth, height: fieldHeight, mean, std: Math.sqrt(variance) };
+};
+
+const estimateShadingModel = (preview: PreviewImage, border: { mean: number; std: number }) => {
+  const shadow = detectShadows(preview);
+  const strip = Math.max(4, Math.round(preview.width * 0.05));
+  const leftStrip = { x0: 0, x1: strip };
+  const rightStrip = { x0: preview.width - strip, x1: preview.width };
+  const leftEdgeDensity = computeEdgeDensity(preview, leftStrip);
+  const rightEdgeDensity = computeEdgeDensity(preview, rightStrip);
+  const innerLeftDensity = computeEdgeDensity(preview, { x0: strip, x1: strip * 2 });
+  const innerRightDensity = computeEdgeDensity(preview, {
+    x0: preview.width - strip * 2,
+    x1: preview.width - strip,
+  });
+
+  const shadowEdgeDensity = shadow.side === "left" ? leftEdgeDensity : rightEdgeDensity;
+  const innerEdgeDensity = shadow.side === "left" ? innerLeftDensity : innerRightDensity;
+  const edgeContinuity = 1 - Math.min(1, Math.abs(innerEdgeDensity - shadowEdgeDensity) * 2.5);
+  const spineShadowScore = clamp01(
+    (shadow.darkness / 50) * (1 - shadowEdgeDensity) * (innerEdgeDensity + 0.1) * edgeContinuity
+  );
+
+  const illuminationVarianceScore = clamp01((border.std - 6) / 18);
+  const confidence = clamp01(
+    shadow.confidence * 0.35 +
+      spineShadowScore * 0.3 +
+      illuminationVarianceScore * 0.35 +
+      (border.std < 10 ? 0.05 : 0)
+  );
+  const field = buildLowFrequencyField(preview);
+
+  return {
+    shadow,
+    spineShadowScore,
+    confidence,
+    field,
+  };
+};
+
+const applyShadingToPreview = (
+  preview: PreviewImage,
+  field: { data: Float32Array; width: number; height: number },
+  targetMean: number,
+  maxShift: number
+): PreviewImage => {
+  const { data, width, height } = preview;
+  const corrected = new Uint8Array(data.length);
+  const xScale = field.width / width;
+  const yScale = field.height / height;
+
+  for (let y = 0; y < height; y++) {
+    const fy = Math.min(field.height - 1, Math.floor(y * yScale));
+    for (let x = 0; x < width; x++) {
+      const fx = Math.min(field.width - 1, Math.floor(x * xScale));
+      const bg = field.data[fy * field.width + fx];
+      const gain = Math.min(1 + maxShift, Math.max(1 - maxShift, targetMean / Math.max(1, bg)));
+      const idx = y * width + x;
+      const v = data[idx] / 255;
+      const vLin = v * v;
+      const correctedLin = Math.min(1, Math.max(0, vLin * gain));
+      corrected[idx] = Math.round(Math.sqrt(correctedLin) * 255);
+    }
+  }
+
+  return { data: corrected, width, height, scale: preview.scale };
+};
+
+const applyShadingCorrection = async (
+  image: sharp.Sharp,
+  preview: PreviewImage,
+  border: { mean: number; std: number },
+  options: Required<NonNullable<NormalizationOptions["shading"]>>
+): Promise<{ corrected: sharp.Sharp; model: ShadingModel } | null> => {
+  const shading = estimateShadingModel(preview, border);
+  const method = "border-regression";
+  const backgroundModel = "lowpass-field";
+  const spineShadowModel = "edge-aware-band";
+
+  const model: ShadingModel = {
+    method,
+    backgroundModel,
+    spineShadowModel,
+    params: {
+      fieldWidth: shading.field.width,
+      fieldHeight: shading.field.height,
+    },
+    confidence: shading.confidence,
+    spineShadowScore: shading.spineShadowScore,
+    borderMean: border.mean,
+    borderStd: border.std,
+    residual: undefined,
+    applied: false,
+  };
+
+  if (!options.enabled) {
+    return { corrected: image, model };
+  }
+
+  const correctedPreview = applyShadingToPreview(
+    preview,
+    shading.field,
+    border.mean,
+    options.maxHighlightShift
+  );
+  const correctedStats = computeBorderStats(correctedPreview);
+  const residual = border.std > 0 ? correctedStats.std / border.std : 1;
+  model.residual = residual;
+
+  if (shading.confidence < options.confidenceFloor) {
+    return { corrected: image, model };
+  }
+
+  if (residual > 1 + options.maxResidualIncrease) {
+    return { corrected: image, model };
+  }
+
+  const { data, info } = await image
+    .clone()
+    .ensureAlpha()
+    .removeAlpha()
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+  const buffer = Buffer.from(data);
+  const channels = info.channels ?? 3;
+  const xScale = shading.field.width / info.width;
+  const yScale = shading.field.height / info.height;
+  const maxShift = options.maxHighlightShift;
+
+  for (let y = 0; y < info.height; y++) {
+    const fy = Math.min(shading.field.height - 1, Math.floor(y * yScale));
+    for (let x = 0; x < info.width; x++) {
+      const fx = Math.min(shading.field.width - 1, Math.floor(x * xScale));
+      const bg = shading.field.data[fy * shading.field.width + fx];
+      const gain = Math.min(1 + maxShift, Math.max(1 - maxShift, border.mean / Math.max(1, bg)));
+      const idx = (y * info.width + x) * channels;
+      for (let c = 0; c < Math.min(3, channels); c++) {
+        const v = buffer[idx + c] / 255;
+        const vLin = v * v;
+        const correctedLin = Math.min(1, Math.max(0, vLin * gain));
+        buffer[idx + c] = Math.round(Math.sqrt(correctedLin) * 255);
+      }
+    }
+  }
+
+  model.applied = true;
+  return {
+    corrected: sharp(buffer, { raw: { width: info.width, height: info.height, channels } }),
+    model,
+  };
 };
 
 const computeMaskBox = (
@@ -320,6 +664,152 @@ const computeEdgeThreshold = (preview: PreviewImage): number => {
   return Math.max(8, mean + std * EDGE_THRESHOLD_SCALE);
 };
 
+const projectionStats = (values: number[]): { mean: number; std: number } => {
+  if (values.length === 0) return { mean: 0, std: 0 };
+  const mean = values.reduce((sum, v) => sum + v, 0) / values.length;
+  const variance = values.reduce((sum, v) => sum + Math.pow(v - mean, 2), 0) / values.length;
+  return { mean, std: Math.sqrt(variance) };
+};
+
+const estimateBaselineMetrics = (preview: PreviewImage, residualAngle: number): BaselineMetrics => {
+  const { data, width, height } = preview;
+  const rowSums = new Array<number>(height).fill(0);
+  for (let y = 0; y < height; y++) {
+    let sum = 0;
+    for (let x = 0; x < width; x++) {
+      const v = data[y * width + x];
+      sum += 255 - v;
+    }
+    rowSums[y] = sum;
+  }
+
+  const { mean, std } = projectionStats(rowSums);
+  const consistencyRaw = mean > 0 ? 1 - Math.min(1, std / (mean * 2)) : 0;
+  let lineCount = 0;
+  const threshold = mean + std * 0.6;
+  for (let y = 1; y < rowSums.length - 1; y++) {
+    if (rowSums[y] > threshold && rowSums[y] > rowSums[y - 1] && rowSums[y] > rowSums[y + 1]) {
+      lineCount++;
+    }
+  }
+
+  return {
+    residualAngle: Math.abs(residualAngle),
+    lineConsistency: Math.max(0, Math.min(1, consistencyRaw)),
+    textLineCount: lineCount,
+  };
+};
+
+const estimateColumnMetrics = (preview: PreviewImage): ColumnMetrics => {
+  const { data, width, height } = preview;
+  const colSums = new Array<number>(width).fill(0);
+  for (let x = 0; x < width; x++) {
+    let sum = 0;
+    for (let y = 0; y < height; y++) {
+      const v = data[y * width + x];
+      sum += 255 - v;
+    }
+    colSums[x] = sum;
+  }
+
+  const { mean, std } = projectionStats(colSums);
+  const threshold = mean + std * 0.7;
+  let columnBands = 0;
+  let inBand = false;
+  for (let x = 0; x < colSums.length; x++) {
+    if (colSums[x] > threshold) {
+      if (!inBand) {
+        columnBands++;
+        inBand = true;
+      }
+    } else {
+      inBand = false;
+    }
+  }
+
+  return {
+    columnCount: Math.max(1, columnBands),
+    columnSeparation: std,
+  };
+};
+
+const alignCropToAspectRatio = (
+  box: [number, number, number, number],
+  targetAspectRatio: number,
+  width: number,
+  height: number,
+  maxDrift: number
+): AlignmentResult => {
+  const currWidth = box[2] - box[0] + 1;
+  const currHeight = box[3] - box[1] + 1;
+  const currentAspect = currWidth / Math.max(1, currHeight);
+  const drift = Math.abs(currentAspect - targetAspectRatio) / Math.max(0.01, targetAspectRatio);
+  if (drift > maxDrift) {
+    return { box, drift, applied: false, reason: "aspect-drift-too-high" };
+  }
+
+  let alignedBox = box;
+  if (currentAspect < targetAspectRatio) {
+    const desiredWidth = Math.round(currHeight * targetAspectRatio);
+    const pad = Math.max(0, Math.round((desiredWidth - currWidth) / 2));
+    alignedBox = clampBox([box[0] - pad, box[1], box[2] + pad, box[3]], width, height);
+  } else if (currentAspect > targetAspectRatio) {
+    const desiredHeight = Math.round(currWidth / targetAspectRatio);
+    const pad = Math.max(0, Math.round((desiredHeight - currHeight) / 2));
+    alignedBox = clampBox([box[0], box[1] - pad, box[2], box[3] + pad], width, height);
+  }
+
+  alignedBox = clampBox(alignedBox, width, height);
+  return { box: alignedBox, drift, applied: true, reason: "aspect-alignment" };
+};
+
+const buildMorphologyPlan = (
+  stats: { backgroundStd: number; maskCoverage: number },
+  shadow: ShadowDetection
+): MorphologyPlan => {
+  const reasons: string[] = [];
+  const denoise = stats.backgroundStd > 18 || shadow.present;
+  if (denoise) reasons.push("denoise");
+  const contrastBoost = stats.maskCoverage < 0.6;
+  if (contrastBoost) reasons.push("contrast-boost");
+  const sharpen = stats.maskCoverage > 0.7 && stats.backgroundStd < 25;
+  if (sharpen) reasons.push("sharpen");
+  return {
+    denoise,
+    contrastBoost,
+    sharpen,
+    reason: reasons.length > 0 ? reasons : ["none"],
+  };
+};
+
+const applyMorphology = (image: sharp.Sharp, plan: MorphologyPlan): sharp.Sharp => {
+  let pipeline = image;
+  if (plan.denoise) {
+    pipeline = pipeline.median(1);
+  }
+  if (plan.contrastBoost) {
+    pipeline = pipeline.linear(1.05, -2);
+  }
+  if (plan.sharpen) {
+    pipeline = pipeline.sharpen(0.6);
+  }
+  return pipeline;
+};
+
+const writePreview = async (
+  image: sharp.Sharp,
+  outputPath: string
+): Promise<{ path: string; width: number; height: number }> => {
+  const meta = await image.metadata();
+  const width = meta.width ?? 0;
+  const height = meta.height ?? 0;
+  const scale = Math.min(1, MAX_PREVIEW_DIM / Math.max(width, height, 1));
+  const resized =
+    scale < 1 ? image.resize(Math.round(width * scale), Math.round(height * scale)) : image;
+  const info = await resized.png({ compressionLevel: 6 }).toFile(outputPath);
+  return { path: outputPath, width: info.width, height: info.height };
+};
+
 const unionBox = (
   a: [number, number, number, number],
   b: [number, number, number, number]
@@ -337,6 +827,73 @@ const clampBox = (
   const right = Math.max(left + 1, Math.min(width - 1, box[2]));
   const bottom = Math.max(top + 1, Math.min(height - 1, box[3]));
   return [left, top, right, bottom];
+};
+
+const boxCenter = (box: [number, number, number, number]): { x: number; y: number } => ({
+  x: (box[0] + box[2]) / 2,
+  y: (box[1] + box[3]) / 2,
+});
+
+const shiftBox = (
+  box: [number, number, number, number],
+  dx: number,
+  dy: number
+): [number, number, number, number] => [box[0] + dx, box[1] + dy, box[2] + dx, box[3] + dy];
+
+const containsBox = (
+  outer: [number, number, number, number],
+  inner: [number, number, number, number]
+): boolean =>
+  outer[0] <= inner[0] && outer[1] <= inner[1] && outer[2] >= inner[2] && outer[3] >= inner[3];
+
+const applyBookPriors = (
+  expanded: [number, number, number, number],
+  combined: [number, number, number, number],
+  bookPriors: NormalizationOptions["bookPriors"],
+  width: number,
+  height: number
+): { box: [number, number, number, number]; snap: BookSnapResult } => {
+  const snap: BookSnapResult = { applied: false, drift: 0 };
+  if (!bookPriors?.model?.trimBoxPx?.median) {
+    return { box: expanded, snap };
+  }
+
+  const median = bookPriors.model.trimBoxPx.median;
+  const drift = Math.max(
+    Math.abs(expanded[0] - median[0]),
+    Math.abs(expanded[1] - median[1]),
+    Math.abs(expanded[2] - median[2]),
+    Math.abs(expanded[3] - median[3])
+  );
+  const maxDrift = bookPriors.maxTrimDriftPx ?? 18;
+  if (drift > maxDrift) {
+    return { box: expanded, snap };
+  }
+
+  if (containsBox(median, combined)) {
+    snap.applied = true;
+    snap.drift = drift;
+    snap.reason = "median-trim-box";
+    return { box: clampBox(median, width, height), snap };
+  }
+
+  const centerShift = {
+    dx: boxCenter(median).x - boxCenter(expanded).x,
+    dy: boxCenter(median).y - boxCenter(expanded).y,
+  };
+  const shifted = clampBox(shiftBox(expanded, centerShift.dx, centerShift.dy), width, height);
+  if (containsBox(shifted, combined)) {
+    snap.applied = true;
+    snap.drift = drift;
+    snap.reason = "median-center-align";
+    return { box: shifted, snap };
+  }
+
+  return { box: expanded, snap };
+};
+
+const roundBox = (box: [number, number, number, number]): [number, number, number, number] => {
+  return [Math.round(box[0]), Math.round(box[1]), Math.round(box[2]), Math.round(box[3])];
 };
 
 const detectShadows = (preview: PreviewImage): ShadowDetection => {
@@ -399,47 +956,132 @@ export async function normalizePage(
   page: PageData,
   estimate: PageBoundsEstimate,
   analysis: CorpusSummary,
-  outputDir: string
+  outputDir: string,
+  options?: NormalizationOptions
 ): Promise<NormalizationResult> {
+  const priors: NormalizationPriors = options?.priors ?? {
+    targetAspectRatio:
+      analysis.targetDimensionsPx.width / Math.max(1, analysis.targetDimensionsPx.height),
+    medianBleedPx: estimate.bleedPx,
+    medianTrimPx: estimate.trimPx,
+    adaptivePaddingPx: 0,
+    edgeThresholdScale: 1,
+    intensityThresholdBias: 0,
+    shadowTrimScale: 1,
+    maxAspectRatioDrift: 0.12,
+  };
+  const shadingOptions: Required<NonNullable<NormalizationOptions["shading"]>> = {
+    enabled: true,
+    maxResidualIncrease: 0.12,
+    maxHighlightShift: 0.08,
+    confidenceFloor: 0.55,
+    ...options?.shading,
+  };
+
   const imageMeta = await sharp(page.originalPath).metadata();
   const widthPx = imageMeta.width ?? estimate.widthPx;
   const heightPx = imageMeta.height ?? estimate.heightPx;
   const density = imageMeta.density ?? undefined;
-  const physical = inferPhysicalSize(widthPx, heightPx, density, analysis.dpi);
+  const physical = inferPhysicalSize(
+    widthPx,
+    heightPx,
+    density,
+    analysis.dpi,
+    analysis.targetDimensionsMm,
+    analysis.dpi
+  );
 
   const preview = await loadPreview(page.originalPath);
   const skew = estimateSkewAngle(preview);
+  const refinementMode = options?.skewRefinement ?? "on";
 
-  const rotated = sharp(page.originalPath).rotate(skew.angle, {
+  let finalAngle = skew.angle;
+  let rotated = sharp(page.originalPath).rotate(finalAngle, {
     background: { r: 255, g: 255, b: 255, alpha: 1 },
   });
-  const rotatedRaw = await rotated
-    .clone()
-    .ensureAlpha()
-    .removeAlpha()
-    .grayscale()
-    .raw()
-    .toBuffer({ resolveWithObject: true });
-  const rotatedPreview: PreviewImage = {
-    data: new Uint8Array(rotatedRaw.data),
-    width: rotatedRaw.info.width,
-    height: rotatedRaw.info.height,
-    scale: 1,
-  };
+  let rotatedPreview = await buildPreviewFromSharp(rotated);
+  let residual = estimateSkewAngle(rotatedPreview);
+  let skewRefined = false;
+
+  const shouldRefine =
+    refinementMode === "forced" ||
+    (refinementMode === "on" &&
+      ((residual.confidence > 0.2 && Math.abs(residual.angle) > 0.1) || skew.confidence < 0.25));
+
+  if (shouldRefine) {
+    finalAngle = skew.angle + residual.angle;
+    rotated = sharp(page.originalPath).rotate(finalAngle, {
+      background: { r: 255, g: 255, b: 255, alpha: 1 },
+    });
+    rotatedPreview = await buildPreviewFromSharp(rotated);
+    residual = estimateSkewAngle(rotatedPreview);
+    skewRefined = true;
+  }
 
   const borderStats = computeBorderStats(rotatedPreview);
-  const intensityThreshold = Math.max(
-    0,
-    Math.min(borderStats.mean - borderStats.std * 0.45, borderStats.mean - 6)
+  const baselineMetrics = estimateBaselineMetrics(rotatedPreview, residual.angle);
+  const columnMetrics = estimateColumnMetrics(rotatedPreview);
+  const shadingResult = await applyShadingCorrection(
+    rotated,
+    rotatedPreview,
+    borderStats,
+    shadingOptions
   );
-  const intensityMask = computeMaskBox(rotatedPreview, intensityThreshold);
-  const edgeThreshold = computeEdgeThreshold(rotatedPreview);
-  const edgeBox = computeEdgeBox(rotatedPreview, edgeThreshold);
-  let combinedBox = unionBox(intensityMask.box, edgeBox);
+  const shadingModel = shadingResult?.model;
+  const shadingCorrected = shadingResult?.corrected ?? rotated;
+  const computeBoxes = (bias: number, edgeScale: number) => {
+    const intensityThreshold = Math.max(
+      0,
+      Math.min(borderStats.mean - borderStats.std * (0.25 + bias), borderStats.mean - 3)
+    );
+    const intensityMask = computeMaskBox(rotatedPreview, intensityThreshold);
+    const edgeThreshold = computeEdgeThreshold(rotatedPreview) * edgeScale;
+    const edgeBox = computeEdgeBox(rotatedPreview, edgeThreshold);
+    const combinedBox = unionBox(intensityMask.box, edgeBox);
+    return { intensityThreshold, intensityMask, edgeThreshold, edgeBox, combinedBox };
+  };
+
+  let edgeFallbackApplied = false;
+  let edgeAnchorApplied = false;
+  let { intensityMask, combinedBox } = computeBoxes(
+    priors.intensityThresholdBias,
+    priors.edgeThresholdScale
+  );
+  const initialCoverage = intensityMask.coverage;
+  const initialCombinedCoverage =
+    ((combinedBox[2] - combinedBox[0] + 1) * (combinedBox[3] - combinedBox[1] + 1)) /
+    (rotatedPreview.width * rotatedPreview.height);
+
+  if (initialCoverage < 0.6 || initialCombinedCoverage < 0.45) {
+    const relaxedBias = Math.max(-0.2, priors.intensityThresholdBias - 0.2);
+    const relaxedEdgeScale = Math.max(0.75, priors.edgeThresholdScale * 0.85);
+    const relaxed = computeBoxes(relaxedBias, relaxedEdgeScale);
+    intensityMask = relaxed.intensityMask;
+    combinedBox = relaxed.combinedBox;
+    edgeFallbackApplied = true;
+  }
+
+  const combinedCoverage =
+    ((combinedBox[2] - combinedBox[0] + 1) * (combinedBox[3] - combinedBox[1] + 1)) /
+    (rotatedPreview.width * rotatedPreview.height);
+  if (combinedCoverage < 0.5) {
+    const edgeThreshold = computeEdgeThreshold(rotatedPreview) * 0.6;
+    const edgeBox = computeEdgeBox(rotatedPreview, edgeThreshold);
+    combinedBox = unionBox(combinedBox, edgeBox);
+    edgeAnchorApplied = true;
+  }
+
+  const anchoredCoverage =
+    ((combinedBox[2] - combinedBox[0] + 1) * (combinedBox[3] - combinedBox[1] + 1)) /
+    (rotatedPreview.width * rotatedPreview.height);
+  if (anchoredCoverage < 0.35) {
+    combinedBox = clampBox(estimate.contentBounds, rotatedPreview.width, rotatedPreview.height);
+    edgeAnchorApplied = true;
+  }
 
   const shadow = detectShadows(rotatedPreview);
   if (shadow.present && shadow.confidence > 0.25) {
-    const trimPx = Math.round(shadow.widthPx * 0.75);
+    const trimPx = Math.round(shadow.widthPx * 0.75 * priors.shadowTrimScale);
     if (shadow.side === "left") {
       combinedBox = [combinedBox[0] + trimPx, combinedBox[1], combinedBox[2], combinedBox[3]];
     }
@@ -448,13 +1090,33 @@ export async function normalizePage(
     }
   }
 
+  combinedBox = unionBox(combinedBox, roundBox(estimate.contentBounds));
   combinedBox = clampBox(combinedBox, rotatedPreview.width, rotatedPreview.height);
 
+  const marginPad = Math.round(Math.max(estimate.bleedPx, estimate.trimPx) * 0.6);
   const autoPadding = Math.max(
     DEFAULT_PADDING_PX,
-    Math.round(Math.min(rotatedPreview.width, rotatedPreview.height) * 0.002)
+    Math.round(Math.min(rotatedPreview.width, rotatedPreview.height) * 0.004) +
+      Math.round(priors.adaptivePaddingPx) +
+      marginPad
   );
-  const expanded = expandBox(combinedBox, autoPadding, rotatedPreview.width, rotatedPreview.height);
+  let expanded = expandBox(combinedBox, autoPadding, rotatedPreview.width, rotatedPreview.height);
+  const alignment = alignCropToAspectRatio(
+    expanded,
+    priors.targetAspectRatio,
+    rotatedPreview.width,
+    rotatedPreview.height,
+    priors.maxAspectRatioDrift
+  );
+  expanded = alignment.box;
+  const bookSnap = applyBookPriors(
+    expanded,
+    combinedBox,
+    options?.bookPriors,
+    rotatedPreview.width,
+    rotatedPreview.height
+  );
+  expanded = bookSnap.box;
   const cropWidth = expanded[2] - expanded[0] + 1;
   const cropHeight = expanded[3] - expanded[1] + 1;
 
@@ -462,9 +1124,17 @@ export async function normalizePage(
   await fs.mkdir(normalizedDir, { recursive: true });
   const normalizedPath = path.join(normalizedDir, `${page.id}.png`);
 
-  await rotated
-    .clone()
+  const morphologyPlan = buildMorphologyPlan(
+    { backgroundStd: borderStats.std, maskCoverage: intensityMask.coverage },
+    shadow
+  );
+  const corrected = applyMorphology(shadingCorrected.clone(), morphologyPlan);
+
+  const targetWidth = Math.round(analysis.targetDimensionsPx.width);
+  const targetHeight = Math.round(analysis.targetDimensionsPx.height);
+  await corrected
     .extract({ left: expanded[0], top: expanded[1], width: cropWidth, height: cropHeight })
+    .resize(targetWidth, targetHeight, { fit: "fill" })
     .withMetadata({ density: physical.dpi })
     .png({ compressionLevel: 6 })
     .toFile(normalizedPath);
@@ -473,6 +1143,18 @@ export async function normalizePage(
   const bleedMm = pxToMm(estimate.bleedPx, physical.dpi);
   const maskArea = (expanded[2] - expanded[0] + 1) * (expanded[3] - expanded[1] + 1);
   const maskCoverage = Math.max(0, maskArea) / (rotatedPreview.width * rotatedPreview.height);
+
+  const previews: NormalizationResult["previews"] = {};
+  if (options?.generatePreviews) {
+    const previewDir = path.join(outputDir, "previews");
+    await fs.mkdir(previewDir, { recursive: true });
+    const sourcePreviewPath = path.join(previewDir, `${page.id}-source.png`);
+    const normalizedPreviewPath = path.join(previewDir, `${page.id}-normalized.png`);
+    const sourcePreview = await writePreview(sharp(page.originalPath), sourcePreviewPath);
+    const normalizedPreview = await writePreview(sharp(normalizedPath), normalizedPreviewPath);
+    previews.source = sourcePreview;
+    previews.normalized = normalizedPreview;
+  }
 
   return {
     pageId: page.id,
@@ -484,22 +1166,41 @@ export async function normalizePage(
     dpiSource: physical.source,
     trimMm,
     bleedMm,
-    skewAngle: skew.angle,
+    skewAngle: finalAngle,
     shadow,
+    previews,
+    corrections: {
+      deskewAngle: finalAngle,
+      skewResidualAngle: residual.angle,
+      skewRefined,
+      edgeFallbackApplied,
+      edgeAnchorApplied,
+      baseline: baselineMetrics,
+      columns: columnMetrics,
+      alignment,
+      bookSnap: bookSnap.snap,
+      morphology: morphologyPlan,
+    },
     stats: {
       backgroundMean: borderStats.mean,
       backgroundStd: borderStats.std,
       maskCoverage,
-      skewConfidence: skew.confidence,
+      skewConfidence: Math.max(skew.confidence, residual.confidence),
       shadowScore: shadow.darkness,
+      baselineConsistency: baselineMetrics.lineConsistency,
+      columnCount: columnMetrics.columnCount,
+      illuminationResidual: shadingModel?.residual,
+      spineShadowScore: shadingModel?.spineShadowScore,
     },
+    shading: shadingModel,
   };
 }
 
 export async function normalizePages(
   pages: PageData[],
   analysis: CorpusSummary,
-  outputDir: string
+  outputDir: string,
+  options?: NormalizationOptions
 ): Promise<Map<string, NormalizationResult>> {
   const estimateById = new Map(analysis.estimates.map((e) => [e.pageId, e]));
   const results = new Map<string, NormalizationResult>();
@@ -508,7 +1209,7 @@ export async function normalizePages(
     pages.map(async (page) => {
       const estimate = estimateById.get(page.id);
       if (!estimate) return;
-      const normalized = await normalizePage(page, estimate, analysis, outputDir);
+      const normalized = await normalizePage(page, estimate, analysis, outputDir, options);
       results.set(page.id, normalized);
     })
   );

@@ -37,7 +37,7 @@ async function main(): Promise<void> {
       projectRoot,
       projectId: "mind-myth-magick",
       targetDpi: 300,
-      targetDimensionsMm: { width: 210, height: 297 },
+      targetDimensionsMm: { width: 184.15, height: 260.35 },
       sampleCount,
       outputDir,
     });
