@@ -4,13 +4,14 @@ import path from "path";
 
 export default defineConfig({
   plugins: [react()],
-  root: path.resolve(__dirname, "src/renderer"),
   test: {
     environment: "jsdom",
     setupFiles: [path.resolve(__dirname, "src/renderer/test/setup.ts")],
     coverage: {
       provider: "v8",
       reporter: ["text", "lcov"],
+      include: ["src/**/*.{ts,tsx}"],
+      exclude: ["src/**/*.test.{ts,tsx}", "src/**/test/**"],
       thresholds: {
         lines: 70,
         statements: 70,

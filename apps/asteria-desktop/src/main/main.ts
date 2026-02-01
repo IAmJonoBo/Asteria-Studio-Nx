@@ -1,5 +1,6 @@
 import { app, BrowserWindow } from "electron";
 import path from "path";
+import { registerIpcHandlers } from "./ipc";
 
 const isDev = process.env.NODE_ENV !== "production";
 
@@ -10,6 +11,8 @@ async function createWindow() {
     webPreferences: {
       preload: path.join(__dirname, "../preload/index.js"),
       contextIsolation: true,
+      nodeIntegration: false,
+      enableRemoteModule: false,
     },
   });
 
@@ -23,6 +26,7 @@ async function createWindow() {
 }
 
 app.whenReady().then(() => {
+  registerIpcHandlers();
   createWindow();
 
   app.on("activate", () => {

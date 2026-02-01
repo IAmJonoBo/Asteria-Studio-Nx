@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+# Pre-commit hook: run lint, typecheck, and test before commit
+# Install: cp .githooks/pre-commit .git/hooks/pre-commit && chmod +x .git/hooks/pre-commit
+
+set -e
+
+echo "Running pre-commit checks..."
+
+# Prettier format check
+echo "Checking formatting..."
+npm exec prettier -- --check "apps/asteria-desktop/src/**/*.{ts,tsx}"
+
+# ESLint
+echo "Running ESLint..."
+npm exec eslint -- "apps/asteria-desktop/src/**/*.{ts,tsx}"
+
+# TypeScript check
+echo "Type checking..."
+npm -w apps/asteria-desktop run typecheck
+
+# Unit tests
+echo "Running tests..."
+npm -w apps/asteria-desktop run test
+
+echo "✓ All pre-commit checks passed!"

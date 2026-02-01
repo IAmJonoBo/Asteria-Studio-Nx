@@ -14,7 +14,8 @@
     "typecheck": "tsc --noEmit",
     "lint": "npm run typecheck",
     "test": "vitest run --coverage",
-    "test:ui": "vitest run src/renderer --coverage"
+    "test:ui": "vitest run src/renderer --coverage",
+    "test:e2e": "playwright test"
   },
   "dependencies": {
     "electron": "^30.0.0",
@@ -25,16 +26,23 @@
     "@types/node": "^22.0.0",
     "@types/react": "^18.3.6",
     "@types/react-dom": "^18.3.0",
+    "@typescript-eslint/eslint-plugin": "^7.4.0",
+    "@typescript-eslint/parser": "^7.4.0",
     "@vitejs/plugin-react": "^4.3.1",
     "@testing-library/jest-dom": "^6.4.2",
     "@testing-library/react": "^14.3.1",
     "@testing-library/user-event": "^14.5.2",
     "concurrently": "^9.0.1",
+    "eslint": "^8.57.0",
+    "eslint-plugin-react": "^7.34.1",
+    "eslint-plugin-react-hooks": "^4.6.0",
     "jsdom": "^24.1.0",
+    "prettier": "^3.2.5",
     "ts-node": "^10.9.2",
     "typescript": "^5.6.3",
     "vite": "^5.4.2",
     "vitest": "^2.1.4",
-    "@vitest/coverage-v8": "^2.1.4"
+    "@vitest/coverage-v8": "^2.1.4",
+    "playwright": "^1.48.0"
   }
 }

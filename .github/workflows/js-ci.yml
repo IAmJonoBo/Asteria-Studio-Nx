@@ -25,8 +25,8 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-      - name: Lint
-        run: npm run lint
+      - name: Lint (ESLint + Prettier)
+        run: npm -w apps/asteria-desktop run lint
         env:
           CI: true
 
@@ -35,7 +35,37 @@ jobs:
         env:
           CI: true
 
-      - name: Test
+      - name: Unit tests with coverage
         run: npm run test
         env:
           CI: true
+
+      - name: Upload coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: apps/asteria-desktop/coverage/
+
+  e2e-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Install Playwright browsers
+        run: npm -w apps/asteria-desktop exec playwright install
+
+      - name: Run E2E tests
+        run: npm -w apps/asteria-desktop run test:e2e
+        env:
+          CI: true
+
