@@ -4,4 +4,4 @@ engines:
   trivy:
     enabled: true
 exclude_paths:
-  - "projects/mind-myth-and-magick/input/raw/**"
+  - projects/mind-myth-and-magick/input/raw/**

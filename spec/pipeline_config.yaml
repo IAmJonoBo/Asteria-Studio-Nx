@@ -1,7 +1,7 @@
 # Default pipeline configuration for Asteria Studio
 version: 0.1.0
 project:
-  name: ""
+  name: null
   target_dimensions:
     width: 210 # mm default A5 width
     height: 297 # mm default A5 height
@@ -14,16 +14,16 @@ project:
 models:
   execution_mode: auto # auto | local | remote
   endpoints:
-    remote_url: "" # optional remote accelerator endpoint
+    remote_url: null # optional remote accelerator endpoint
   ocr:
     engine: tesseract
-    languages: ["eng"]
+    languages: [eng]
   detector:
     name: layout-detector
-    version: "0.1.0"
+    version: 0.1.0
   dewarp:
     name: dewarp-unet
-    version: "0.1.0"
+    version: 0.1.0
 steps:
   ingest:
     enabled: true

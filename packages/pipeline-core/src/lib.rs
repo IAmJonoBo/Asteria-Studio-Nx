@@ -16,13 +16,13 @@ pub fn process_page_stub_js(page_id: String) -> String {
 /// Compute horizontal projection profile (sum of pixels per row).
 pub fn projection_profile_y(data: &[u8], width: usize, height: usize) -> Vec<u32> {
     let mut rows = vec![0u32; height];
-    for y in 0..height {
+    for (y, row) in rows.iter_mut().enumerate() {
         let mut sum = 0u32;
         let offset = y * width;
         for x in 0..width {
             sum += data[offset + x] as u32;
         }
-        rows[y] = sum;
+        *row = sum;
     }
     rows
 }

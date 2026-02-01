@@ -15,12 +15,15 @@ yarn-error.log*
 coverage/
 .turbo/
 .parcel-cache/
+package-lock.json
 
 # App build outputs
 apps/asteria-desktop/dist/
 apps/asteria-desktop/.vite/
 apps/asteria-desktop/node_modules/
 apps/asteria-desktop/pipeline-results/
+apps/asteria-desktop/playwright-report/
+apps/asteria-desktop/test-results/
 packages/ui-kit/dist/
 packages/ui-kit/node_modules/
 
