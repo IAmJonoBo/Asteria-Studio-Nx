@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 
-export function App() {
+export function App(): JSX.Element {
   const summary = useMemo(
     () => [
       "Deskew & dewarp with confidence scoring",
@@ -9,7 +9,7 @@ export function App() {
       "Offline-first with optional remote accelerators",
       "Review queue with overlays and bulk actions",
     ],
-    [],
+    []
   );
 
   return (
@@ -19,9 +19,8 @@ export function App() {
           <p className="eyebrow">Asteria Studio</p>
           <h1>Enterprise page normalization</h1>
           <p className="lede">
-            Offline-first Electron desktop app for designers and digitization
-            teams. Ingest scans, deskew, dewarp, detect elements, and export
-            audit-ready outputs.
+            Offline-first Electron desktop app for designers and digitization teams. Ingest scans,
+            deskew, dewarp, detect elements, and export audit-ready outputs.
           </p>
           <div className="pill-row">
             <span className="pill">Local projects</span>
@@ -41,8 +40,8 @@ export function App() {
       <section className="panel">
         <h2>Next up</h2>
         <p>
-          Hook up IPC to the orchestrator, wire the Rust CV core bindings, and
-          add the review queue with overlays.
+          Hook up IPC to the orchestrator, wire the Rust CV core bindings, and add the review queue
+          with overlays.
         </p>
       </section>
     </main>

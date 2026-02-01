@@ -4,22 +4,32 @@
 
 set -e
 
+ROOT_DIR="$(pwd)"
+APP_DIR="$ROOT_DIR/apps/asteria-desktop"
+
+if [ ! -d "$APP_DIR" ]; then
+  echo "App directory missing; skipping checks." >&2
+  exit 0
+fi
+
 echo "Running pre-commit checks..."
+
+cd "$APP_DIR"
 
 # Prettier format check
 echo "Checking formatting..."
-npm exec prettier -- --check "apps/asteria-desktop/src/**/*.{ts,tsx}"
+pnpm exec prettier --check "src/**/*.{ts,tsx}"
 
 # ESLint
 echo "Running ESLint..."
-npm exec eslint -- "apps/asteria-desktop/src/**/*.{ts,tsx}"
+pnpm exec eslint "src/**/*.{ts,tsx}"
 
 # TypeScript check
 echo "Type checking..."
-npm -w apps/asteria-desktop run typecheck
+pnpm run typecheck
 
 # Unit tests
 echo "Running tests..."
-npm -w apps/asteria-desktop run test
+pnpm run test
 
 echo "✓ All pre-commit checks passed!"

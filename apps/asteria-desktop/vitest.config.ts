@@ -11,7 +11,15 @@ export default defineConfig({
       provider: "v8",
       reporter: ["text", "lcov"],
       include: ["src/**/*.{ts,tsx}"],
-      exclude: ["src/**/*.test.{ts,tsx}", "src/**/test/**"],
+      exclude: [
+        "src/**/*.test.{ts,tsx}",
+        "src/**/test/**",
+        "e2e/**",
+        "src/main/**",
+        "src/preload/**",
+        "src/ipc/contracts.ts",
+        "src/renderer/main.tsx",
+      ],
       thresholds: {
         lines: 70,
         statements: 70,
@@ -19,5 +27,6 @@ export default defineConfig({
         functions: 65,
       },
     },
+    exclude: ["e2e/**", "node_modules/**", "dist/**"],
   },
 });

@@ -6,7 +6,9 @@ describe("IPC Contracts", () => {
     it("validates required fields", () => {
       const config: PipelineRunConfig = {
         projectId: "proj-1",
-        pages: [{ id: "p1", filename: "page1.png", originalPath: "/input/p1", confidenceScores: {} }],
+        pages: [
+          { id: "p1", filename: "page1.png", originalPath: "/input/p1", confidenceScores: {} },
+        ],
         targetDpi: 300,
         targetDimensionsMm: { width: 210, height: 297 },
       };
@@ -26,9 +28,10 @@ describe("IPC Contracts", () => {
         "asteria:fetch-page",
         "asteria:apply-override",
         "asteria:export-run",
+        "asteria:analyze-corpus",
       ];
 
-      expect(channelNames).toHaveLength(5);
+      expect(channelNames).toHaveLength(6);
     });
   });
 });

@@ -7,8 +7,10 @@
     "packages/*"
   ],
   "scripts": {
-    "lint": "npm -w apps/asteria-desktop run lint",
-    "test": "npm -w apps/asteria-desktop run test",
-    "build": "npm -w apps/asteria-desktop run build"
-  }
+    "lint": "pnpm -C apps/asteria-desktop lint",
+    "test": "pnpm -C apps/asteria-desktop test",
+    "build": "pnpm -C apps/asteria-desktop build",
+    "codacy:analyze:v2": "CODACY_CLI_V2_VERSION=1.0.0-main.275.bc32470 codacy-cli analyze --tool eslint --output codacy-eslint.sarif"
+  },
+  "packageManager": "pnpm@10.28.2"
 }

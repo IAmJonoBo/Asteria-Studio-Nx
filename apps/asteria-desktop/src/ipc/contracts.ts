@@ -25,10 +25,41 @@ export interface PipelineRunResult {
   metrics: Record<string, unknown>;
 }
 
+export interface PageBoundsEstimate {
+  pageId: string;
+  widthPx: number;
+  heightPx: number;
+  bleedPx: number;
+  trimPx: number;
+  pageBounds: [number, number, number, number];
+  contentBounds: [number, number, number, number];
+}
+
+export interface CorpusSummary {
+  projectId: string;
+  pageCount: number;
+  dpi: number;
+  targetDimensionsPx: { width: number; height: number };
+  estimates: PageBoundsEstimate[];
+  notes?: string;
+}
+
+export interface ScanCorpusOptions {
+  projectId?: string;
+  targetDpi?: number;
+  targetDimensionsMm?: { width: number; height: number };
+  includeChecksums?: boolean;
+}
+
 export interface IpcChannels {
-  "asteria:start-run": (config: PipelineRunConfig) => Promise<PipelineRunResult>;
-  "asteria:cancel-run": (runId: string) => Promise<void>;
-  "asteria:fetch-page": (pageId: string) => Promise<PageData>;
-  "asteria:apply-override": (pageId: string, overrides: Record<string, unknown>) => Promise<void>;
-  "asteria:export-run": (runId: string, format: "png" | "tiff" | "pdf") => Promise<string>;
+  "asteria:start-run": (_config: PipelineRunConfig) => Promise<PipelineRunResult>;
+  "asteria:cancel-run": (_runId: string) => Promise<void>;
+  "asteria:fetch-page": (_pageId: string) => Promise<PageData>;
+  "asteria:apply-override": (_pageId: string, _overrides: Record<string, unknown>) => Promise<void>;
+  "asteria:export-run": (_runId: string, _format: "png" | "tiff" | "pdf") => Promise<string>;
+  "asteria:analyze-corpus": (_config: PipelineRunConfig) => Promise<CorpusSummary>;
+  "asteria:scan-corpus": (
+    _rootPath: string,
+    _options?: ScanCorpusOptions
+  ) => Promise<PipelineRunConfig>;
 }

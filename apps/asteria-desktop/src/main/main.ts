@@ -4,7 +4,7 @@ import { registerIpcHandlers } from "./ipc";
 
 const isDev = process.env.NODE_ENV !== "production";
 
-async function createWindow() {
+async function createWindow(): Promise<void> {
   const win = new BrowserWindow({
     width: 1280,
     height: 800,
@@ -12,7 +12,6 @@ async function createWindow() {
       preload: path.join(__dirname, "../preload/index.js"),
       contextIsolation: true,
       nodeIntegration: false,
-      enableRemoteModule: false,
     },
   });
 

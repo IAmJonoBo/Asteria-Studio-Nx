@@ -7,13 +7,9 @@ describe("App", () => {
     render(<App />);
 
     expect(
-      screen.getByRole("heading", { name: /enterprise page normalization/i }),
+      screen.getByRole("heading", { name: /enterprise page normalization/i })
     ).toBeInTheDocument();
-    expect(
-      screen.getByText(/Deskew & dewarp with confidence scoring/i),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText(/Hook up IPC to the orchestrator/i),
-    ).toBeInTheDocument();
+    expect(screen.getByText(/Deskew & dewarp with confidence scoring/i)).toBeInTheDocument();
+    expect(screen.getByText(/Hook up IPC to the orchestrator/i)).toBeInTheDocument();
   });
 });
