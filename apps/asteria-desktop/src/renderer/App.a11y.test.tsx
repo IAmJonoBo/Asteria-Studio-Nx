@@ -5,7 +5,7 @@ import { App } from "./App";
 
 describe("App - Navigation & Accessibility", () => {
   beforeEach(() => {
-    localStorage.clear();
+    globalThis.localStorage?.clear();
   });
 
   it("renders navigation with all sections", () => {
@@ -43,7 +43,8 @@ describe("App - Navigation & Accessibility", () => {
     render(<App />);
 
     // Open command palette with Ctrl+K
-    const isMac = navigator.platform.toUpperCase().includes("MAC");
+    const userAgent = globalThis.navigator?.userAgent ?? "";
+    const isMac = userAgent.toUpperCase().includes("MAC");
     await user.keyboard(isMac ? "{Meta>}k{/Meta}" : "{Control>}k{/Control}");
 
     expect(screen.getAllByRole("dialog", { name: /command palette/i }).length).toBeGreaterThan(0);
@@ -62,7 +63,7 @@ describe("App - Navigation & Accessibility", () => {
     const themeButton = screen.getAllByRole("button", { name: /switch to dark theme/i })[0];
     await user.click(themeButton);
 
-    expect(document.documentElement.getAttribute("data-theme")).toBe("dark");
+    expect(document.documentElement.dataset.theme).toBe("dark");
     expect(
       screen.getAllByRole("button", { name: /switch to light theme/i }).length
     ).toBeGreaterThan(0);

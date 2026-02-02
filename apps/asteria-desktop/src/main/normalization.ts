@@ -200,50 +200,66 @@ export interface NormalizationResult {
 const pxToMm = (px: number, dpi: number): number => (px / dpi) * 25.4;
 const mmToInches = (mm: number): number => mm / 25.4;
 
-const inferPhysicalSize = (
+type PhysicalSizeResult = {
+  widthMm: number;
+  heightMm: number;
+  dpi: number;
+  source: NormalizationResult["dpiSource"];
+};
+
+const buildPhysicalSizeResult = (
+  widthMm: number,
+  heightMm: number,
+  dpi: number,
+  source: NormalizationResult["dpiSource"]
+): PhysicalSizeResult => ({
+  widthMm,
+  heightMm,
+  dpi,
+  source,
+});
+
+const resolveDensityPhysicalSize = (
   widthPx: number,
   heightPx: number,
-  density?: number,
-  fallbackDpi = 300,
-  targetDimensionsMm?: { width: number; height: number },
-  targetDpi?: number
-): { widthMm: number; heightMm: number; dpi: number; source: NormalizationResult["dpiSource"] } => {
-  const ratio = widthPx / Math.max(1, heightPx);
-  const targetAspect = targetDimensionsMm
-    ? targetDimensionsMm.width / Math.max(1, targetDimensionsMm.height)
-    : undefined;
-
-  if (density && density > 1) {
-    if (targetAspect) {
-      const drift = Math.abs(ratio - targetAspect) / Math.max(0.01, targetAspect);
-      if (drift < 0.05) {
-        return {
-          widthMm: pxToMm(widthPx, density),
-          heightMm: pxToMm(heightPx, density),
-          dpi: density,
-          source: "metadata",
-        };
-      }
-    } else {
-      return {
-        widthMm: pxToMm(widthPx, density),
-        heightMm: pxToMm(heightPx, density),
-        dpi: density,
-        source: "metadata",
-      };
-    }
+  density: number | undefined,
+  targetAspect: number | undefined,
+  ratio: number
+): PhysicalSizeResult | null => {
+  if (!density || density <= 1) return null;
+  if (targetAspect) {
+    const drift = Math.abs(ratio - targetAspect) / Math.max(0.01, targetAspect);
+    if (drift >= 0.05) return null;
   }
+  return buildPhysicalSizeResult(
+    pxToMm(widthPx, density),
+    pxToMm(heightPx, density),
+    density,
+    "metadata"
+  );
+};
 
-  if (targetDimensionsMm && targetDpi) {
-    const drift = targetAspect ? Math.abs(ratio - targetAspect) / Math.max(0.01, targetAspect) : 0;
-    return {
-      widthMm: targetDimensionsMm.width,
-      heightMm: targetDimensionsMm.height,
-      dpi: targetDpi,
-      source: drift < 0.05 ? "inferred" : "fallback",
-    };
-  }
+const resolveTargetPhysicalSize = (
+  targetDimensionsMm: { width: number; height: number } | undefined,
+  targetDpi: number | undefined,
+  targetAspect: number | undefined,
+  ratio: number
+): PhysicalSizeResult | null => {
+  if (!targetDimensionsMm || !targetDpi) return null;
+  const drift = targetAspect ? Math.abs(ratio - targetAspect) / Math.max(0.01, targetAspect) : 0;
+  return buildPhysicalSizeResult(
+    targetDimensionsMm.width,
+    targetDimensionsMm.height,
+    targetDpi,
+    drift < 0.05 ? "inferred" : "fallback"
+  );
+};
 
+const inferCommonPhysicalSize = (
+  ratio: number,
+  widthPx: number,
+  fallbackDpi: number
+): PhysicalSizeResult | null => {
   let best = { score: Number.POSITIVE_INFINITY, widthMm: 0, heightMm: 0, dpi: fallbackDpi };
 
   for (const size of COMMON_SIZES_MM) {
@@ -266,20 +282,43 @@ const inferPhysicalSize = (
   }
 
   if (best.score < 0.02) {
-    return {
-      widthMm: best.widthMm,
-      heightMm: best.heightMm,
-      dpi: best.dpi,
-      source: "inferred",
-    };
+    return buildPhysicalSizeResult(best.widthMm, best.heightMm, best.dpi, "inferred");
   }
+  return null;
+};
 
-  return {
-    widthMm: pxToMm(widthPx, fallbackDpi),
-    heightMm: pxToMm(heightPx, fallbackDpi),
-    dpi: fallbackDpi,
-    source: "fallback",
-  };
+const inferPhysicalSize = (
+  widthPx: number,
+  heightPx: number,
+  density?: number,
+  fallbackDpi = 300,
+  targetDimensionsMm?: { width: number; height: number },
+  targetDpi?: number
+): PhysicalSizeResult => {
+  const ratio = widthPx / Math.max(1, heightPx);
+  const targetAspect = targetDimensionsMm
+    ? targetDimensionsMm.width / Math.max(1, targetDimensionsMm.height)
+    : undefined;
+  const densityResult = resolveDensityPhysicalSize(widthPx, heightPx, density, targetAspect, ratio);
+  if (densityResult) return densityResult;
+
+  const targetResult = resolveTargetPhysicalSize(
+    targetDimensionsMm,
+    targetDpi,
+    targetAspect,
+    ratio
+  );
+  if (targetResult) return targetResult;
+
+  const commonSize = inferCommonPhysicalSize(ratio, widthPx, fallbackDpi);
+  if (commonSize) return commonSize;
+
+  return buildPhysicalSizeResult(
+    pxToMm(widthPx, fallbackDpi),
+    pxToMm(heightPx, fallbackDpi),
+    fallbackDpi,
+    "fallback"
+  );
 };
 
 const angleToBucket = (angle: number): number => {
@@ -701,48 +740,45 @@ const computeEdgeBox = (
   return [left, top, right, bottom];
 };
 
+const computeMagnitudeStats = (
+  width: number,
+  height: number,
+  sampleMagnitude: (x: number, y: number, rowOffset: number) => number
+): { mean: number; std: number } => {
+  let sum = 0;
+  let sumSq = 0;
+  let count = 0;
+  for (let y = 1; y < height - 1; y += 2) {
+    const rowOffset = y * width;
+    for (let x = 1; x < width - 1; x += 2) {
+      const magnitude = sampleMagnitude(x, y, rowOffset);
+      sum += magnitude;
+      sumSq += magnitude * magnitude;
+      count++;
+    }
+  }
+  const mean = count > 0 ? sum / count : 0;
+  const variance = count > 0 ? Math.max(0, sumSq / count - mean * mean) : 0;
+  return { mean, std: Math.sqrt(variance) };
+};
+
 const computeEdgeThreshold = (preview: PreviewImage): number => {
   const { data, width, height } = preview;
   const native = getNativeCore();
   if (native) {
     const magnitudes = native.sobelMagnitude(Buffer.from(data), width, height);
     if (magnitudes.length === width * height) {
-      let sum = 0;
-      let sumSq = 0;
-      let count = 0;
-      for (let y = 1; y < height - 1; y += 2) {
-        const rowOffset = y * width;
-        for (let x = 1; x < width - 1; x += 2) {
-          const magnitude = magnitudes[rowOffset + x] ?? 0;
-          sum += magnitude;
-          sumSq += magnitude * magnitude;
-          count++;
-        }
-      }
-      const mean = count > 0 ? sum / count : 0;
-      const variance = count > 0 ? Math.max(0, sumSq / count - mean * mean) : 0;
-      const std = Math.sqrt(variance);
+      const { mean, std } = computeMagnitudeStats(width, height, (x, _y, rowOffset) => {
+        return magnitudes[rowOffset + x] ?? 0;
+      });
       return Math.max(8, mean + std * EDGE_THRESHOLD_SCALE);
     }
   }
   const gxKernel = [-1, 0, 1, -2, 0, 2, -1, 0, 1];
   const gyKernel = [1, 2, 1, 0, 0, 0, -1, -2, -1];
-  let sum = 0;
-  let sumSq = 0;
-  let count = 0;
-
-  for (let y = 1; y < height - 1; y += 2) {
-    for (let x = 1; x < width - 1; x += 2) {
-      const { magnitude } = gradientAt(data, width, x, y, gxKernel, gyKernel);
-      sum += magnitude;
-      sumSq += magnitude * magnitude;
-      count++;
-    }
-  }
-
-  const mean = count > 0 ? sum / count : 0;
-  const variance = count > 0 ? Math.max(0, sumSq / count - mean * mean) : 0;
-  const std = Math.sqrt(variance);
+  const { mean, std } = computeMagnitudeStats(width, height, (x, y) => {
+    return gradientAt(data, width, x, y, gxKernel, gyKernel).magnitude;
+  });
   return Math.max(8, mean + std * EDGE_THRESHOLD_SCALE);
 };
 
@@ -801,8 +837,8 @@ const estimateColumnMetrics = (preview: PreviewImage): ColumnMetrics => {
   const threshold = mean + std * 0.7;
   let columnBands = 0;
   let inBand = false;
-  for (let x = 0; x < colSums.length; x++) {
-    if (colSums[x] > threshold) {
+  for (const value of colSums) {
+    if (value > threshold) {
       if (!inBand) {
         columnBands++;
         inBand = true;
@@ -876,7 +912,7 @@ const applyMorphology = (image: sharp.Sharp, plan: MorphologyPlan): sharp.Sharp 
     pipeline = pipeline.linear(1.05, -2);
   }
   if (plan.sharpen) {
-    pipeline = pipeline.sharpen(0.6);
+    pipeline = pipeline.sharpen({ sigma: 0.6 });
   }
   return pipeline;
 };

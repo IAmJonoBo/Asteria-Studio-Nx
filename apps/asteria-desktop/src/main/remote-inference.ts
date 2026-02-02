@@ -14,6 +14,10 @@ const ALLOWED_TYPES = new Set<PageLayoutElement["type"]>([
   "marginalia",
 ]);
 
+const isAllowedType = (type: string | undefined): type is PageLayoutElement["type"] => {
+  return Boolean(type && ALLOWED_TYPES.has(type as PageLayoutElement["type"]));
+};
+
 type RemoteElement = {
   id?: string;
   type?: string;
@@ -57,7 +61,7 @@ export const requestRemoteLayout = async (
   if (!endpoint) return null;
 
   const timeoutMs = Number(config.timeoutMs ?? 5000);
-  const controller = new AbortController();
+  const controller = new globalThis.AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const file = await fs.readFile(imagePath);
@@ -68,7 +72,7 @@ export const requestRemoteLayout = async (
       imageBase64: file.toString("base64"),
     };
     const token = config.token;
-    const response = await fetch(endpoint, {
+    const response = await globalThis.fetch(endpoint, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -78,18 +82,20 @@ export const requestRemoteLayout = async (
       signal: controller.signal,
     });
     if (!response.ok) return null;
-    const data = (await response.json()) as RemoteLayoutResponse;
+    const data: RemoteLayoutResponse = await response.json();
     const elements = (data.elements ?? [])
       .filter(
-        (element): element is Required<Pick<RemoteElement, "type" | "bbox">> & RemoteElement => {
-          return Boolean(element.type && element.bbox);
+        (
+          element
+        ): element is Required<Pick<RemoteElement, "type" | "bbox">> &
+          RemoteElement & { type: PageLayoutElement["type"] } => {
+          return Boolean(element.type && element.bbox && isAllowedType(element.type));
         }
       )
-      .filter((element) => ALLOWED_TYPES.has(element.type as PageLayoutElement["type"]))
       .map<PageLayoutElement>((element, index) => ({
         id: element.id ?? `${pageId}-remote-${index}`,
-        type: element.type as PageLayoutElement["type"],
-        bbox: clampBox(element.bbox as [number, number, number, number], outputWidth, outputHeight),
+        type: element.type,
+        bbox: clampBox(element.bbox, outputWidth, outputHeight),
         confidence: Math.max(0, Math.min(1, element.confidence ?? 0.5)),
         text: element.text,
         notes: element.notes,
@@ -101,7 +107,7 @@ export const requestRemoteLayout = async (
   } catch {
     return null;
   } finally {
-    clearTimeout(timeout);
+    globalThis.clearTimeout(timeout);
   }
 };
 
@@ -154,10 +160,10 @@ const findExistingPath = async (paths: string[]): Promise<string | null> => {
 };
 
 const readYamlScalar = (raw: string, key: string): string | null => {
-  const pattern = new RegExp(`^\\s*${key}:\\s*(.+)$`, "m");
-  const match = raw.match(pattern);
+  const pattern = new RegExp(String.raw`^\s*${key}:\s*(.+)$`, "m");
+  const match = pattern.exec(raw);
   if (!match) return null;
   const value = match[1].split("#")[0].trim();
   if (value === "null" || value === "") return null;
-  return value.replace(/^"|"$/g, "").replace(/^'|'$/g, "");
+  return value.replace(/^["']/, "").replace(/["']$/, "");
 };

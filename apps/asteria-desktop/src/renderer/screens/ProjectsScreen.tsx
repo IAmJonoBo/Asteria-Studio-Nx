@@ -20,7 +20,7 @@ export function ProjectsScreen({
   onImportCorpus,
   onOpenProject,
   initialProjects,
-}: ProjectsScreenProps): JSX.Element {
+}: Readonly<ProjectsScreenProps>): JSX.Element {
   // Mock data - will be replaced with IPC calls
   const [projects] = useState<Project[]>(
     initialProjects ?? [
@@ -95,22 +95,21 @@ export function ProjectsScreen({
       <div style={{ display: "grid", gap: "16px" }}>
         {projects.map((project) => (
           <div key={project.id} className="card" style={{ cursor: "pointer" }}>
-            <div
+            <button
+              type="button"
               style={{
                 display: "flex",
                 alignItems: "flex-start",
                 justifyContent: "space-between",
                 gap: "16px",
+                width: "100%",
+                border: "none",
+                background: "transparent",
+                textAlign: "left",
+                padding: 0,
+                cursor: "pointer",
               }}
               onClick={() => onOpenProject(project.id)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" || e.key === " ") {
-                  e.preventDefault();
-                  onOpenProject(project.id);
-                }
-              }}
-              role="button"
-              tabIndex={0}
             >
               <div style={{ flex: 1 }}>
                 <h3 className="card-title">{project.name}</h3>
@@ -143,17 +142,11 @@ export function ProjectsScreen({
                   <span className="badge badge-info">Processing</span>
                 )}
                 {project.status === "error" && <span className="badge badge-error">Error</span>}
-                <button
-                  className="btn btn-secondary btn-sm"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onOpenProject(project.id);
-                  }}
-                >
+                <span className="btn btn-secondary btn-sm" aria-hidden="true">
                   Open →
-                </button>
+                </span>
               </div>
-            </div>
+            </button>
           </div>
         ))}
       </div>

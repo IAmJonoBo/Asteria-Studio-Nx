@@ -27,12 +27,12 @@ describe("CommandPalette", () => {
     render(<CommandPalette isOpen onClose={onClose} commands={baseCommands} />);
 
     expect(screen.getByRole("dialog", { name: /command palette/i })).toBeInTheDocument();
-    expect(screen.getByRole("listbox", { name: /available commands/i })).toBeInTheDocument();
+    expect(screen.getByRole("list")).toBeInTheDocument();
     expect(screen.getByText(/Go to Projects/i)).toBeInTheDocument();
     expect(screen.getByText(/Start New Run/i)).toBeInTheDocument();
     expect(screen.getByText(/Ctrl\+1/i)).toBeInTheDocument();
 
-    await user.click(screen.getByRole("option", { name: /go to projects/i }));
+    await user.click(screen.getByRole("button", { name: /go to projects/i }));
 
     expect(baseCommands[0].action).toHaveBeenCalledTimes(1);
     expect(onClose).toHaveBeenCalledTimes(1);

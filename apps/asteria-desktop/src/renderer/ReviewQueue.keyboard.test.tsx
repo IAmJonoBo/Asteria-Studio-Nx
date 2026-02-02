@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { ReviewQueueScreen } from "./screens/ReviewQueueScreen";
 
 describe("ReviewQueueScreen - Keyboard Navigation", () => {
+  type AsteriaApi = { ipc: Record<string, unknown> };
   it("shows queue header and pages", () => {
     render(<ReviewQueueScreen />);
 
@@ -37,25 +38,27 @@ describe("ReviewQueueScreen - Keyboard Navigation", () => {
   });
 
   it("renders empty state when queue is empty", async () => {
-    const previousAsteria = window.asteria;
+    const windowRef = globalThis as typeof globalThis & { asteria?: AsteriaApi };
+    const previousAsteria = windowRef.asteria;
     const fetchQueue = vi.fn().mockResolvedValue({
       runId: "run-empty",
       projectId: "proj",
       generatedAt: "2026-01-01",
       items: [],
     });
-    (window as typeof window & { asteria?: unknown }).asteria = {
+    windowRef.asteria = {
       ipc: { "asteria:fetch-review-queue": fetchQueue },
-    } as unknown as typeof window.asteria;
+    } as AsteriaApi;
 
     render(<ReviewQueueScreen runId="run-empty" />);
     expect(await screen.findByText(/no pages need review/i)).toBeInTheDocument();
 
-    window.asteria = previousAsteria;
+    windowRef.asteria = previousAsteria;
   });
 
   it("shows submit error when review submission fails", async () => {
-    const previousAsteria = window.asteria;
+    const windowRef = globalThis as typeof globalThis & { asteria?: AsteriaApi };
+    const previousAsteria = windowRef.asteria;
     const fetchQueue = vi.fn().mockResolvedValue({
       runId: "run-1",
       projectId: "proj",
@@ -72,12 +75,12 @@ describe("ReviewQueueScreen - Keyboard Navigation", () => {
       ],
     });
     const submitReview = vi.fn().mockRejectedValue(new Error("Network down"));
-    (window as typeof window & { asteria?: unknown }).asteria = {
+    windowRef.asteria = {
       ipc: {
         "asteria:fetch-review-queue": fetchQueue,
         "asteria:submit-review": submitReview,
       },
-    } as unknown as typeof window.asteria;
+    } as AsteriaApi;
 
     const user = userEvent.setup();
     render(<ReviewQueueScreen runId="run-1" />);
@@ -90,7 +93,7 @@ describe("ReviewQueueScreen - Keyboard Navigation", () => {
 
     expect(await screen.findByRole("alert")).toHaveTextContent(/network down/i);
 
-    window.asteria = previousAsteria;
+    windowRef.asteria = previousAsteria;
   });
 
   it("uses worker sorting and resize observer when available", async () => {
@@ -98,11 +101,9 @@ describe("ReviewQueueScreen - Keyboard Navigation", () => {
     const originalResizeObserver = globalThis.ResizeObserver;
 
     class MockWorker {
-      onmessage: ((event: MessageEvent<{ pages: unknown[] }>) => void) | null = null;
+      onmessage: ((event: { data: { pages?: unknown[] } }) => void) | null = null;
       postMessage = vi.fn((message: { pages?: unknown[] }) => {
-        this.onmessage?.({ data: { pages: message.pages ?? [] } } as MessageEvent<{
-          pages: unknown[];
-        }>);
+        this.onmessage?.({ data: { pages: message.pages ?? [] } });
       });
       terminate = vi.fn();
     }
@@ -115,11 +116,11 @@ describe("ReviewQueueScreen - Keyboard Navigation", () => {
       observe() {
         this.callback();
       }
-      disconnect() {}
+      disconnect = vi.fn();
     }
 
-    globalThis.Worker = MockWorker as unknown as typeof Worker;
-    globalThis.ResizeObserver = MockResizeObserver as unknown as typeof ResizeObserver;
+    globalThis.Worker = MockWorker as unknown as typeof globalThis.Worker;
+    globalThis.ResizeObserver = MockResizeObserver as unknown as typeof globalThis.ResizeObserver;
 
     render(<ReviewQueueScreen />);
     const headings = await screen.findAllByText(/review queue/i);
@@ -134,10 +135,10 @@ describe("ReviewQueueScreen - Keyboard Navigation", () => {
     render(<ReviewQueueScreen runId="test-run" />);
 
     const submits = screen.getAllByRole("button", { name: /submit review/i });
-    expect(submits.some((button) => (button as HTMLButtonElement).disabled)).toBe(true);
+    expect(submits.some((button) => button.hasAttribute("disabled"))).toBe(true);
 
     await user.keyboard("a");
-    expect(submits.some((button) => !(button as HTMLButtonElement).disabled)).toBe(true);
+    expect(submits.some((button) => !button.hasAttribute("disabled"))).toBe(true);
   });
 
   it("shows page list and details panel", () => {

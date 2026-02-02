@@ -18,6 +18,17 @@ const buildMockNormalization = (page: PageData) => {
   const isResidual = id.includes("residual");
   const isDoubleColumn = id.includes("double");
 
+  let maskCoverage = 0.9;
+  if (isBlank) {
+    maskCoverage = 0.05;
+  } else if (isVeryLowMask) {
+    maskCoverage = 0.25;
+  } else if (isLowMask) {
+    maskCoverage = 0.4;
+  } else if (isDoubleColumn) {
+    maskCoverage = 0.65;
+  }
+
   return {
     pageId: page.id,
     normalizedPath: "/tmp/normalized.png",
@@ -35,15 +46,7 @@ const buildMockNormalization = (page: PageData) => {
     stats: {
       backgroundMean: 240,
       backgroundStd: isNoise ? 40 : 5,
-      maskCoverage: isBlank
-        ? 0.05
-        : isVeryLowMask
-          ? 0.25
-          : isLowMask
-            ? 0.4
-            : isDoubleColumn
-              ? 0.65
-              : 0.9,
+      maskCoverage,
       skewConfidence: isLowSkew ? 0.2 : 0.8,
       shadowScore: isShadow ? 40 : 0,
     },

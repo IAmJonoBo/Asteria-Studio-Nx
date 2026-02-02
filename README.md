@@ -39,7 +39,7 @@ graph LR
 
 ## Project Structure
 
-```
+```text
 asteria-studio/
 ├── apps/asteria-desktop/          # Electron desktop application
 │   ├── src/

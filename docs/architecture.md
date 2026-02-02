@@ -119,18 +119,18 @@ sequenceDiagram
 
 ### Planned Stages (Future)
 
-2. **Preprocess**: Denoise, contrast-normalize, binarize hint layers; estimate orientation
-3. **Deskew**: Hough/phase-correlation to detect angle; rotate to upright
-4. **Dewarp**: Page contour detection + UNet-based surface estimation; warp correction
-5. **Layout Detection**: Detect page bounds, text blocks, titles, ornaments, folios; compute confidence scores
-6. **Shading Correct**: Estimate low-frequency illumination field and correct spine shadow
-7. **QA**: Produce overlays, thumbnails, and metrics for reviewer queue
+1. **Preprocess**: Denoise, contrast-normalize, binarize hint layers; estimate orientation
+2. **Deskew**: Hough/phase-correlation to detect angle; rotate to upright
+3. **Dewarp**: Page contour detection + UNet-based surface estimation; warp correction
+4. **Layout Detection**: Detect page bounds, text blocks, titles, ornaments, folios; compute confidence scores
+5. **Shading Correct**: Estimate low-frequency illumination field and correct spine shadow
+6. **QA**: Produce overlays, thumbnails, and metrics for reviewer queue
 
 ## Projects & Storage
 
 Current filesystem layout:
 
-```
+```text
 projects/{projectId}/
 ├── input/
 │   └── raw/                    # Original source files (read-only copies)
@@ -373,7 +373,7 @@ graph LR
 
 ### Performance Metrics (Latest Run)
 
-```
+```text
 Total Pages:     783
 Sampled:         50 (for book priors)
 Processed:       300 (test subset)

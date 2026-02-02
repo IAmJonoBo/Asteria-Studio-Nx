@@ -5,23 +5,24 @@ import type { Theme } from "../theme/tokens";
  * Theme hook with system preference detection and persistence
  */
 export function useTheme(): [Theme, (theme: Theme) => void] {
-  const [theme, setThemeState] = useState<Theme>(() => {
-    const stored = localStorage.getItem("asteria-theme");
+  const [theme, setTheme] = useState<Theme>(() => {
+    const stored = globalThis.localStorage?.getItem("asteria-theme") ?? null;
     if (stored === "light" || stored === "dark") return stored;
 
-    return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+    return globalThis.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light";
   });
 
   useEffect(() => {
-    document.documentElement.setAttribute("data-theme", theme);
-    localStorage.setItem("asteria-theme", theme);
+    document.documentElement.dataset.theme = theme;
+    globalThis.localStorage?.setItem("asteria-theme", theme);
   }, [theme]);
 
   useEffect(() => {
-    const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
-    const handler = (e: MediaQueryListEvent): void => {
-      if (!localStorage.getItem("asteria-theme")) {
-        setThemeState(e.matches ? "dark" : "light");
+    const mediaQuery = globalThis.matchMedia?.("(prefers-color-scheme: dark)");
+    if (!mediaQuery) return;
+    const handler = (e: { matches: boolean }): void => {
+      if (!globalThis.localStorage?.getItem("asteria-theme")) {
+        setTheme(e.matches ? "dark" : "light");
       }
     };
 
@@ -29,5 +30,5 @@ export function useTheme(): [Theme, (theme: Theme) => void] {
     return () => mediaQuery.removeEventListener("change", handler);
   }, []);
 
-  return [theme, setThemeState];
+  return [theme, setTheme];
 }

@@ -15,35 +15,36 @@ function ThemeProbe(): JSX.Element {
 }
 
 describe("useTheme", () => {
-  const originalMatchMedia = window.matchMedia;
+  const originalMatchMedia = globalThis.matchMedia;
 
   beforeEach(() => {
-    localStorage.clear();
+    globalThis.localStorage?.clear();
   });
 
   afterEach(() => {
-    window.matchMedia = originalMatchMedia;
+    globalThis.matchMedia = originalMatchMedia;
     cleanup();
   });
 
   it("uses stored theme when present", () => {
-    localStorage.setItem("asteria-theme", "dark");
+    globalThis.localStorage?.setItem("asteria-theme", "dark");
     render(<ThemeProbe />);
 
     expect(screen.getByTestId("theme-value")).toHaveTextContent("dark");
-    expect(document.documentElement.getAttribute("data-theme")).toBe("dark");
+    expect(document.documentElement.dataset.theme).toBe("dark");
   });
 
   it("uses system preference when no stored theme", async () => {
-    let mediaListener: ((event: MediaQueryListEvent) => void) | null = null;
-    window.matchMedia = vi.fn().mockImplementation((query: string) => ({
+    type MediaEvent = { matches: boolean };
+    let mediaListener: ((event: MediaEvent) => void) | null = null;
+    globalThis.matchMedia = vi.fn().mockImplementation((query: string) => ({
       matches: query.includes("dark"),
       media: query,
       onchange: null,
       addListener: vi.fn(),
       removeListener: vi.fn(),
-      addEventListener: (_event: string, listener: EventListenerOrEventListenerObject) => {
-        mediaListener = listener as (event: MediaQueryListEvent) => void;
+      addEventListener: (_event: string, listener: (event: MediaEvent) => void) => {
+        mediaListener = listener;
       },
       removeEventListener: vi.fn(),
       dispatchEvent: vi.fn(),
@@ -52,12 +53,12 @@ describe("useTheme", () => {
     render(<ThemeProbe />);
 
     expect(screen.getByTestId("theme-value")).toHaveTextContent("dark");
-    expect(document.documentElement.getAttribute("data-theme")).toBe("dark");
+    expect(document.documentElement.dataset.theme).toBe("dark");
 
-    localStorage.removeItem("asteria-theme");
-    const listener = mediaListener as ((event: MediaQueryListEvent) => void) | null;
+    globalThis.localStorage?.removeItem("asteria-theme");
+    const listener = mediaListener as ((event: MediaEvent) => void) | null;
     if (listener) {
-      listener({ matches: false } as MediaQueryListEvent);
+      listener({ matches: false });
     }
 
     await waitFor(() => {
@@ -71,7 +72,7 @@ describe("useTheme", () => {
 
     await user.click(screen.getAllByRole("button", { name: /toggle/i })[0]);
 
-    expect(localStorage.getItem("asteria-theme")).toBe("dark");
-    expect(document.documentElement.getAttribute("data-theme")).toBe("dark");
+    expect(globalThis.localStorage?.getItem("asteria-theme")).toBe("dark");
+    expect(document.documentElement.dataset.theme).toBe("dark");
   });
 });

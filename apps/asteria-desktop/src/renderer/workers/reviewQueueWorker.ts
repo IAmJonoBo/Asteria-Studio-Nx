@@ -15,9 +15,14 @@ type WorkerResponse = {
   pages: ReviewPage[];
 };
 
-self.onmessage = (event: MessageEvent<WorkerRequest>) => {
+const workerScope = globalThis as unknown as {
+  onmessage: ((event: { data: WorkerRequest }) => void) | null;
+  postMessage: (message: WorkerResponse) => void;
+};
+
+workerScope.onmessage = (event) => {
   const pages = event.data.pages ?? [];
   const sorted = [...pages].sort((a, b) => a.confidence - b.confidence);
   const response: WorkerResponse = { pages: sorted };
-  self.postMessage(response);
+  workerScope.postMessage(response);
 };

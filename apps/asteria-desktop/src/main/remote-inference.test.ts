@@ -12,7 +12,7 @@ const createTempImage = async (): Promise<string> => {
 };
 
 describe("requestRemoteLayout", () => {
-  const originalFetch = global.fetch;
+  const originalFetch = globalThis.fetch;
   const originalEndpoint = process.env.ASTERIA_REMOTE_LAYOUT_ENDPOINT;
   const originalToken = process.env.ASTERIA_REMOTE_LAYOUT_TOKEN;
   const originalTimeout = process.env.ASTERIA_REMOTE_LAYOUT_TIMEOUT_MS;
@@ -27,24 +27,26 @@ describe("requestRemoteLayout", () => {
     process.env.ASTERIA_REMOTE_LAYOUT_ENDPOINT = originalEndpoint;
     process.env.ASTERIA_REMOTE_LAYOUT_TOKEN = originalToken;
     process.env.ASTERIA_REMOTE_LAYOUT_TIMEOUT_MS = originalTimeout;
-    global.fetch = originalFetch;
+    globalThis.fetch = originalFetch;
     vi.restoreAllMocks();
   });
 
   it("returns null when endpoint responds with error", async () => {
-    global.fetch = vi.fn().mockResolvedValue({ ok: false }) as unknown as typeof fetch;
+    globalThis.fetch = vi
+      .fn()
+      .mockResolvedValue({ ok: false }) as unknown as typeof globalThis.fetch;
     const imagePath = await createTempImage();
     const result = await requestRemoteLayout("page-001", imagePath, 1000, 1200);
     expect(result).toBeNull();
   });
 
   it("maps remote elements to layout elements", async () => {
-    global.fetch = vi.fn().mockResolvedValue({
+    globalThis.fetch = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({
         elements: [{ id: "remote-1", type: "title", bbox: [10, 10, 100, 60], confidence: 0.9 }],
       }),
-    }) as unknown as typeof fetch;
+    }) as unknown as typeof globalThis.fetch;
 
     const imagePath = await createTempImage();
     const result = await requestRemoteLayout("page-002", imagePath, 800, 1000);

@@ -38,7 +38,7 @@ graph LR
 
 ## Project Structure
 
-```
+```text
 src/
 ├── main/                      # Node main process
 │   ├── main.ts                # App entry, window creation, IPC registration

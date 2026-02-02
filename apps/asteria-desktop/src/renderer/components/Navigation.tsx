@@ -21,7 +21,7 @@ const navItems: Array<{
   { id: "settings", label: "Settings", icon: "⚙️", shortcut: "6" },
 ];
 
-export function Navigation({ active, onNavigate }: NavigationProps): JSX.Element {
+export function Navigation({ active, onNavigate }: Readonly<NavigationProps>): JSX.Element {
   return (
     <nav className="app-nav" role="navigation" aria-label="Main navigation">
       <div

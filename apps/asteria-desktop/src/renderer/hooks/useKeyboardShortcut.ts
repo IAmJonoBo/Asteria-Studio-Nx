@@ -11,6 +11,15 @@ export interface KeyboardShortcut {
   disabled?: boolean;
 }
 
+type KeyEvent = {
+  key: string;
+  ctrlKey: boolean;
+  metaKey: boolean;
+  shiftKey: boolean;
+  altKey: boolean;
+  preventDefault: () => void;
+};
+
 /**
  * Register keyboard shortcuts with proper cleanup
  * Supports Ctrl/Cmd modifier normalization for cross-platform
@@ -24,17 +33,18 @@ export function useKeyboardShortcut(shortcut: KeyboardShortcut): void {
   useEffect(() => {
     if (shortcut.disabled) return;
 
-    const handler = (e: KeyboardEvent): void => {
+    const handler = (e: KeyEvent): void => {
       const current = shortcutRef.current;
       if (current.disabled) return;
 
-      const isMac = navigator.platform.toUpperCase().includes("MAC");
+      const userAgent = globalThis.navigator?.userAgent ?? "";
+      const isMac = userAgent.toUpperCase().includes("MAC");
       const modKey = isMac ? e.metaKey : e.ctrlKey;
 
       const keyMatch = e.key.toLowerCase() === current.key.toLowerCase();
-      const ctrlMatch = current.ctrlKey !== undefined ? modKey === current.ctrlKey : true;
-      const shiftMatch = current.shiftKey !== undefined ? e.shiftKey === current.shiftKey : true;
-      const altMatch = current.altKey !== undefined ? e.altKey === current.altKey : true;
+      const ctrlMatch = current.ctrlKey === undefined || modKey === current.ctrlKey;
+      const shiftMatch = current.shiftKey === undefined || e.shiftKey === current.shiftKey;
+      const altMatch = current.altKey === undefined || e.altKey === current.altKey;
 
       if (keyMatch && ctrlMatch && shiftMatch && altMatch) {
         e.preventDefault();
@@ -42,8 +52,14 @@ export function useKeyboardShortcut(shortcut: KeyboardShortcut): void {
       }
     };
 
-    window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
+    type EventTargetLike = {
+      addEventListener?: (type: string, listener: (event: KeyEvent) => void) => void;
+      removeEventListener?: (type: string, listener: (event: KeyEvent) => void) => void;
+    };
+    const target = globalThis as EventTargetLike;
+    if (!target.addEventListener) return;
+    target.addEventListener("keydown", handler);
+    return () => target.removeEventListener?.("keydown", handler);
   }, [shortcut.disabled]);
 }
 

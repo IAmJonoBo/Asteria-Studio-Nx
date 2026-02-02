@@ -111,18 +111,18 @@ pub struct DeskewEstimate {
 
 #[napi(object)]
 pub struct BaselineMetricsResult {
-    #[allow(non_snake_case)]
-    pub lineConsistency: f64,
-    #[allow(non_snake_case)]
-    pub textLineCount: u32,
+    #[napi(js_name = "lineConsistency")]
+    pub line_consistency: f64,
+    #[napi(js_name = "textLineCount")]
+    pub text_line_count: u32,
 }
 
 #[napi(object)]
 pub struct ColumnMetricsResult {
-    #[allow(non_snake_case)]
-    pub columnCount: u32,
-    #[allow(non_snake_case)]
-    pub columnSeparation: f64,
+    #[napi(js_name = "columnCount")]
+    pub column_count: u32,
+    #[napi(js_name = "columnSeparation")]
+    pub column_separation: f64,
 }
 
 #[napi(object)]
@@ -193,10 +193,9 @@ pub fn estimate_skew_angle_js(data: Buffer, width: u32, height: u32) -> DeskewEs
     let mut den = 0f64;
     let start = (best_bucket as i32 - window).max(0) as usize;
     let end = (best_bucket as i32 + window).min(180) as usize;
-    for i in start..=end {
-        let w = histogram[i];
-        num += (i as f64 - 90.0) * w;
-        den += w;
+    for (idx, w) in histogram.iter().enumerate().take(end + 1).skip(start) {
+        num += (idx as f64 - 90.0) * w;
+        den += *w;
     }
     let angle = if den > 0.0 { num / den } else { 0.0 };
     let confidence = (best_val / ((width * height) as f64 * 4.0)).min(1.0);
@@ -210,18 +209,18 @@ pub fn baseline_metrics_js(data: Buffer, width: u32, height: u32) -> BaselineMet
     let bytes = data.as_ref();
     if width == 0 || height == 0 || bytes.len() < width * height {
         return BaselineMetricsResult {
-            lineConsistency: 0.0,
-            textLineCount: 0,
+            line_consistency: 0.0,
+            text_line_count: 0,
         };
     }
     let mut row_sums = vec![0f64; height];
-    for y in 0..height {
+    for (y, row_sum) in row_sums.iter_mut().enumerate() {
         let offset = y * width;
         let mut sum = 0f64;
         for x in 0..width {
             sum += 255f64 - bytes[offset + x] as f64;
         }
-        row_sums[y] = sum;
+        *row_sum = sum;
     }
     let mean = row_sums.iter().sum::<f64>() / (row_sums.len().max(1) as f64);
     let variance = row_sums
@@ -238,13 +237,14 @@ pub fn baseline_metrics_js(data: Buffer, width: u32, height: u32) -> BaselineMet
     let threshold = mean + std * 0.6;
     let mut line_count = 0u32;
     for y in 1..row_sums.len().saturating_sub(1) {
-        if row_sums[y] > threshold && row_sums[y] > row_sums[y - 1] && row_sums[y] > row_sums[y + 1] {
+        if row_sums[y] > threshold && row_sums[y] > row_sums[y - 1] && row_sums[y] > row_sums[y + 1]
+        {
             line_count += 1;
         }
     }
     BaselineMetricsResult {
-        lineConsistency: line_consistency,
-        textLineCount: line_count,
+        line_consistency,
+        text_line_count: line_count,
     }
 }
 
@@ -255,8 +255,8 @@ pub fn column_metrics_js(data: Buffer, width: u32, height: u32) -> ColumnMetrics
     let bytes = data.as_ref();
     if width == 0 || height == 0 || bytes.len() < width * height {
         return ColumnMetricsResult {
-            columnCount: 0,
-            columnSeparation: 0.0,
+            column_count: 0,
+            column_separation: 0.0,
         };
     }
     let mut col_sums = vec![0f64; width];
@@ -288,8 +288,8 @@ pub fn column_metrics_js(data: Buffer, width: u32, height: u32) -> ColumnMetrics
         }
     }
     ColumnMetricsResult {
-        columnCount: column_bands.max(1),
-        columnSeparation: std,
+        column_count: column_bands.max(1),
+        column_separation: std,
     }
 }
 
@@ -311,7 +311,11 @@ fn compute_mean_std(data: &[u8]) -> (f64, f64) {
 }
 
 #[napi(js_name = "detectLayoutElements")]
-pub fn detect_layout_elements_js(data: Buffer, width: u32, height: u32) -> Vec<LayoutElementResult> {
+pub fn detect_layout_elements_js(
+    data: Buffer,
+    width: u32,
+    height: u32,
+) -> Vec<LayoutElementResult> {
     let width = width as usize;
     let height = height as usize;
     let bytes = data.as_ref();
@@ -358,63 +362,62 @@ pub fn detect_layout_elements_js(data: Buffer, width: u32, height: u32) -> Vec<L
         ]
     };
 
-    let mut elements = Vec::new();
-    elements.push(LayoutElementResult {
-        id: "page-bounds".to_string(),
-        element_type: "page_bounds".to_string(),
-        bbox: vec![0.0, 0.0, (width - 1) as f64, (height - 1) as f64],
-        confidence: 0.6,
-    });
-    elements.push(LayoutElementResult {
-        id: "text-block".to_string(),
-        element_type: "text_block".to_string(),
-        bbox: vec![x0, y0, x1, y1],
-        confidence: 0.55,
-    });
-    elements.push(LayoutElementResult {
-        id: "title".to_string(),
-        element_type: "title".to_string(),
-        bbox: make_box(0.12, 0.02, 0.88, 0.14),
-        confidence: 0.28,
-    });
-    elements.push(LayoutElementResult {
-        id: "running-head".to_string(),
-        element_type: "running_head".to_string(),
-        bbox: make_box(0.1, 0.0, 0.9, 0.08),
-        confidence: 0.25,
-    });
-    elements.push(LayoutElementResult {
-        id: "folio".to_string(),
-        element_type: "folio".to_string(),
-        bbox: make_box(0.42, 0.9, 0.58, 0.98),
-        confidence: 0.22,
-    });
-    elements.push(LayoutElementResult {
-        id: "ornament".to_string(),
-        element_type: "ornament".to_string(),
-        bbox: make_box(0.42, 0.18, 0.58, 0.24),
-        confidence: 0.2,
-    });
-    elements.push(LayoutElementResult {
-        id: "drop-cap".to_string(),
-        element_type: "drop_cap".to_string(),
-        bbox: make_box(0.02, 0.18, 0.1, 0.32),
-        confidence: 0.18,
-    });
-    elements.push(LayoutElementResult {
-        id: "footnote".to_string(),
-        element_type: "footnote".to_string(),
-        bbox: make_box(0.05, 0.86, 0.95, 0.98),
-        confidence: 0.2,
-    });
-    elements.push(LayoutElementResult {
-        id: "marginalia".to_string(),
-        element_type: "marginalia".to_string(),
-        bbox: make_box(0.0, 0.25, 0.08, 0.75),
-        confidence: 0.18,
-    });
-
-    elements
+    vec![
+        LayoutElementResult {
+            id: "page-bounds".to_string(),
+            element_type: "page_bounds".to_string(),
+            bbox: vec![0.0, 0.0, (width - 1) as f64, (height - 1) as f64],
+            confidence: 0.6,
+        },
+        LayoutElementResult {
+            id: "text-block".to_string(),
+            element_type: "text_block".to_string(),
+            bbox: vec![x0, y0, x1, y1],
+            confidence: 0.55,
+        },
+        LayoutElementResult {
+            id: "title".to_string(),
+            element_type: "title".to_string(),
+            bbox: make_box(0.12, 0.02, 0.88, 0.14),
+            confidence: 0.28,
+        },
+        LayoutElementResult {
+            id: "running-head".to_string(),
+            element_type: "running_head".to_string(),
+            bbox: make_box(0.1, 0.0, 0.9, 0.08),
+            confidence: 0.25,
+        },
+        LayoutElementResult {
+            id: "folio".to_string(),
+            element_type: "folio".to_string(),
+            bbox: make_box(0.42, 0.9, 0.58, 0.98),
+            confidence: 0.22,
+        },
+        LayoutElementResult {
+            id: "ornament".to_string(),
+            element_type: "ornament".to_string(),
+            bbox: make_box(0.42, 0.18, 0.58, 0.24),
+            confidence: 0.2,
+        },
+        LayoutElementResult {
+            id: "drop-cap".to_string(),
+            element_type: "drop_cap".to_string(),
+            bbox: make_box(0.02, 0.18, 0.1, 0.32),
+            confidence: 0.18,
+        },
+        LayoutElementResult {
+            id: "footnote".to_string(),
+            element_type: "footnote".to_string(),
+            bbox: make_box(0.05, 0.86, 0.95, 0.98),
+            confidence: 0.2,
+        },
+        LayoutElementResult {
+            id: "marginalia".to_string(),
+            element_type: "marginalia".to_string(),
+            bbox: make_box(0.0, 0.25, 0.08, 0.75),
+            confidence: 0.18,
+        },
+    ]
 }
 
 /// Compute a 9x8 dHash from a downsampled 9x8 grayscale image.

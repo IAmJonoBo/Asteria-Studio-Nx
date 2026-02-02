@@ -16,6 +16,12 @@ interface ReviewQueueScreenProps {
   runId?: string;
 }
 
+type ReviewWorker = {
+  postMessage: (message: { pages?: ReviewPage[] }) => void;
+  terminate: () => void;
+  onmessage: ((event: { data?: { pages?: ReviewPage[] } }) => void) | null;
+};
+
 const mapReviewQueue = (queue: ReviewQueue): ReviewPage[] => {
   return queue.items.map((item) => {
     const issues = item.qualityGate?.reasons ?? [];
@@ -32,7 +38,24 @@ const mapReviewQueue = (queue: ReviewQueue): ReviewPage[] => {
   });
 };
 
-export function ReviewQueueScreen({ runId }: ReviewQueueScreenProps): JSX.Element {
+const FALLBACK_PAGES: ReviewPage[] = [
+  {
+    id: "page-001",
+    filename: "page-001.jpg",
+    reason: "Low crop confidence",
+    confidence: 0.45,
+    issues: ["Crop box uncertain", "Shadow detected on spine"],
+  },
+  {
+    id: "page-042",
+    filename: "page-042.jpg",
+    reason: "High skew angle",
+    confidence: 0.52,
+    issues: ["Skew angle 4.2°", "Baseline inconsistency"],
+  },
+];
+
+export function ReviewQueueScreen({ runId }: Readonly<ReviewQueueScreenProps>): JSX.Element {
   const [pages, setPages] = useState<ReviewPage[]>([]);
   const [queuePages, setQueuePages] = useState<ReviewPage[]>([]);
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -40,44 +63,30 @@ export function ReviewQueueScreen({ runId }: ReviewQueueScreenProps): JSX.Elemen
   const [decisions, setDecisions] = useState<Map<string, "accept" | "flag" | "reject">>(new Map());
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
-  const listRef = useRef<HTMLDivElement>(null);
+  const listRef = useRef<globalThis.HTMLDivElement | null>(null);
   const [scrollTop, setScrollTop] = useState(0);
   const [viewportHeight, setViewportHeight] = useState(0);
-  const workerRef = useRef<Worker | null>(null);
+  const workerRef = useRef<ReviewWorker | null>(null);
 
   const ITEM_HEIGHT = 86;
   const OVERSCAN = 6;
 
-  const fallbackPages: ReviewPage[] = [
-    {
-      id: "page-001",
-      filename: "page-001.jpg",
-      reason: "Low crop confidence",
-      confidence: 0.45,
-      issues: ["Crop box uncertain", "Shadow detected on spine"],
-    },
-    {
-      id: "page-042",
-      filename: "page-042.jpg",
-      reason: "High skew angle",
-      confidence: 0.52,
-      issues: ["Skew angle 4.2°", "Baseline inconsistency"],
-    },
-  ];
-
   useEffect(() => {
     let cancelled = false;
     const loadQueue = async (): Promise<void> => {
-      if (!runId || typeof window === "undefined" || !window.asteria?.ipc) {
-        if (!cancelled) setPages(fallbackPages);
+      const windowRef: typeof globalThis & {
+        asteria?: { ipc?: { [key: string]: (runId: string) => Promise<ReviewQueue> } };
+      } = globalThis;
+      if (!runId || !windowRef.asteria?.ipc) {
+        if (!cancelled) setPages(FALLBACK_PAGES);
         return;
       }
       try {
-        const queue = await window.asteria.ipc["asteria:fetch-review-queue"](runId);
+        const queue = await windowRef.asteria.ipc["asteria:fetch-review-queue"](runId);
         if (cancelled) return;
         setPages(mapReviewQueue(queue));
       } catch {
-        if (!cancelled) setPages(fallbackPages);
+        if (!cancelled) setPages(FALLBACK_PAGES);
       }
     };
     loadQueue();
@@ -87,22 +96,38 @@ export function ReviewQueueScreen({ runId }: ReviewQueueScreenProps): JSX.Elemen
   }, [runId]);
 
   useEffect(() => {
-    if (typeof Worker === "undefined") {
-      setQueuePages(pages);
+    const WorkerCtor = globalThis.Worker;
+    if (!WorkerCtor) {
       return;
     }
-    const worker = new Worker(new URL("../workers/reviewQueueWorker.ts", import.meta.url), {
+    const UrlCtor = globalThis.URL;
+    if (!UrlCtor) {
+      return;
+    }
+    const worker = new WorkerCtor(new UrlCtor("../workers/reviewQueueWorker.ts", import.meta.url), {
       type: "module",
     });
-    worker.onmessage = (event: MessageEvent<{ pages: ReviewPage[] }>) => {
-      setQueuePages(event.data.pages ?? []);
+    const reviewWorker: ReviewWorker = {
+      postMessage: (message) => worker.postMessage(message),
+      terminate: () => worker.terminate(),
+      onmessage: null,
     };
-    workerRef.current = worker;
+    worker.onmessage = (event) => {
+      setQueuePages(event.data?.pages ?? []);
+      reviewWorker.onmessage?.(event);
+    };
+    workerRef.current = reviewWorker;
     return () => {
-      worker.terminate();
+      reviewWorker.terminate();
       workerRef.current = null;
     };
   }, []);
+
+  useEffect(() => {
+    if (!workerRef.current) {
+      setQueuePages(pages);
+    }
+  }, [pages]);
 
   useEffect(() => {
     if (!workerRef.current) {
@@ -125,11 +150,12 @@ export function ReviewQueueScreen({ runId }: ReviewQueueScreenProps): JSX.Elemen
   useEffect(() => {
     const container = listRef.current;
     if (!container) return;
-    if (typeof ResizeObserver === "undefined") {
+    const ResizeObserverCtor = globalThis.ResizeObserver;
+    if (!ResizeObserverCtor) {
       setViewportHeight(container.clientHeight);
       return;
     }
-    const resizeObserver = new ResizeObserver(() => {
+    const resizeObserver = new ResizeObserverCtor(() => {
       setViewportHeight(container.clientHeight);
     });
     resizeObserver.observe(container);
@@ -150,6 +176,16 @@ export function ReviewQueueScreen({ runId }: ReviewQueueScreenProps): JSX.Elemen
   }, [selectedIndex]);
 
   const currentPage = queuePages[selectedIndex];
+  const getDecisionBadgeClass = (decisionValue: "accept" | "flag" | "reject"): string => {
+    if (decisionValue === "accept") return "badge-success";
+    if (decisionValue === "flag") return "badge-warning";
+    return "badge-error";
+  };
+  const getConfidenceColor = (confidence: number): string => {
+    if (confidence < 0.5) return "var(--color-error)";
+    if (confidence < 0.7) return "var(--color-warning)";
+    return "var(--color-success)";
+  };
 
   const handleAccept = (): void => {
     if (currentPage) {
@@ -187,16 +223,18 @@ export function ReviewQueueScreen({ runId }: ReviewQueueScreenProps): JSX.Elemen
   };
 
   const handleSubmitReview = async (): Promise<void> => {
-    if (!runId || !window?.asteria?.ipc || decisions.size === 0) return;
+    const windowRef: typeof globalThis & {
+      asteria?: { ipc?: { [key: string]: (runId: string, payload: unknown) => Promise<unknown> } };
+    } = globalThis;
+    if (!runId || !windowRef.asteria?.ipc || decisions.size === 0) return;
     setIsSubmitting(true);
     setSubmitError(null);
     try {
       const payload = Array.from(decisions.entries()).map(([pageId, decisionValue]) => ({
         pageId,
-        decision:
-          decisionValue === "flag" ? ("adjust" as const) : (decisionValue as "accept" | "reject"),
+        decision: decisionValue === "flag" ? "adjust" : decisionValue,
       }));
-      await window.asteria.ipc["asteria:submit-review"](runId, payload);
+      await windowRef.asteria.ipc["asteria:submit-review"](runId, payload);
       setDecisions(new Map());
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to submit review";
@@ -297,7 +335,9 @@ export function ReviewQueueScreen({ runId }: ReviewQueueScreenProps): JSX.Elemen
         </div>
 
         <div
-          ref={listRef}
+          ref={(node) => {
+            listRef.current = node ?? null;
+          }}
           style={{ flex: 1, overflow: "auto", position: "relative" }}
           onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}
         >
@@ -336,13 +376,7 @@ export function ReviewQueueScreen({ runId }: ReviewQueueScreenProps): JSX.Elemen
                     <span style={{ fontWeight: 500, fontSize: "13px" }}>{page.filename}</span>
                     {pageDecision && (
                       <span
-                        className={`badge ${
-                          pageDecision === "accept"
-                            ? "badge-success"
-                            : pageDecision === "flag"
-                              ? "badge-warning"
-                              : "badge-error"
-                        }`}
+                        className={`badge ${getDecisionBadgeClass(pageDecision)}`}
                         style={{ fontSize: "10px" }}
                       >
                         {pageDecision}
@@ -356,12 +390,7 @@ export function ReviewQueueScreen({ runId }: ReviewQueueScreenProps): JSX.Elemen
                     <span
                       style={{
                         fontSize: "11px",
-                        color:
-                          page.confidence < 0.5
-                            ? "var(--color-error)"
-                            : page.confidence < 0.7
-                              ? "var(--color-warning)"
-                              : "var(--color-success)",
+                        color: getConfidenceColor(page.confidence),
                       }}
                     >
                       {(page.confidence * 100).toFixed(0)}% confidence
@@ -458,8 +487,11 @@ export function ReviewQueueScreen({ runId }: ReviewQueueScreenProps): JSX.Elemen
               <div style={{ marginBottom: "12px" }}>
                 <strong style={{ fontSize: "13px" }}>Issues detected:</strong>
                 <ul style={{ margin: "8px 0 0", paddingLeft: "20px", fontSize: "13px" }}>
-                  {currentPage.issues.map((issue, idx) => (
-                    <li key={idx} style={{ color: "var(--text-secondary)" }}>
+                  {currentPage.issues.map((issue) => (
+                    <li
+                      key={`${currentPage.id}-${issue}`}
+                      style={{ color: "var(--text-secondary)" }}
+                    >
                       {issue}
                     </li>
                   ))}
@@ -472,24 +504,21 @@ export function ReviewQueueScreen({ runId }: ReviewQueueScreenProps): JSX.Elemen
                   onClick={handleAccept}
                   aria-label="Accept page (A)"
                 >
-                  Accept
-                  <kbd>A</kbd>
+                  Accept <kbd>A</kbd>
                 </button>
                 <button
                   className={`btn ${decision === "flag" ? "btn-primary" : "btn-secondary"}`}
                   onClick={handleFlag}
                   aria-label="Flag for later review (F)"
                 >
-                  Flag
-                  <kbd>F</kbd>
+                  Flag <kbd>F</kbd>
                 </button>
                 <button
                   className={`btn ${decision === "reject" ? "btn-primary" : "btn-secondary"}`}
                   onClick={handleReject}
                   aria-label="Reject page (R)"
                 >
-                  Reject
-                  <kbd>R</kbd>
+                  Reject <kbd>R</kbd>
                 </button>
                 <div style={{ flex: 1 }} />
                 {decision && (
@@ -498,8 +527,7 @@ export function ReviewQueueScreen({ runId }: ReviewQueueScreenProps): JSX.Elemen
                     onClick={handleUndo}
                     aria-label="Undo decision (U)"
                   >
-                    Undo
-                    <kbd>U</kbd>
+                    Undo <kbd>U</kbd>
                   </button>
                 )}
                 <span style={{ fontSize: "12px", color: "var(--text-tertiary)" }}>

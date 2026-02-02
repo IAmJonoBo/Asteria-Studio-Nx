@@ -10,7 +10,7 @@ Tokens are defined in `src/renderer/theme/tokens.ts` and applied via CSS custom 
 
 ### Spacing Scale (4px base grid)
 
-```
+```text
 xs:  4px   - Icon-to-label gaps, tight padding
 sm:  8px   - Compact component padding, small gaps
 md:  12px  - Default component padding
@@ -37,7 +37,7 @@ gap: var(--spacing-sm); /* 8px */
 
 **Font sizes**:
 
-```
+```text
 xs:   11px  - Labels, badges, keyboard shortcuts
 sm:   12px  - Secondary text, captions
 base: 14px  - Body text, UI controls
@@ -49,7 +49,7 @@ xl:   18px  - Subsection headings
 
 **Font weights**:
 
-```
+```text
 normal:   400  - Body text
 medium:   500  - UI controls, emphasis
 semibold: 600  - Headings, active states
@@ -58,7 +58,7 @@ bold:     700  - Strong emphasis
 
 **Line heights**:
 
-```
+```text
 tight:   1.25  - Headings, compact UI
 normal:  1.5   - Body text (default)
 relaxed: 1.75  - Long-form content
@@ -86,7 +86,7 @@ relaxed: 1.75  - Long-form content
 
 **Overlay colors** (for review annotations):
 
-```
+```text
 Page bounds:     #3b82f6 (blue)
 Content box:     #10b981 (green)
 Text blocks:     #f59e0b (amber)
@@ -98,7 +98,7 @@ Gutter:          #ef4444 (red)
 
 ### Border Radius
 
-```
+```text
 none: 0
 sm:   4px  - Input focus, tight corners
 md:   6px  - Buttons, inputs, badges (default)
@@ -129,7 +129,7 @@ slow: 300ms cubic-bezier(0.4, 0, 0.2, 1)  /* Slide-ins, complex */
 
 ### Z-Index Layers
 
-```
+```text
 base:     0     - Default stacking
 dropdown: 1000  - Dropdowns, selects
 sticky:   1100  - Sticky headers

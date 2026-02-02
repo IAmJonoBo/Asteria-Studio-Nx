@@ -20,10 +20,10 @@ export function CommandPalette({
   isOpen,
   onClose,
   commands,
-}: CommandPaletteProps): JSX.Element | null {
+}: Readonly<CommandPaletteProps>): JSX.Element | null {
   const [query, setQuery] = useState("");
   const [selectedIndex, setSelectedIndex] = useState(0);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<globalThis.HTMLInputElement | null>(null);
 
   const filtered = commands.filter(
     (cmd) =>
@@ -37,10 +37,15 @@ export function CommandPalette({
     }
   }, [isOpen]);
 
+  const activeIndex =
+    filtered.length === 0 ? 0 : Math.min(Math.max(selectedIndex, 0), filtered.length - 1);
+
   useKeyboardShortcut({
     key: "ArrowDown",
     handler: () => {
-      if (isOpen) setSelectedIndex((i) => Math.min(i + 1, filtered.length - 1));
+      if (isOpen && filtered.length > 0) {
+        setSelectedIndex((i) => Math.min(i + 1, filtered.length - 1));
+      }
     },
     description: "Move down in command palette",
     disabled: !isOpen,
@@ -58,8 +63,8 @@ export function CommandPalette({
   useKeyboardShortcut({
     key: "Enter",
     handler: () => {
-      if (isOpen && filtered[selectedIndex]) {
-        filtered[selectedIndex].action();
+      if (isOpen && filtered[activeIndex]) {
+        filtered[activeIndex].action();
         onClose();
       }
     },
@@ -77,22 +82,38 @@ export function CommandPalette({
   if (!isOpen) return null;
 
   return (
-    <div
+    <dialog
       style={{
         position: "fixed",
         inset: 0,
-        background: "rgba(0, 0, 0, 0.5)",
+        background: "transparent",
         display: "flex",
         alignItems: "flex-start",
         justifyContent: "center",
         paddingTop: "15vh",
         zIndex: 1300,
+        border: "none",
+        width: "100%",
+        height: "100%",
       }}
-      onClick={onClose}
-      role="dialog"
+      open
       aria-modal="true"
       aria-label="Command palette"
     >
+      <button
+        type="button"
+        aria-label="Close command palette"
+        onClick={onClose}
+        style={{
+          position: "absolute",
+          inset: 0,
+          border: "none",
+          background: "rgba(0, 0, 0, 0.5)",
+          padding: 0,
+          margin: 0,
+          cursor: "pointer",
+        }}
+      />
       <div
         style={{
           background: "var(--bg-primary)",
@@ -104,8 +125,8 @@ export function CommandPalette({
           display: "flex",
           flexDirection: "column",
           boxShadow: "var(--shadow-xl)",
+          position: "relative",
         }}
-        onClick={(e) => e.stopPropagation()}
       >
         <div style={{ padding: "16px", borderBottom: "1px solid var(--border)" }}>
           <input
@@ -132,53 +153,59 @@ export function CommandPalette({
               </p>
             </div>
           ) : (
-            <div role="listbox" aria-label="Available commands">
+            <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
               {filtered.map((cmd, index) => (
-                <button
-                  key={cmd.id}
-                  role="option"
-                  aria-selected={index === selectedIndex}
-                  onClick={() => {
-                    cmd.action();
-                    onClose();
-                  }}
-                  style={{
-                    width: "100%",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                    padding: "12px 16px",
-                    border: "none",
-                    background: index === selectedIndex ? "var(--bg-surface-hover)" : "transparent",
-                    color: "var(--text-primary)",
-                    cursor: "pointer",
-                    textAlign: "left",
-                    transition: "background 150ms",
-                  }}
-                >
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontWeight: 500 }}>{cmd.label}</div>
-                    <div style={{ fontSize: "12px", color: "var(--text-secondary)" }}>
-                      {cmd.category}
+                <li key={cmd.id}>
+                  <button
+                    id={cmd.id}
+                    type="button"
+                    aria-current={index === activeIndex ? "true" : undefined}
+                    onMouseEnter={() => setSelectedIndex(index)}
+                    onClick={() => {
+                      cmd.action();
+                      onClose();
+                    }}
+                    style={{
+                      width: "100%",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      padding: "12px 16px",
+                      border: "none",
+                      background: index === activeIndex ? "var(--bg-surface-hover)" : "transparent",
+                      color: "var(--text-primary)",
+                      cursor: "pointer",
+                      textAlign: "left",
+                      transition: "background 150ms, box-shadow 150ms",
+                      boxShadow: index === activeIndex ? "0 0 0 2px var(--border)" : "none",
+                    }}
+                  >
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontWeight: index === activeIndex ? 600 : 500 }}>
+                        {cmd.label}
+                      </div>
+                      <div style={{ fontSize: "12px", color: "var(--text-secondary)" }}>
+                        {cmd.category}
+                      </div>
                     </div>
-                  </div>
-                  {cmd.shortcut && (
-                    <kbd
-                      style={{
-                        padding: "4px 8px",
-                        fontSize: "11px",
-                        background: "var(--bg-surface)",
-                        border: "1px solid var(--border)",
-                        borderRadius: "4px",
-                        color: "var(--text-tertiary)",
-                      }}
-                    >
-                      {cmd.shortcut}
-                    </kbd>
-                  )}
-                </button>
+                    {cmd.shortcut && (
+                      <kbd
+                        style={{
+                          padding: "4px 8px",
+                          fontSize: "11px",
+                          background: "var(--bg-surface)",
+                          border: "1px solid var(--border)",
+                          borderRadius: "4px",
+                          color: "var(--text-tertiary)",
+                        }}
+                      >
+                        {cmd.shortcut}
+                      </kbd>
+                    )}
+                  </button>
+                </li>
               ))}
-            </div>
+            </ul>
           )}
         </div>
 
@@ -197,6 +224,6 @@ export function CommandPalette({
           <span>Esc Close</span>
         </div>
       </div>
-    </div>
+    </dialog>
   );
 }

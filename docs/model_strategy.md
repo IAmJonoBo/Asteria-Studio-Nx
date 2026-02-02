@@ -53,7 +53,7 @@ graph TD
 
 **Objective**: Detect page rotation angle and correct to upright orientation
 
-### Methods
+### Deskew Methods
 
 ```mermaid
 flowchart LR
@@ -79,7 +79,7 @@ flowchart LR
 - **Consensus**: Multiple estimators agree within threshold
 - **Outlier Rejection**: Discard extreme angles (>15°)
 
-### Outputs
+### Deskew Outputs
 
 ```rust
 pub struct DeskewResult {
@@ -90,7 +90,7 @@ pub struct DeskewResult {
 }
 ```
 
-### Status
+### Deskew Status
 
 🎯 **Planned** — Rust implementation pending; N-API bindings scaffolded
 
@@ -98,7 +98,7 @@ pub struct DeskewResult {
 
 **Objective**: Correct page curvature from book binding or scanning artifacts
 
-### Methods
+### Dewarp Methods
 
 ```mermaid
 graph TD
@@ -135,13 +135,13 @@ graph TD
 - **Excessive Warp**: Reject if residual error > threshold
 - **Text Baseline Check**: Validate straightness after correction
 
-### Metrics
+### Dewarp Metrics
 
 - **Straightness Error**: σ of text baseline deviations
 - **Residual Warp Score**: MSE between corrected and ideal grid
 - **Processing Time**: Target <500ms per page on CPU
 
-### Outputs
+### Dewarp Outputs
 
 ```rust
 pub struct DewarpResult {
@@ -153,7 +153,7 @@ pub struct DewarpResult {
 }
 ```
 
-### Status
+### Dewarp Status
 
 🎯 **Planned** — Rust + OpenCV implementation; UNet model training pending
 
@@ -242,7 +242,7 @@ Per-element score based on:
 - **Context**: Spatial relationships (folios opposite pages, etc.)
 - **Ensemble**: Local + remote model consensus (future)
 
-### Outputs
+### Layout Detection Outputs
 
 ```rust
 pub struct LayoutElement {
@@ -261,7 +261,7 @@ pub struct LayoutDetectionResult {
 }
 ```
 
-### Status
+### Layout Detection Status
 
 🎯 **Planned** — Model selection, dataset curation, training pipeline pending
 
@@ -269,7 +269,7 @@ pub struct LayoutDetectionResult {
 
 **Objective**: Detect two-page scans and split at gutter when confidence is high
 
-### Current Implementation
+### Spread Split Implementation
 
 ✅ **Algorithm** (in [pipeline-runner.ts](../apps/asteria-desktop/src/main/pipeline-runner.ts)):
 
@@ -284,9 +284,9 @@ pub struct LayoutDetectionResult {
    - Symmetry check (left/right sides similar brightness)
 4. **Gating**: Split only if confidence > threshold (default: 0.7)
 
-### Outputs
+### Spread Split Outputs
 
-```typescript
+````typescript
 interface SpreadSplitResult {
   shouldSplit: boolean;
   confidence: number;
@@ -297,8 +297,6 @@ interface SpreadSplitResult {
   width?: number;
   height?: number;
 }
-```
-
 ### Page ID Handling
 
 When split is triggered:
@@ -307,7 +305,7 @@ When split is triggered:
 - Left page: `page-042_L.jpg` (checksum preserved)
 - Right page: `page-042_R.jpg` (checksum preserved)
 
-### Status
+### Spread Split Status
 
 ✅ **Implemented** — Detection logic complete; needs wiring to pipeline output stage
 
@@ -315,7 +313,7 @@ When split is triggered:
 
 **Objective**: Transform pages to consistent dimensions and DPI
 
-### Current Implementation
+### Normalization Implementation
 
 ✅ **Process** (in [normalization.ts](../apps/asteria-desktop/src/main/normalization.ts)):
 
@@ -329,18 +327,22 @@ flowchart LR
     F --> G[Generate Preview]
     G --> H[Create Overlay]
     H --> I[Normalized Output]
-```
+````
 
 1. **Input**: User-provided dimensions (mm/cm/inches) + target DPI
 2. **Compute Target**:
+
    ```typescript
    targetWidthPx = (widthMm / 25.4) * targetDPI;
    targetHeightPx = (heightMm / 25.4) * targetDPI;
    ```
+
 3. **Scale Factor**:
+
    ```typescript
    scale = min(targetWidth / inputWidth, targetHeight / inputHeight);
    ```
+
 4. **Resize**: Sharp library with Lanczos3 filter (high quality)
 5. **Crop**: Center-crop to exact target dimensions
 6. **Color Normalization**: Optional white balance, contrast (conservative defaults)
@@ -370,7 +372,7 @@ When book priors available:
 - Snap crop boundaries to align baselines across pages
 - Preserve vertical rhythm for consistent typography
 
-### Outputs
+### Normalization Outputs
 
 ```typescript
 interface NormalizationResult {
@@ -386,7 +388,7 @@ interface NormalizationResult {
 }
 ```
 
-### Status
+### Normalization Status
 
 ✅ **Implemented** — TypeScript + Sharp; Rust optimization planned for performance
 
@@ -394,7 +396,7 @@ interface NormalizationResult {
 
 **Objective**: Remove lighting artifacts, spine shadows, and uneven illumination
 
-### Methods
+### Shading Methods
 
 ```mermaid
 graph TD
@@ -425,14 +427,14 @@ graph TD
    - Revert if residual noise > threshold (±10%)
    - Route to QA queue for manual review
 
-### Metrics
+### Shading Metrics
 
 - **Shadow Intensity**: Mean darkness of detected shadow region
 - **Correction Strength**: Max change in pixel values
 - **Residual Noise**: High-pass filter variance
 - **Confidence**: Overall correction quality (0.0-1.0)
 
-### Outputs
+### Shading Correction Outputs
 
 ```rust
 pub struct ShadingCorrectionResult {
@@ -445,7 +447,7 @@ pub struct ShadingCorrectionResult {
 }
 ```
 
-### Status
+### Shading Correction Status
 
 🎯 **Planned** — Algorithm design complete; implementation in Rust pending
 
@@ -453,7 +455,7 @@ pub struct ShadingCorrectionResult {
 
 **Objective**: Derive consistent geometry from sample pages and apply to full corpus
 
-### Current Implementation
+### Book Priors Implementation
 
 ✅ **Algorithm** (in [book-priors.ts](../apps/asteria-desktop/src/main/book-priors.ts)):
 
@@ -517,7 +519,7 @@ interface BookModel {
 - Reused for later batches of same corpus
 - Versioned with config hash for reproducibility
 
-### Status
+### Book Priors Status
 
 ✅ **Implemented** — TypeScript version complete; Rust port planned for performance
 
@@ -613,7 +615,7 @@ models:
 - Else if remote < 2× local CPU → Remote
 - Else → Local CPU
 
-### Status
+### Remote vs Local Status
 
 🚧 **In Progress** — Remote layout inference scaffolded with HTTP endpoint support
 
@@ -731,7 +733,7 @@ graph LR
 
 **Storage Layout**:
 
-```
+```text
 models/
 ├── deskew/
 │   ├── v1.0.0/
@@ -817,6 +819,6 @@ models/
 - **Beta**: Early access, monthly updates
 - **Nightly**: Experimental, for developers
 
-### Status
+### Distribution Status
 
 🎯 **Planned** — Directory structure defined; update mechanism pending

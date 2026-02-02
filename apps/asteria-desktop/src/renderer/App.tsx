@@ -32,6 +32,16 @@ export function App(): JSX.Element {
     });
   });
 
+  const handleImportCorpus = (): void => {
+    // Placeholder: wire IPC for corpus import.
+  };
+  const handleStartRun = (): void => {
+    // Placeholder: wire IPC for pipeline run.
+  };
+  const handleOpenProject = (_id: string): void => {
+    // Placeholder: wire IPC to open project.
+  };
+
   const commands = [
     {
       id: "nav-projects",
@@ -85,13 +95,13 @@ export function App(): JSX.Element {
       id: "import-corpus",
       label: "Import Corpus",
       category: "Actions",
-      action: () => console.log("Import corpus"),
+      action: handleImportCorpus,
     },
     {
       id: "start-run",
       label: "Start New Run",
       category: "Actions",
-      action: () => console.log("Start run"),
+      action: handleStartRun,
     },
   ];
 
@@ -118,10 +128,7 @@ export function App(): JSX.Element {
 
         <main className="app-content">
           {activeScreen === "projects" && (
-            <ProjectsScreen
-              onImportCorpus={() => console.log("Import corpus")}
-              onOpenProject={(id) => console.log("Open project", id)}
-            />
+            <ProjectsScreen onImportCorpus={handleImportCorpus} onOpenProject={handleOpenProject} />
           )}
           {activeScreen === "runs" && <RunsScreen />}
           {activeScreen === "monitor" && <MonitorScreen />}

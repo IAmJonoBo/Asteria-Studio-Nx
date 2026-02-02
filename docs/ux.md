@@ -12,7 +12,7 @@
 
 ### Top-level Navigation
 
-```
+```text
 📁 Projects       - Corpus library management
 📊 Run History    - Past pipeline executions
 ⚡ Live Monitor   - Active run progress & control
@@ -28,7 +28,7 @@
 
 ### 1. Import → Process → Review → Export
 
-```
+```text
 Projects → Import Corpus
   ↓
 Configure target dimensions, DPI, pipeline stages
