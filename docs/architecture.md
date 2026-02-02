@@ -85,7 +85,7 @@ sequenceDiagram
     participant Priors as Book Priors
     participant Norm as Normalization
 
-    UI->>IPC: runPipeline(config)
+    UI->>IPC: startRun(config)
     IPC->>Runner: execute(config)
     Runner->>Scanner: scanCorpus(inputPath)
     Scanner-->>Runner: pages[], checksums
@@ -139,6 +139,7 @@ projects/{projectId}/
 └── work/                       # Intermediate processing artifacts (future)
 
 pipeline-results/               # Working directory (gitignored)
+├── run-index.json              # Index of known runs (paths + counts)
 └── runs/                        # Per-run artifacts
     └── {runId}/
         ├── normalized/          # Processed images at target DPI/dimensions
@@ -150,16 +151,15 @@ pipeline-results/               # Working directory (gitignored)
         ├── review-queue.json    # Review queue for that run
         ├── manifest.json        # Run-scoped manifest
         └── exports/{timestamp}/ # Export bundles (per format + report + manifest)
-run-index.json                   # Index of known runs (paths + counts)
 ```
 
 ### Run Lifecycle & Control
 
-- **Statuses**: `queued` → `running` → `paused`/`cancelled`/`error` → `success`
+- **Statuses**: `queued` → `running` → `paused` (optional) → `cancelling` → `cancelled`/`error`/`success`
 - **Pause/Resume**: pipeline stages check a pause gate between batches; resume continues from the
   current stage without restarting completed pages.
-- **Cancel**: aborts in-flight work, emits a cancelled status, and persists the manifest + report
-  snapshot for auditing.
+- **Cancel**: sets status to `cancelling`, aborts in-flight work, then persists `cancelled` in
+  report/manifest snapshots for auditing.
 
 ### Live Monitor & Progress Events
 
@@ -172,9 +172,11 @@ Each pipeline run generates a `manifest.json`:
 
 ```json
 {
-  "runId": "run-{timestamp}-{hash}",
-  "version": "0.1.0",
-  "timestamp": "2026-02-02T10:30:00Z",
+  "runId": "run-1704067200000",
+  "status": "success",
+  "exportedAt": "2026-02-02T10:30:00Z",
+  "sourceRoot": "/path/to/project",
+  "count": 783,
   "configSnapshot": {
     "resolved": {
       /* resolved pipeline config */
@@ -183,21 +185,20 @@ Each pipeline run generates a `manifest.json`:
       /* config paths + overrides */
     }
   },
-  "configHash": "sha256...",
-  "totalPages": 783,
-  "sampledPages": 50,
-  "bookModel": {
-    /* priors */
+  "determinism": {
+    "appVersion": "0.1.0",
+    "configHash": "sha256...",
+    "rustModuleVersion": "unknown",
+    "modelHashes": [],
+    "seed": "static"
   },
   "pages": [
     {
-      "id": "page-001",
-      "filename": "page-001.jpg",
+      "pageId": "page-001",
       "checksum": "sha256...",
       "dhash": "3fa82c9bd01e7a11",
-      "metrics": {
-        /* quality, dimensions */
-      }
+      "normalizedFile": "page-001.png",
+      "previews": ["page-001-source.png", "page-001-normalized.png"]
     }
   ]
 }
@@ -261,8 +262,8 @@ Each pipeline run generates a `manifest.json`:
 // Preload (bridge)
 contextBridge.exposeInMainWorld("asteria", {
   ipc: {
-    scanCorpus: (path: string) => ipcRenderer.invoke("asteria:scanCorpus", path),
-    runPipeline: (config: PipelineRunConfig) => ipcRenderer.invoke("asteria:runPipeline", config),
+    scanCorpus: (path: string) => ipcRenderer.invoke("asteria:scan-corpus", path),
+    startRun: (config: PipelineRunConfig) => ipcRenderer.invoke("asteria:start-run", config),
     // ... other channels
   },
 });
@@ -271,7 +272,7 @@ contextBridge.exposeInMainWorld("asteria", {
 const result = await window.asteria.ipc.scanCorpus("/path/to/project");
 
 // Main (handlers)
-ipcMain.handle("asteria:scanCorpus", async (event, path: string) => {
+ipcMain.handle("asteria:scan-corpus", async (event, path: string) => {
   // Validate input
   // Execute scanner
   // Return typed result
@@ -291,10 +292,12 @@ ipcMain.handle("asteria:scanCorpus", async (event, path: string) => {
 - `asteria:analyze-corpus` — Compute target dimensions and metrics
 - `asteria:start-run` — Execute full normalization pipeline and persist artifacts
 - `asteria:fetch-review-queue` — Load review queue JSON for a run
+- `asteria:fetch-page` — Resolve page metadata from the run sidecar
+- `asteria:fetch-sidecar` — Load sidecar JSON for a run/page
 - `asteria:submit-review` — Persist review decisions
 - `asteria:apply-override` — Persist per-page overrides
-- `asteria:export-run` — Return normalized output directory
-- `asteria:cancel-run` — Abort running job (planned)
+- `asteria:export-run` — Export bundle directory for the run (per format)
+- `asteria:cancel-run` — Abort running job
 
 ### Node ⇔ Rust (Planned)
 

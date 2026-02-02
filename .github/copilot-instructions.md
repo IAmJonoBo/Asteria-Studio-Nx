@@ -26,9 +26,10 @@
 ## Project-specific conventions
 
 - IPC channels are prefixed with asteria: and typed via IpcChannels; validate inputs on both preload and main before invoking work.
-- The pipeline runner writes artifacts to pipeline-results/ and expects project inputs under projects/{projectId}/input/raw/.
+- The pipeline runner writes artifacts under `pipeline-results/runs/{runId}` only; never read/write global `pipeline-results/normalized` or `pipeline-results/sidecars`.
 - Normalization is in TypeScript (apps/asteria-desktop/src/main/normalization.ts) and is currently the source of truth for metrics, previews, and QA signals.
 - The Rust core is optional at runtime; load defensively via getPipelineCoreNative() and keep a JS fallback path.
+- Any changes to CV/QA thresholds, crop/split/shadow logic, or review-queue reasons must update the golden corpus and pass `pnpm golden:test`.
 
 ## UX & accessibility standards
 

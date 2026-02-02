@@ -384,14 +384,17 @@ graph LR
 📁 mind-myth-and-magick/
 ├─ 📂 input/raw/
 │  └─ 🖼️ Pages/ (783 files)
-├─ 📂 output/normalized/
-│  ├─ manifest.json
-│  └─ 🖼️ Pages/ (783 files)
 └─ 📂 pipeline-results/
-   ├─ normalized/
-   ├─ previews/
-   ├─ overlays/
-   └─ sidecars/
+   ├─ run-index.json
+   └─ runs/
+      └─ run-1704067200000/
+         ├─ normalized/
+         ├─ previews/
+         ├─ overlays/
+         ├─ sidecars/
+         ├─ report.json
+         ├─ review-queue.json
+         └─ manifest.json
 ```
 
 **Features**:
