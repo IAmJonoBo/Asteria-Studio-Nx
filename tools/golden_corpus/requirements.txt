@@ -3,4 +3,4 @@ Pillow==11.0.0
 opencv-python-headless==4.10.0.84
 albumentations==1.4.24
 imagehash==4.3.2
-pydantic==2.10.2
+pydantic==2.12.5
