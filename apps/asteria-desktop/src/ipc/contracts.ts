@@ -117,6 +117,33 @@ export interface ReviewQueue {
   items: ReviewItem[];
 }
 
+export interface ProjectSummary {
+  id: string;
+  name: string;
+  path: string;
+  inputPath: string;
+  configPath?: string;
+  pageCount?: number;
+  lastRun?: string;
+  status?: "idle" | "processing" | "completed" | "error";
+}
+
+export interface ImportCorpusRequest {
+  inputPath: string;
+  name?: string;
+}
+
+export interface RunSummary {
+  runId: string;
+  projectId: string;
+  generatedAt: string;
+  reviewCount: number;
+  status?: "queued" | "running" | "paused" | "cancelled" | "error" | "success";
+  startedAt?: string;
+  updatedAt?: string;
+  reportPath?: string;
+}
+
 export interface PageLayoutElement {
   id: string;
   type:
@@ -188,10 +215,20 @@ export interface PipelineRunConfig {
 
 export interface PipelineRunResult {
   runId: string;
-  status: "success" | "error" | "cancelled";
+  status: "success" | "error" | "cancelled" | "running" | "paused";
   pagesProcessed: number;
   errors: Array<{ pageId: string; message: string }>;
   metrics: Record<string, unknown>;
+}
+
+export interface RunProgressEvent {
+  runId: string;
+  projectId: string;
+  stage: string;
+  processed: number;
+  total: number;
+  throughput?: number;
+  timestamp: string;
 }
 
 export interface PageBoundsEstimate {
@@ -221,17 +258,155 @@ export interface ScanCorpusOptions {
   includeChecksums?: boolean;
 }
 
+export interface PipelineConfig {
+  version: string;
+  project: {
+    name: string | null;
+    target_dimensions: { width: number; height: number; unit: "mm" | "cm" | "in" };
+    dpi: number;
+    bleed_mm: number;
+    trim_mm: number;
+    color_profile: string;
+    storage: "local" | "remote";
+  };
+  models: {
+    execution_mode: "auto" | "local" | "remote";
+    endpoints: {
+      remote_url: string | null;
+      remote_layout_endpoint: string | null;
+      remote_layout_token_env: string;
+      remote_layout_timeout_ms: number;
+    };
+    ocr: { engine: string; languages: string[] };
+    detector: { name: string; version: string };
+    dewarp: { name: string; version: string };
+  };
+  steps: {
+    ingest: { enabled: boolean; checksum: string };
+    preprocess: {
+      enabled: boolean;
+      denoise: boolean;
+      contrast_enhance: boolean;
+      binarize_for_hints: boolean;
+    };
+    deskew: { enabled: boolean; max_angle: number; quality_threshold: number };
+    dewarp: { enabled: boolean; quality_threshold: number };
+    layout_detect: { enabled: boolean; confidence_threshold: number; nms_iou: number };
+    spread_split: {
+      enabled: boolean;
+      confidence_threshold: number;
+      gutter_min_width_px: number;
+      gutter_max_width_px: number;
+    };
+    normalize: {
+      enabled: boolean;
+      snap_to_grid: boolean;
+      preserve_aspect: boolean;
+      bleed_mm: number;
+      trim_mm: number;
+    };
+    shading_correct: {
+      enabled: boolean;
+      max_residual_increase: number;
+      max_highlight_shift: number;
+      confidence_floor: number;
+      spine_shadow_min_width_px: number;
+      spine_shadow_max_width_px: number;
+    };
+    book_priors: {
+      enabled: boolean;
+      sample_pages: number;
+      max_trim_drift_px: number;
+      max_content_drift_px: number;
+      min_confidence: number;
+    };
+    ornament_hash: { enabled: boolean; min_confidence: number };
+    baseline_grid: { enabled: boolean; confidence_floor: number };
+    qa: {
+      enabled: boolean;
+      route_low_confidence: boolean;
+      confidence_floor: number;
+      warp_score_ceiling: number;
+      mask_coverage_min: number;
+      mask_coverage_drop_ratio: number;
+      skew_confidence_min: number;
+      shadow_score_max: number;
+      background_std_max: number;
+      shading_residual_max: number;
+      shading_confidence_min: number;
+      baseline_residual_max: number;
+      baseline_consistency_min: number;
+      baseline_skew_confidence_min: number;
+      baseline_noise_std_max: number;
+      book_model_min_coverage: number;
+      book_model_min_confidence: number;
+      semantic_thresholds: Record<LayoutProfile, number>;
+    };
+  };
+  export: {
+    formats: string[];
+    include_pdf: boolean;
+    include_json_sidecars: boolean;
+    naming: string;
+  };
+  logging: { level: string; per_page_logs: boolean; keep_logs: boolean };
+}
+
+type PipelineStepOverrides = {
+  [K in keyof PipelineConfig["steps"]]?: Partial<PipelineConfig["steps"][K]>;
+};
+
+export type PipelineConfigOverrides = Omit<Partial<PipelineConfig>, "project" | "steps"> & {
+  project?: Partial<PipelineConfig["project"]>;
+  steps?: PipelineStepOverrides;
+};
+
+export interface PipelineConfigSources {
+  configPath: string;
+  loadedFromFile: boolean;
+  overrides?: PipelineConfigOverrides;
+  envOverrides?: PipelineConfigOverrides;
+  projectConfigPath?: string;
+  projectOverrides?: PipelineConfigOverrides;
+}
+
+export interface PipelineConfigSnapshot {
+  baseConfig: PipelineConfig;
+  resolvedConfig: PipelineConfig;
+  sources: PipelineConfigSources;
+}
+
+export interface RunConfigSnapshot {
+  resolvedConfig: PipelineConfig;
+  sources: PipelineConfigSources;
+}
+
 export interface IpcChannels {
   "asteria:start-run": (_config: PipelineRunConfig) => Promise<PipelineRunResult>;
   "asteria:cancel-run": (_runId: string) => Promise<void>;
-  "asteria:fetch-page": (_pageId: string) => Promise<PageData>;
+  "asteria:pause-run": (_runId: string) => Promise<void>;
+  "asteria:resume-run": (_runId: string) => Promise<void>;
+  "asteria:fetch-page": (_runId: string, _pageId: string) => Promise<PageData>;
+  "asteria:fetch-sidecar": (_runId: string, _pageId: string) => Promise<PageLayoutSidecar | null>;
   "asteria:apply-override": (_pageId: string, _overrides: Record<string, unknown>) => Promise<void>;
-  "asteria:export-run": (_runId: string, _format: "png" | "tiff" | "pdf") => Promise<string>;
+  "asteria:export-run": (
+    _runId: string,
+    _formats: Array<"png" | "tiff" | "pdf">
+  ) => Promise<string>;
   "asteria:analyze-corpus": (_config: PipelineRunConfig) => Promise<CorpusSummary>;
   "asteria:scan-corpus": (
     _rootPath: string,
     _options?: ScanCorpusOptions
   ) => Promise<PipelineRunConfig>;
+  "asteria:list-projects": () => Promise<ProjectSummary[]>;
+  "asteria:import-corpus": (_request: ImportCorpusRequest) => Promise<ProjectSummary>;
+  "asteria:list-runs": () => Promise<RunSummary[]>;
+  "asteria:get-pipeline-config": (_projectId?: string) => Promise<PipelineConfigSnapshot>;
+  "asteria:save-project-config": (
+    _projectId: string,
+    _overrides: PipelineConfigOverrides
+  ) => Promise<void>;
+  "asteria:get-run-config": (_runId: string) => Promise<RunConfigSnapshot | null>;
   "asteria:fetch-review-queue": (_runId: string) => Promise<ReviewQueue>;
   "asteria:submit-review": (_runId: string, _decisions: ReviewDecision[]) => Promise<void>;
 }

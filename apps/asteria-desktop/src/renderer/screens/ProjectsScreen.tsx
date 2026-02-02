@@ -1,39 +1,49 @@
 import type { JSX } from "react";
-import { useState } from "react";
-
-interface Project {
-  id: string;
-  name: string;
-  path: string;
-  pageCount: number;
-  lastRun?: string;
-  status: "idle" | "processing" | "completed" | "error";
-}
+import type { ProjectSummary } from "../../ipc/contracts";
 
 interface ProjectsScreenProps {
   onImportCorpus: () => void;
   onOpenProject: (projectId: string) => void;
-  initialProjects?: Project[];
+  onStartRun: (project: ProjectSummary) => void;
+  projects?: ProjectSummary[];
+  isLoading?: boolean;
+  error?: string | null;
 }
 
 export function ProjectsScreen({
   onImportCorpus,
   onOpenProject,
-  initialProjects,
+  onStartRun,
+  projects = [],
+  isLoading = false,
+  error = null,
 }: Readonly<ProjectsScreenProps>): JSX.Element {
-  // Mock data - will be replaced with IPC calls
-  const [projects] = useState<Project[]>(
-    initialProjects ?? [
-      {
-        id: "mind-myth-magick",
-        name: "Mind, Myth and Magick",
-        path: "projects/mind-myth-and-magick",
-        pageCount: 783,
-        lastRun: "2024-01-15T10:30:00Z",
-        status: "completed",
-      },
-    ]
-  );
+  if (isLoading) {
+    return (
+      <div className="empty-state">
+        <div className="empty-state-icon" aria-hidden="true">
+          ⏳
+        </div>
+        <h2 className="empty-state-title">Loading projects…</h2>
+        <p className="empty-state-description">Fetching available corpora.</p>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="empty-state">
+        <div className="empty-state-icon" aria-hidden="true">
+          ⚠️
+        </div>
+        <h2 className="empty-state-title">Projects unavailable</h2>
+        <p className="empty-state-description">{error}</p>
+        <button className="btn btn-primary btn-lg" onClick={onImportCorpus}>
+          Import Corpus
+        </button>
+      </div>
+    );
+  }
 
   if (projects.length === 0) {
     return (
@@ -94,31 +104,23 @@ export function ProjectsScreen({
 
       <div style={{ display: "grid", gap: "16px" }}>
         {projects.map((project) => (
-          <div key={project.id} className="card" style={{ cursor: "pointer" }}>
-            <button
-              type="button"
+          <div key={project.id} className="card">
+            <div
               style={{
                 display: "flex",
                 alignItems: "flex-start",
                 justifyContent: "space-between",
                 gap: "16px",
-                width: "100%",
-                border: "none",
-                background: "transparent",
-                textAlign: "left",
-                padding: 0,
-                cursor: "pointer",
               }}
-              onClick={() => onOpenProject(project.id)}
             >
               <div style={{ flex: 1 }}>
                 <h3 className="card-title">{project.name}</h3>
                 <p style={{ margin: "0 0 8px", fontSize: "12px", color: "var(--text-secondary)" }}>
-                  {project.path}
+                  {project.inputPath}
                 </p>
                 <div style={{ display: "flex", gap: "12px", fontSize: "13px" }}>
                   <span>
-                    <strong>{project.pageCount.toLocaleString()}</strong> pages
+                    <strong>{project.pageCount?.toLocaleString() ?? "—"}</strong> pages
                   </span>
                   {project.lastRun && (
                     <span style={{ color: "var(--text-secondary)" }}>
@@ -142,11 +144,19 @@ export function ProjectsScreen({
                   <span className="badge badge-info">Processing</span>
                 )}
                 {project.status === "error" && <span className="badge badge-error">Error</span>}
-                <span className="btn btn-secondary btn-sm" aria-hidden="true">
-                  Open →
-                </span>
+                <div style={{ display: "flex", gap: "8px" }}>
+                  <button
+                    className="btn btn-secondary btn-sm"
+                    onClick={() => onOpenProject(project.id)}
+                  >
+                    Open →
+                  </button>
+                  <button className="btn btn-primary btn-sm" onClick={() => onStartRun(project)}>
+                    Start Run
+                  </button>
+                </div>
               </div>
-            </button>
+            </div>
           </div>
         ))}
       </div>

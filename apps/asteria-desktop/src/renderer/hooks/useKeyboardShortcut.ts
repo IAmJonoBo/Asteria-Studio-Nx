@@ -66,8 +66,45 @@ export function useKeyboardShortcut(shortcut: KeyboardShortcut): void {
 }
 
 export function useKeyboardShortcuts(shortcuts: KeyboardShortcut[]): void {
-  shortcuts.forEach((shortcut): void => {
-    // eslint-disable-next-line react-hooks/rules-of-hooks
-    useKeyboardShortcut(shortcut);
-  });
+  const shortcutsRef = useRef(shortcuts);
+  useEffect(() => {
+    shortcutsRef.current = shortcuts;
+  }, [shortcuts]);
+
+  useEffect(() => {
+    const handler = (e: KeyEvent): void => {
+      const activeShortcuts = shortcutsRef.current;
+      if (!Array.isArray(activeShortcuts)) return;
+
+      const userAgent = globalThis.navigator?.userAgent ?? "";
+      const isMac = userAgent.toUpperCase().includes("MAC");
+      const modKey = isMac ? e.metaKey : e.ctrlKey;
+
+      for (const current of activeShortcuts) {
+        if (current.disabled) continue;
+
+        const keyMatch = e.key.toLowerCase() === current.key.toLowerCase();
+        const ctrlMatch = current.ctrlKey === undefined || modKey === current.ctrlKey;
+        const shiftMatch = current.shiftKey === undefined || e.shiftKey === current.shiftKey;
+        const altMatch = current.altKey === undefined || e.altKey === current.altKey;
+
+        if (keyMatch && ctrlMatch && shiftMatch && altMatch) {
+          e.preventDefault();
+          current.handler();
+          break;
+        }
+      }
+    };
+
+    type EventTargetLike = {
+      addEventListener?: (type: string, listener: (event: KeyEvent) => void) => void;
+      removeEventListener?: (type: string, listener: (event: KeyEvent) => void) => void;
+    };
+    const target = globalThis as EventTargetLike;
+    if (!target.addEventListener) return;
+    target.addEventListener("keydown", handler);
+    return (): void => {
+      target.removeEventListener?.("keydown", handler);
+    };
+  }, []);
 }

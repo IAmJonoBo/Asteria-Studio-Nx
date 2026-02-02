@@ -8,6 +8,7 @@
 import { runPipeline, evaluateResults } from "../src/main/pipeline-runner.ts";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { getRunDir } from "../src/main/run-paths.ts";
 
 async function main(): Promise<void> {
   const projectRoot =
@@ -92,7 +93,8 @@ async function main(): Promise<void> {
     console.log("=".repeat(80));
 
     // Save full evaluation report
-    const reportPath = path.join(outputDir, `evaluation-${result.runId}.json`);
+    const runDir = getRunDir(outputDir, result.runId);
+    const reportPath = path.join(runDir, "evaluation.json");
     await fs.writeFile(
       reportPath,
       JSON.stringify(

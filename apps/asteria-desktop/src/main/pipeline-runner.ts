@@ -15,14 +15,23 @@ import type {
   PipelineRunResult,
   PageData,
   LayoutProfile,
+  PipelineConfigSources,
   ReviewItem,
   ReviewQueue,
   PageLayoutElement,
+  RunProgressEvent,
 } from "../ipc/contracts.ts";
 import { scanCorpus } from "../ipc/corpusScanner.ts";
 import { analyzeCorpus, computeTargetDimensionsPx } from "../ipc/corpusAnalysis.ts";
 import { deriveBookModelFromImages } from "./book-priors.ts";
 import { getPipelineCoreNative, type PipelineCoreNative } from "./pipeline-core-native.ts";
+import {
+  getRunDir,
+  getRunManifestPath,
+  getRunOverlayPath,
+  getRunReviewQueuePath,
+  getRunSidecarPath,
+} from "./run-paths.ts";
 import {
   normalizePage,
   type NormalizationResult,
@@ -30,6 +39,13 @@ import {
   type NormalizationPriors,
 } from "./normalization.ts";
 import { requestRemoteLayout } from "./remote-inference.ts";
+import {
+  loadPipelineConfig,
+  loadProjectOverrides,
+  resolvePipelineConfig,
+  type PipelineConfig,
+} from "./pipeline-config.ts";
+import { updateRunIndex, type RunIndexStatus } from "./run-index.ts";
 
 const sleep = async (ms: number): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, ms));
@@ -52,11 +68,18 @@ const getAppVersion = async (): Promise<string> => {
   return pkg?.version ?? "unknown";
 };
 
-const hashConfig = (config: PipelineRunConfig): string => {
+const hashConfig = (config: unknown): string => {
   const hash = crypto.createHash("sha256");
   hash.update(JSON.stringify(config));
   return hash.digest("hex");
 };
+
+class RunCancelledError extends Error {
+  constructor() {
+    super("Run cancelled");
+    this.name = "RunCancelledError";
+  }
+}
 
 type SpreadSplitResult = {
   shouldSplit: boolean;
@@ -148,7 +171,7 @@ const detectSpread = async (page: PageData): Promise<SpreadSplitResult> => {
 const splitSpreadPage = async (
   page: PageData,
   split: SpreadSplitResult,
-  outputDir: string
+  runDir: string
 ): Promise<PageData[] | null> => {
   if (!split.shouldSplit || split.gutterStart === undefined || split.gutterEnd === undefined) {
     return null;
@@ -165,7 +188,7 @@ const splitSpreadPage = async (
   const rightWidth = Math.max(1, width - rightStart);
   if (leftWidth < 20 || rightWidth < 20) return null;
 
-  const splitDir = path.join(outputDir, "spreads");
+  const splitDir = path.join(runDir, "spreads");
   await fs.mkdir(splitDir, { recursive: true });
 
   const leftPath = path.join(splitDir, `${page.id}_L.png`);
@@ -515,21 +538,31 @@ const deriveBookModel = async (
   };
 };
 
+type NormalizeConcurrentParams = {
+  pages: PageData[];
+  analysis: CorpusSummary;
+  outputDir: string;
+  options: NormalizationOptions;
+  concurrency: number;
+  onError: (pageId: string, message: string) => void;
+  control?: RunControl;
+  onProgress?: (processed: number, total: number) => void;
+};
+
 const normalizePagesConcurrent = async (
-  pages: PageData[],
-  analysis: CorpusSummary,
-  outputDir: string,
-  options: NormalizationOptions,
-  concurrency: number,
-  onError: (pageId: string, message: string) => void
+  params: NormalizeConcurrentParams
 ): Promise<Map<string, NormalizationResult>> => {
+  const { pages, analysis, outputDir, options, concurrency, onError, control, onProgress } = params;
   const results = new Map<string, NormalizationResult>();
   const estimateById = new Map(analysis.estimates.map((e) => [e.pageId, e]));
   const queue = pages.slice();
   const workerCount = Math.max(1, Math.min(concurrency, queue.length));
+  const total = queue.length;
+  let processed = 0;
 
   const workers = Array.from({ length: workerCount }, async () => {
     while (queue.length > 0) {
+      await waitForControl(control);
       const page = queue.shift();
       if (!page) continue;
       const estimate = estimateById.get(page.id);
@@ -544,6 +577,9 @@ const normalizePagesConcurrent = async (
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         onError(page.id, message);
+      } finally {
+        processed += 1;
+        onProgress?.(processed, total);
       }
     }
   });
@@ -590,10 +626,10 @@ const buildFallbackSummary = (config: PipelineRunConfig): CorpusSummary => {
   };
 };
 
-const cleanupNormalizedOutput = async (outputDir: string, pages: PageData[]): Promise<void> => {
-  const normalizedDir = path.join(outputDir, "normalized");
-  const previewDir = path.join(outputDir, "previews");
-  const manifestPath = path.join(normalizedDir, "manifest.json");
+const cleanupNormalizedOutput = async (runDir: string, pages: PageData[]): Promise<void> => {
+  const normalizedDir = path.join(runDir, "normalized");
+  const previewDir = path.join(runDir, "previews");
+  const manifestPath = getRunManifestPath(runDir);
 
   try {
     const existing = await fs.readFile(manifestPath, "utf-8");
@@ -648,7 +684,7 @@ const resolveProjectOutputDir = (projectRoot: string): string | null => {
 };
 
 const syncNormalizedExports = async (
-  outputDir: string,
+  runId: string,
   projectRoot: string,
   pages: PageData[],
   results: Map<string, NormalizationResult>
@@ -697,7 +733,7 @@ const syncNormalizedExports = async (
   );
 
   const manifest = {
-    runId: path.basename(outputDir),
+    runId,
     exportedAt: new Date().toISOString(),
     sourceRoot: projectRoot,
     count: results.size,
@@ -713,7 +749,8 @@ const syncNormalizedExports = async (
 
 const buildSecondPassOptions = (
   priors: NormalizationPriors,
-  bookModel?: BookModel
+  bookModel: BookModel | undefined,
+  bookPriorsConfig: PipelineConfig["steps"]["book_priors"]
 ): NormalizationOptions => ({
   priors: {
     ...priors,
@@ -726,9 +763,9 @@ const buildSecondPassOptions = (
   skewRefinement: "forced",
   bookPriors: {
     model: bookModel,
-    maxTrimDriftPx: 18,
-    maxContentDriftPx: 24,
-    minConfidence: 0.6,
+    maxTrimDriftPx: bookPriorsConfig.max_trim_drift_px,
+    maxContentDriftPx: bookPriorsConfig.max_content_drift_px,
+    minConfidence: bookPriorsConfig.min_confidence,
   },
 });
 
@@ -736,6 +773,29 @@ type QualityGateContext = {
   medianMaskCoverage?: number;
   bookModel?: BookModel;
   outputDimensionsPx?: { width: number; height: number };
+};
+
+type QualityGateThresholds = PipelineConfig["steps"]["qa"];
+
+type AbortSignalLike = {
+  aborted: boolean;
+};
+
+type RunControl = {
+  signal?: AbortSignalLike;
+  waitIfPaused?: () => Promise<void>;
+};
+
+const waitForControl = async (control?: RunControl): Promise<void> => {
+  if (control?.signal?.aborted) {
+    throw new RunCancelledError();
+  }
+  if (control?.waitIfPaused) {
+    await control.waitIfPaused();
+  }
+  if (control?.signal?.aborted) {
+    throw new RunCancelledError();
+  }
 };
 
 const intersectionRatio = (
@@ -753,20 +813,31 @@ const intersectionRatio = (
 
 const computeQualityGate = (
   norm: NormalizationResult,
-  context?: QualityGateContext
+  context: QualityGateContext | undefined,
+  thresholds: QualityGateThresholds
 ): { accepted: boolean; reasons: string[] } => {
   const reasons: string[] = [];
-  if (norm.stats.maskCoverage < 0.65) reasons.push("low-mask-coverage");
-  if (context?.medianMaskCoverage && norm.stats.maskCoverage < context.medianMaskCoverage * 0.7) {
+  if (norm.stats.maskCoverage < thresholds.mask_coverage_min) {
+    reasons.push("low-mask-coverage");
+  }
+  if (
+    context?.medianMaskCoverage &&
+    norm.stats.maskCoverage < context.medianMaskCoverage * thresholds.mask_coverage_drop_ratio
+  ) {
     reasons.push("mask-coverage-drop");
   }
-  if (norm.stats.skewConfidence < 0.35) reasons.push("low-skew-confidence");
-  if (norm.stats.shadowScore > 28) reasons.push("shadow-heavy");
-  if (norm.stats.backgroundStd > 32) reasons.push("noisy-background");
-  if (norm.shading?.residual !== undefined && norm.shading.residual > 1.12) {
+  if (norm.stats.skewConfidence < thresholds.skew_confidence_min) {
+    reasons.push("low-skew-confidence");
+  }
+  if (norm.stats.shadowScore > thresholds.shadow_score_max) reasons.push("shadow-heavy");
+  if (norm.stats.backgroundStd > thresholds.background_std_max) reasons.push("noisy-background");
+  if (
+    norm.shading?.residual !== undefined &&
+    norm.shading.residual > thresholds.shading_residual_max
+  ) {
     reasons.push("shading-residual-worse");
   }
-  if (norm.shading && norm.shading.confidence < 0.45) {
+  if (norm.shading && norm.shading.confidence < thresholds.shading_confidence_min) {
     reasons.push("low-shading-confidence");
   }
 
@@ -778,17 +849,17 @@ const computeQualityGate = (
       outputDimensions.width,
       outputDimensions.height
     );
-    const minCoverage = 0.6;
+    const minCoverage = thresholds.book_model_min_coverage;
 
     (context.bookModel.runningHeadTemplates ?? []).forEach((template) => {
-      if (template.confidence < 0.6) return;
+      if (template.confidence < thresholds.book_model_min_confidence) return;
       if (intersectionRatio(maskOut, template.bbox) < minCoverage) {
         reasons.push("book-head-missing");
       }
     });
 
     (context.bookModel.folioModel?.positionBands ?? []).forEach((band) => {
-      if (band.confidence < 0.6) return;
+      if (band.confidence < thresholds.book_model_min_confidence) return;
       const bandBox: [number, number, number, number] = [
         0,
         band.band[0],
@@ -801,7 +872,7 @@ const computeQualityGate = (
     });
 
     (context.bookModel.ornamentLibrary ?? []).forEach((ornament) => {
-      if (ornament.confidence < 0.6) return;
+      if (ornament.confidence < thresholds.book_model_min_confidence) return;
       if (intersectionRatio(maskOut, ornament.bbox) < minCoverage) {
         reasons.push("book-ornament-missing");
       }
@@ -817,7 +888,8 @@ const computeQualityGate = (
  */
 const validateBodyTextBaselines = (
   norm: NormalizationResult,
-  profile: LayoutProfile
+  profile: LayoutProfile,
+  thresholds: QualityGateThresholds
 ): { aligned: boolean; residualAngle: number; flags: string[] } => {
   const flags: string[] = [];
   let residualAngle = 0;
@@ -835,16 +907,19 @@ const validateBodyTextBaselines = (
   }
 
   // Flag pages with significant residual skew after correction
-  if (residualAngle > 0.15) {
+  if (residualAngle > thresholds.baseline_residual_max) {
     flags.push(`residual-skew-${residualAngle.toFixed(2)}deg`);
   }
 
   // Combined check: low skew confidence + high background std = potential misalignment
-  if (norm.stats.skewConfidence < 0.5 && norm.stats.backgroundStd > 20) {
+  if (
+    norm.stats.skewConfidence < thresholds.baseline_skew_confidence_min &&
+    norm.stats.backgroundStd > thresholds.baseline_noise_std_max
+  ) {
     flags.push("potential-baseline-misalignment");
   }
 
-  if ((norm.stats.baselineConsistency ?? 1) < 0.55) {
+  if ((norm.stats.baselineConsistency ?? 1) < thresholds.baseline_consistency_min) {
     flags.push("low-baseline-consistency");
   }
 
@@ -929,29 +1004,16 @@ const buildReviewQueue = (
   normalization: Map<string, NormalizationResult>,
   runId: string,
   projectId: string,
-  context?: QualityGateContext
+  context: QualityGateContext | undefined,
+  config: PipelineConfig
 ): ReviewQueue => {
   const items: ReviewItem[] = [];
+  const qaConfig = config.steps.qa;
 
   // Adaptive semantic threshold based on layout type distribution
   // Higher confidence required for uncertain layout types, lower for high-confidence detections
-  const getSemanticThreshold = (profile: LayoutProfile): number => {
-    const thresholds: Record<LayoutProfile, number> = {
-      body: 0.88, // Text pages need high confidence for confirmation
-      "chapter-opening": 0.85,
-      title: 0.75, // Titles are easier to identify
-      cover: 0.75,
-      "front-matter": 0.82,
-      "back-matter": 0.82,
-      appendix: 0.8,
-      index: 0.8,
-      illustration: 0.7, // Visual pages more flexible
-      table: 0.8,
-      blank: 0.65, // Blank pages easy to identify
-      unknown: 0.95, // Strict for unknown types
-    };
-    return thresholds[profile] ?? 0.82;
-  };
+  const getSemanticThreshold = (profile: LayoutProfile): number =>
+    qaConfig.semantic_thresholds[profile] ?? 0.82;
 
   pages.forEach((page, index) => {
     const norm = normalization.get(page.id);
@@ -959,23 +1021,26 @@ const buildReviewQueue = (
 
     const assessment = inferLayoutProfile(page, index, norm, pages.length);
     const layoutConfidence = computeLayoutConfidence(assessment, norm);
-    const qualityGate = computeQualityGate(norm, context);
+    const qualityGate = computeQualityGate(norm, context, qaConfig);
 
     // Validate baseline alignment for text pages
-    const baselineValidation = validateBodyTextBaselines(norm, assessment.profile);
+    const baselineValidation = validateBodyTextBaselines(norm, assessment.profile, qaConfig);
     if (!baselineValidation.aligned) {
       qualityGate.reasons.push(...baselineValidation.flags);
     }
 
     const spreadConfidence = page.confidenceScores.spreadSplit;
-    if (typeof spreadConfidence === "number" && spreadConfidence < 0.7) {
+    if (
+      typeof spreadConfidence === "number" &&
+      spreadConfidence < config.steps.spread_split.confidence_threshold
+    ) {
       qualityGate.reasons.push("spread-split-low-confidence");
     }
 
     // Use adaptive threshold per layout type
     const semanticThreshold = getSemanticThreshold(assessment.profile);
-    const needsSemanticConfirmation = layoutConfidence >= semanticThreshold;
-    const needsReview = !qualityGate.accepted || needsSemanticConfirmation;
+    const needsSemanticReview = layoutConfidence < semanticThreshold;
+    const needsReview = !qualityGate.accepted || needsSemanticReview;
 
     if (!needsReview) return;
 
@@ -1305,11 +1370,11 @@ const buildOverlaySvg = (
 const attachOverlays = async (
   reviewQueue: ReviewQueue,
   normalization: Map<string, NormalizationResult>,
-  outputDir: string,
+  runDir: string,
   bookModel?: BookModel,
   gutterByPageId?: Map<string, { start: number; end: number }>
 ): Promise<void> => {
-  const overlayDir = path.join(outputDir, "overlays");
+  const overlayDir = path.join(runDir, "overlays");
   await fs.mkdir(overlayDir, { recursive: true });
 
   await Promise.all(
@@ -1353,7 +1418,7 @@ const attachOverlays = async (
         }
 
         const svg = buildOverlaySvg(width, height, overlayBoxes);
-        const overlayPath = path.join(overlayDir, `${item.pageId}-overlay.png`);
+        const overlayPath = getRunOverlayPath(runDir, item.pageId);
         await sharp({
           create: { width, height, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } },
         })
@@ -1380,6 +1445,12 @@ export interface PipelineRunnerOptions {
   spreadSplitConfidence?: number;
   enableBookPriors?: boolean;
   bookPriorsSampleCount?: number;
+  pipelineConfigPath?: string;
+  pipelineConfigOverrides?: Partial<PipelineConfig>;
+  runId?: string;
+  signal?: AbortSignalLike;
+  waitIfPaused?: () => Promise<void>;
+  onProgress?: (event: RunProgressEvent) => void;
 }
 
 export interface PipelineRunnerResult {
@@ -1436,15 +1507,18 @@ const scanCorpusWithRetries = async (
 
 const applySpreadSplitIfEnabled = async (
   scanConfig: PipelineRunConfig,
-  options: PipelineRunnerOptions
+  options: PipelineRunnerOptions,
+  config: PipelineConfig,
+  runDir: string
 ): Promise<{ pages: PageData[]; gutterByPageId: Map<string, { start: number; end: number }> }> => {
   const gutterByPageId = new Map<string, { start: number; end: number }>();
-  if (!options.enableSpreadSplit) {
+  const enableSplit = options.enableSpreadSplit ?? config.steps.spread_split.enabled;
+  if (!enableSplit) {
     return { pages: scanConfig.pages, gutterByPageId };
   }
-  const splitOutputDir = options.outputDir ?? path.join(process.cwd(), "pipeline-results");
+  const splitOutputDir = runDir;
   const splitPages: PageData[] = [];
-  const threshold = options.spreadSplitConfidence ?? 0.7;
+  const threshold = options.spreadSplitConfidence ?? config.steps.spread_split.confidence_threshold;
   for (const page of scanConfig.pages) {
     const split = await detectSpread(page);
     if (split.shouldSplit && split.confidence >= threshold) {
@@ -1511,44 +1585,51 @@ const analyzeCorpusSafe = async (
   }
 };
 
-const buildBookModelIfEnabled = async (
-  configToProcess: PipelineRunConfig,
-  analysisSummary: CorpusSummary,
-  outputDir: string,
-  priors: NormalizationPriors,
-  concurrency: number,
-  options: PipelineRunnerOptions,
-  errors: Array<{ phase: string; message: string }>
-): Promise<BookModel | undefined> => {
-  const enableBookPriors = options.enableBookPriors ?? true;
-  const sampleCount = Math.min(options.bookPriorsSampleCount ?? 40, configToProcess.pages.length);
+const buildBookModelIfEnabled = async (params: {
+  configToProcess: PipelineRunConfig;
+  analysisSummary: CorpusSummary;
+  runDir: string;
+  priors: NormalizationPriors;
+  concurrency: number;
+  options: PipelineRunnerOptions;
+  bookPriorsConfig: PipelineConfig["steps"]["book_priors"];
+  errors: Array<{ phase: string; message: string }>;
+  control?: RunControl;
+}): Promise<BookModel | undefined> => {
+  await waitForControl(params.control);
+  const enableBookPriors = params.options.enableBookPriors ?? params.bookPriorsConfig.enabled;
+  const sampleCount = Math.min(
+    params.options.bookPriorsSampleCount ?? params.bookPriorsConfig.sample_pages,
+    params.configToProcess.pages.length
+  );
   if (!enableBookPriors || sampleCount <= 0) return undefined;
 
-  const samplePages = configToProcess.pages.slice(0, sampleCount);
-  const sampleDir = path.join(outputDir, "priors-sample");
+  const samplePages = params.configToProcess.pages.slice(0, sampleCount);
+  const sampleDir = path.join(params.runDir, "priors-sample");
   await fs.mkdir(sampleDir, { recursive: true });
   try {
-    const sampleResults = await normalizePagesConcurrent(
-      samplePages,
-      analysisSummary,
-      sampleDir,
-      {
-        priors,
+    const sampleResults = await normalizePagesConcurrent({
+      pages: samplePages,
+      analysis: params.analysisSummary,
+      outputDir: sampleDir,
+      options: {
+        priors: params.priors,
         generatePreviews: false,
         skewRefinement: "on",
       },
-      Math.max(1, Math.min(4, concurrency)),
-      () => {
+      concurrency: Math.max(1, Math.min(4, params.concurrency)),
+      onError: () => {
         // ignore sampling errors
-      }
-    );
+      },
+      control: params.control,
+    });
     return await deriveBookModel(
       Array.from(sampleResults.values()),
-      analysisSummary.targetDimensionsPx
+      params.analysisSummary.targetDimensionsPx
     );
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    errors.push({ phase: "book-priors", message });
+    params.errors.push({ phase: "book-priors", message });
     return undefined;
   }
 };
@@ -1556,15 +1637,16 @@ const buildBookModelIfEnabled = async (
 const buildSecondPassCandidates = (
   pages: PageData[],
   normalizationResults: Map<string, NormalizationResult>,
-  qualityContext: QualityGateContext
+  qualityContext: QualityGateContext,
+  qaConfig: QualityGateThresholds
 ): PageData[] => {
   const candidates: PageData[] = [];
   pages.forEach((page, index) => {
     const norm = normalizationResults.get(page.id);
     if (!norm) return;
     const assessment = inferLayoutProfile(page, index, norm, pages.length);
-    const qualityGate = computeQualityGate(norm, qualityContext);
-    const baselineValidation = validateBodyTextBaselines(norm, assessment.profile);
+    const qualityGate = computeQualityGate(norm, qualityContext, qaConfig);
+    const baselineValidation = validateBodyTextBaselines(norm, assessment.profile, qaConfig);
     if (!qualityGate.accepted || !baselineValidation.aligned) {
       candidates.push(page);
     }
@@ -1572,9 +1654,36 @@ const buildSecondPassCandidates = (
   return candidates;
 };
 
+const writeRunManifestSnapshot = async (params: {
+  runId: string;
+  runDir: string;
+  projectRoot: string;
+  status: RunIndexStatus;
+  configSnapshot: { resolved: PipelineConfig; sources: PipelineConfigSources };
+}): Promise<void> => {
+  const manifest = {
+    runId: params.runId,
+    status: params.status,
+    exportedAt: new Date().toISOString(),
+    sourceRoot: params.projectRoot,
+    count: 0,
+    configSnapshot: params.configSnapshot,
+    determinism: {
+      appVersion: "unknown",
+      configHash: "unknown",
+      rustModuleVersion: "unknown",
+      modelHashes: [],
+      seed: "static",
+    },
+    pages: [],
+  };
+  await fs.writeFile(getRunManifestPath(params.runDir), JSON.stringify(manifest, null, 2));
+};
+
 const savePipelineOutputs = async (params: {
   runId: string;
   outputDir: string;
+  runDir: string;
   projectRoot: string;
   projectId: string;
   scanConfig: PipelineRunConfig;
@@ -1587,9 +1696,11 @@ const savePipelineOutputs = async (params: {
   native: ReturnType<typeof getPipelineCoreNative>;
   appVersion: string;
   configHash: string;
+  configSnapshot: { resolved: PipelineConfig; sources: PipelineConfigSources };
 }): Promise<void> => {
   await fs.mkdir(params.outputDir, { recursive: true });
-  const reportPath = path.join(params.outputDir, `${params.runId}-report.json`);
+  await fs.mkdir(params.runDir, { recursive: true });
+  const reportPath = path.join(params.runDir, "report.json");
   await fs.writeFile(
     reportPath,
     JSON.stringify(
@@ -1604,6 +1715,7 @@ const savePipelineOutputs = async (params: {
         analysisSummary: params.analysisSummary,
         pipelineResult: params.pipelineResult,
         bookModel: params.bookModel,
+        configSnapshot: params.configSnapshot,
         determinism: {
           appVersion: params.appVersion,
           configHash: params.configHash,
@@ -1619,18 +1731,33 @@ const savePipelineOutputs = async (params: {
   );
   console.log(`[${params.runId}] Report saved to ${reportPath}`);
 
+  await updateRunIndex(params.outputDir, {
+    runId: params.runId,
+    projectId: params.projectId,
+    generatedAt: params.reviewQueue.generatedAt,
+    reportPath,
+    reviewQueuePath: getRunReviewQueuePath(params.runDir),
+    reviewCount: params.reviewQueue.items.length,
+    status: params.pipelineResult.status as RunIndexStatus,
+    updatedAt: new Date().toISOString(),
+  });
+
   await writeSidecars(
     params.configToProcess,
     params.analysisSummary,
     params.normalizationResults,
-    params.outputDir,
+    params.runDir,
     params.runId,
     params.native,
     params.bookModel
   );
 
-  const normalizedDir = path.join(params.outputDir, "normalized");
+  const normalizedDir = path.join(params.runDir, "normalized");
   await fs.mkdir(normalizedDir, { recursive: true });
+  const previewDir = path.join(params.runDir, "previews");
+  await fs.mkdir(previewDir, { recursive: true });
+  const overlayDir = path.join(params.runDir, "overlays");
+  await fs.mkdir(overlayDir, { recursive: true });
   const checksumById = new Map(
     params.configToProcess.pages.map((page) => [page.id, page.checksum])
   );
@@ -1643,9 +1770,11 @@ const savePipelineOutputs = async (params: {
   const dhashById = new Map(dhashEntries.map((entry) => [entry.pageId, entry.dhash]));
   const manifest = {
     runId: params.runId,
+    status: params.pipelineResult.status,
     exportedAt: new Date().toISOString(),
     sourceRoot: params.projectRoot,
     count: params.normalizationResults.size,
+    configSnapshot: params.configSnapshot,
     determinism: {
       appVersion: params.appVersion,
       configHash: params.configHash,
@@ -1664,18 +1793,222 @@ const savePipelineOutputs = async (params: {
       ].filter(Boolean),
     })),
   };
-  await fs.writeFile(path.join(normalizedDir, "manifest.json"), JSON.stringify(manifest, null, 2));
+  await fs.writeFile(getRunManifestPath(params.runDir), JSON.stringify(manifest, null, 2));
 
   await syncNormalizedExports(
-    params.outputDir,
+    params.runId,
     params.projectRoot,
     params.configToProcess.pages,
     params.normalizationResults
   );
 
-  const reviewPath = path.join(params.outputDir, `${params.runId}-review-queue.json`);
+  const reviewPath = getRunReviewQueuePath(params.runDir);
   await fs.writeFile(reviewPath, JSON.stringify(params.reviewQueue, null, 2));
   console.log(`[${params.runId}] Review queue saved to ${reviewPath}`);
+};
+
+const saveRunFailureOutputs = async (params: {
+  runId: string;
+  outputDir: string;
+  runDir: string;
+  projectRoot: string;
+  projectId: string;
+  scanConfig: PipelineRunConfig;
+  analysisSummary: CorpusSummary;
+  pipelineResult: PipelineRunResult;
+  reviewQueue: ReviewQueue;
+  normalizationResults: Map<string, NormalizationResult>;
+  configSnapshot: { resolved: PipelineConfig; sources: PipelineConfigSources };
+}): Promise<void> => {
+  await fs.mkdir(params.outputDir, { recursive: true });
+  await fs.mkdir(params.runDir, { recursive: true });
+  const reportPath = path.join(params.runDir, "report.json");
+  await fs.writeFile(
+    reportPath,
+    JSON.stringify(
+      {
+        runId: params.runId,
+        projectId: params.projectId,
+        scanConfig: {
+          pageCount: params.scanConfig.pages.length,
+          targetDpi: params.scanConfig.targetDpi,
+          targetDimensionsMm: params.scanConfig.targetDimensionsMm,
+        },
+        analysisSummary: params.analysisSummary,
+        pipelineResult: params.pipelineResult,
+        configSnapshot: params.configSnapshot,
+        determinism: {
+          appVersion: "unknown",
+          configHash: "unknown",
+          rustModuleVersion: "unknown",
+          modelHashes: [],
+          seed: "static",
+        },
+        reviewQueue: params.reviewQueue,
+      },
+      null,
+      2
+    )
+  );
+
+  const generatedAt = params.reviewQueue.generatedAt || new Date().toISOString();
+  await updateRunIndex(params.outputDir, {
+    runId: params.runId,
+    projectId: params.projectId,
+    generatedAt,
+    reportPath,
+    reviewQueuePath: getRunReviewQueuePath(params.runDir),
+    reviewCount: params.reviewQueue.items.length,
+    status: params.pipelineResult.status as RunIndexStatus,
+    updatedAt: new Date().toISOString(),
+  });
+
+  const manifest = {
+    runId: params.runId,
+    status: params.pipelineResult.status,
+    exportedAt: new Date().toISOString(),
+    sourceRoot: params.projectRoot,
+    count: params.normalizationResults.size,
+    configSnapshot: params.configSnapshot,
+    determinism: {
+      appVersion: "unknown",
+      configHash: "unknown",
+      rustModuleVersion: "unknown",
+      modelHashes: [],
+      seed: "static",
+    },
+    pages: [],
+  };
+  await fs.writeFile(getRunManifestPath(params.runDir), JSON.stringify(manifest, null, 2));
+
+  const reviewPath = getRunReviewQueuePath(params.runDir);
+  await fs.writeFile(reviewPath, JSON.stringify(params.reviewQueue, null, 2));
+};
+
+const mergeOverrides = <T extends Record<string, unknown>>(base: T, update: Partial<T>): T => {
+  const output: T = { ...base };
+  Object.entries(update).forEach(([key, value]) => {
+    if (value === undefined) return;
+    if (Array.isArray(value)) {
+      (output as Record<string, unknown>)[key] = value;
+      return;
+    }
+    if (value && typeof value === "object") {
+      const current = (output as Record<string, unknown>)[key];
+      if (current && typeof current === "object" && !Array.isArray(current)) {
+        (output as Record<string, unknown>)[key] = mergeOverrides(
+          current as Record<string, unknown>,
+          value as Partial<Record<string, unknown>>
+        );
+        return;
+      }
+    }
+    (output as Record<string, unknown>)[key] = value as unknown;
+  });
+  return output;
+};
+
+const buildDerivedOverrides = (
+  options: PipelineRunnerOptions,
+  baseConfig: PipelineConfig
+): Partial<PipelineConfig> => {
+  const derivedOverrides: Partial<PipelineConfig> = {};
+  if (options.targetDpi || options.targetDimensionsMm) {
+    derivedOverrides.project = {
+      ...baseConfig.project,
+      dpi: options.targetDpi ?? baseConfig.project.dpi,
+      target_dimensions: options.targetDimensionsMm
+        ? {
+            width: options.targetDimensionsMm.width,
+            height: options.targetDimensionsMm.height,
+            unit: "mm",
+          }
+        : baseConfig.project.target_dimensions,
+    };
+  }
+  if (options.enableSpreadSplit !== undefined || options.spreadSplitConfidence !== undefined) {
+    derivedOverrides.steps = {
+      ...baseConfig.steps,
+      ...derivedOverrides.steps,
+      spread_split: {
+        ...baseConfig.steps.spread_split,
+        enabled: options.enableSpreadSplit ?? baseConfig.steps.spread_split.enabled,
+        confidence_threshold:
+          options.spreadSplitConfidence ?? baseConfig.steps.spread_split.confidence_threshold,
+      },
+    };
+  }
+  if (options.enableBookPriors !== undefined || options.bookPriorsSampleCount !== undefined) {
+    derivedOverrides.steps = {
+      ...baseConfig.steps,
+      ...derivedOverrides.steps,
+      book_priors: {
+        ...baseConfig.steps.book_priors,
+        enabled: options.enableBookPriors ?? baseConfig.steps.book_priors.enabled,
+        sample_pages: options.bookPriorsSampleCount ?? baseConfig.steps.book_priors.sample_pages,
+      },
+    };
+  }
+  return derivedOverrides;
+};
+
+const applySecondPassCorrections = async (params: {
+  runId: string;
+  projectId: string;
+  secondPassCandidates: PageData[];
+  analysisSummary: CorpusSummary;
+  runDir: string;
+  normalizationOptions: NormalizationOptions;
+  bookModel: BookModel | undefined;
+  bookPriorsConfig: PipelineConfig["steps"]["book_priors"];
+  concurrency: number;
+  errors: Array<{ phase: string; message: string }>;
+  control?: RunControl;
+  normalizationResults: Map<string, NormalizationResult>;
+  onProgress?: (event: RunProgressEvent) => void;
+}): Promise<Map<string, NormalizationResult>> => {
+  if (params.secondPassCandidates.length === 0) {
+    return params.normalizationResults;
+  }
+  console.log(
+    `[${params.runId}] Running second-pass corrections for ${params.secondPassCandidates.length} pages...`
+  );
+  await waitForControl(params.control);
+  const secondPassStart = Date.now();
+  const secondPassOptions = buildSecondPassOptions(
+    params.normalizationOptions.priors!,
+    params.bookModel,
+    params.bookPriorsConfig
+  );
+  const secondPassResults = await normalizePagesConcurrent({
+    pages: params.secondPassCandidates,
+    analysis: params.analysisSummary,
+    outputDir: params.runDir,
+    options: secondPassOptions,
+    concurrency: Math.max(1, Math.floor(params.concurrency / 2)),
+    onError: (pageId, message) => {
+      params.errors.push({ phase: "second-pass", message: `[${pageId}] ${message}` });
+    },
+    control: params.control,
+    onProgress: (processed, total) => {
+      const elapsedSec = Math.max(0.001, (Date.now() - secondPassStart) / 1000);
+      const throughput = processed / elapsedSec;
+      params.onProgress?.({
+        runId: params.runId,
+        projectId: params.projectId,
+        stage: "second-pass",
+        processed,
+        total,
+        throughput,
+        timestamp: new Date().toISOString(),
+      });
+    },
+  });
+  secondPassResults.forEach((value, key) => {
+    params.normalizationResults.set(key, value);
+  });
+  console.log(`[${params.runId}] Second-pass corrections complete`);
+  return params.normalizationResults;
 };
 
 /**
@@ -1683,8 +2016,27 @@ const savePipelineOutputs = async (params: {
  */
 export async function runPipeline(options: PipelineRunnerOptions): Promise<PipelineRunnerResult> {
   const startTime = Date.now();
-  const runId = `run-${Date.now()}`;
+  const runId = options.runId ?? `run-${Date.now()}`;
   const errors: Array<{ phase: string; message: string }> = [];
+  const outputDir = options.outputDir ?? path.join(process.cwd(), "pipeline-results");
+  const runDir = getRunDir(outputDir, runId);
+  const control: RunControl = {
+    signal: options.signal,
+    waitIfPaused: options.waitIfPaused,
+  };
+  const emitProgress = (event: Omit<RunProgressEvent, "timestamp">): void => {
+    options.onProgress?.({ ...event, timestamp: new Date().toISOString() });
+  };
+  let scanConfig: PipelineRunConfig | null = null;
+  let analysisSummary: CorpusSummary | null = null;
+  let normalizationResults: Map<string, NormalizationResult> = new Map();
+  let reviewQueue: ReviewQueue = {
+    runId,
+    projectId: options.projectId,
+    generatedAt: new Date().toISOString(),
+    items: [],
+  };
+  let configSnapshot: { resolved: PipelineConfig; sources: PipelineConfigSources } | null = null;
 
   const native = getPipelineCoreNative();
   console.log(
@@ -1692,29 +2044,111 @@ export async function runPipeline(options: PipelineRunnerOptions): Promise<Pipel
   );
 
   try {
-    const scanConfig = await scanCorpusWithRetries(options, runId, errors);
-    const spreadSplitResult = await applySpreadSplitIfEnabled(scanConfig, options);
+    await fs.mkdir(runDir, { recursive: true });
+    emitProgress({
+      runId,
+      projectId: options.projectId,
+      stage: "starting",
+      processed: 0,
+      total: 0,
+    });
+    await waitForControl(control);
+    const {
+      config: baseConfig,
+      configPath,
+      loadedFromFile,
+    } = await loadPipelineConfig(options.pipelineConfigPath);
+    const derivedOverrides = buildDerivedOverrides(options, baseConfig);
+
+    const projectOverrides = await loadProjectOverrides(options.projectId);
+    const combinedOverrides = mergeOverrides(
+      mergeOverrides(projectOverrides.overrides ?? {}, derivedOverrides),
+      options.pipelineConfigOverrides ?? {}
+    );
+
+    const { resolvedConfig, sources } = resolvePipelineConfig(baseConfig, {
+      overrides: combinedOverrides,
+      env: process.env,
+      configPath,
+      loadedFromFile,
+      projectConfigPath: projectOverrides.configPath,
+      projectOverrides: projectOverrides.overrides,
+    });
+
+    configSnapshot = { resolved: resolvedConfig, sources };
+    const targetDimensionsMm = {
+      width: resolvedConfig.project.target_dimensions.width,
+      height: resolvedConfig.project.target_dimensions.height,
+    };
+    const optionsWithConfig: PipelineRunnerOptions = {
+      ...options,
+      targetDpi: resolvedConfig.project.dpi,
+      targetDimensionsMm,
+    };
+
+    await waitForControl(control);
+    scanConfig = await scanCorpusWithRetries(optionsWithConfig, runId, errors);
+    emitProgress({
+      runId,
+      projectId: options.projectId,
+      stage: "scan",
+      processed: scanConfig.pages.length,
+      total: scanConfig.pages.length,
+    });
+
+    const spreadSplitResult = await applySpreadSplitIfEnabled(
+      scanConfig,
+      optionsWithConfig,
+      resolvedConfig,
+      runDir
+    );
     scanConfig.pages = spreadSplitResult.pages;
 
     const configToProcess = applySampling(scanConfig, options.sampleCount, runId);
-    const analysisSummary = await analyzeCorpusSafe(configToProcess, runId, errors);
+    await waitForControl(control);
+    emitProgress({
+      runId,
+      projectId: options.projectId,
+      stage: "analysis",
+      processed: 0,
+      total: configToProcess.pages.length,
+    });
+    analysisSummary = await analyzeCorpusSafe(configToProcess, runId, errors);
+    emitProgress({
+      runId,
+      projectId: options.projectId,
+      stage: "analysis",
+      processed: configToProcess.pages.length,
+      total: configToProcess.pages.length,
+    });
 
     // Phase 3: Normalization
     console.log(`[${runId}] Running normalization pipeline...`);
-    const outputDir = options.outputDir ?? path.join(process.cwd(), "pipeline-results");
-    await cleanupNormalizedOutput(outputDir, configToProcess.pages);
+    await waitForControl(control);
+    await cleanupNormalizedOutput(runDir, configToProcess.pages);
+    await writeRunManifestSnapshot({
+      runId,
+      runDir,
+      projectRoot: options.projectRoot,
+      status: "running",
+      configSnapshot,
+    });
     const concurrency = Math.max(1, Number(process.env.ASTERIA_NORMALIZE_CONCURRENCY ?? 6));
     const priors = deriveNormalizationPriors(analysisSummary);
+    const bookPriorsConfig = resolvedConfig.steps.book_priors;
+    const qaConfig = resolvedConfig.steps.qa;
 
-    const bookModel = await buildBookModelIfEnabled(
+    const bookModel = await buildBookModelIfEnabled({
       configToProcess,
       analysisSummary,
-      outputDir,
+      runDir,
       priors,
       concurrency,
       options,
-      errors
-    );
+      bookPriorsConfig,
+      errors,
+      control,
+    });
 
     const normalizationOptions: NormalizationOptions = {
       priors,
@@ -1722,53 +2156,65 @@ export async function runPipeline(options: PipelineRunnerOptions): Promise<Pipel
       skewRefinement: "on",
       bookPriors: {
         model: bookModel,
-        maxTrimDriftPx: 18,
-        maxContentDriftPx: 24,
-        minConfidence: 0.6,
+        maxTrimDriftPx: bookPriorsConfig.max_trim_drift_px,
+        maxContentDriftPx: bookPriorsConfig.max_content_drift_px,
+        minConfidence: bookPriorsConfig.min_confidence,
       },
     };
-    const normalizationResults = await normalizePagesConcurrent(
-      configToProcess.pages,
-      analysisSummary,
-      outputDir,
-      normalizationOptions,
+    await waitForControl(control);
+    normalizationResults = await normalizePagesConcurrent({
+      pages: configToProcess.pages,
+      analysis: analysisSummary,
+      outputDir: runDir,
+      options: normalizationOptions,
       concurrency,
-      (pageId, message) => {
+      onError: (pageId, message) => {
         errors.push({ phase: "normalization", message: `[${pageId}] ${message}` });
-      }
-    );
+      },
+      control,
+      onProgress: (processed, total) => {
+        const elapsedSec = Math.max(0.001, (Date.now() - startTime) / 1000);
+        const throughput = processed / elapsedSec;
+        options.onProgress?.({
+          runId,
+          projectId: options.projectId,
+          stage: "normalize",
+          processed,
+          total,
+          throughput,
+          timestamp: new Date().toISOString(),
+        });
+      },
+    });
     console.log(`[${runId}] Normalized ${normalizationResults.size} pages`);
 
     const qualityContext: QualityGateContext = {
       bookModel,
       outputDimensionsPx: analysisSummary.targetDimensionsPx,
     };
+    await waitForControl(control);
     const secondPassCandidates = buildSecondPassCandidates(
       configToProcess.pages,
       normalizationResults,
-      qualityContext
+      qualityContext,
+      qaConfig
     );
 
-    if (secondPassCandidates.length > 0) {
-      console.log(
-        `[${runId}] Running second-pass corrections for ${secondPassCandidates.length} pages...`
-      );
-      const secondPassOptions = buildSecondPassOptions(normalizationOptions.priors!, bookModel);
-      const secondPassResults = await normalizePagesConcurrent(
-        secondPassCandidates,
-        analysisSummary,
-        outputDir,
-        secondPassOptions,
-        Math.max(1, Math.floor(concurrency / 2)),
-        (pageId, message) => {
-          errors.push({ phase: "second-pass", message: `[${pageId}] ${message}` });
-        }
-      );
-      secondPassResults.forEach((value, key) => {
-        normalizationResults.set(key, value);
-      });
-      console.log(`[${runId}] Second-pass corrections complete`);
-    }
+    normalizationResults = await applySecondPassCorrections({
+      runId,
+      projectId: options.projectId,
+      secondPassCandidates,
+      analysisSummary,
+      runDir,
+      normalizationOptions,
+      bookModel,
+      bookPriorsConfig,
+      concurrency,
+      errors,
+      control,
+      normalizationResults,
+      onProgress: options.onProgress,
+    });
 
     const normArray = Array.from(normalizationResults.values());
     const avgSkew =
@@ -1777,10 +2223,12 @@ export async function runPipeline(options: PipelineRunnerOptions): Promise<Pipel
       normArray.reduce((sum, n) => sum + n.stats.maskCoverage, 0) / Math.max(1, normArray.length);
     const shadowRate =
       normArray.filter((n) => n.shadow.present).length / Math.max(1, normArray.length);
-    const lowCoverageCount = normArray.filter((n) => n.stats.maskCoverage < 0.5).length;
+    const lowCoverageCount = normArray.filter(
+      (n) => n.stats.maskCoverage < qaConfig.mask_coverage_min
+    ).length;
 
     const medianMaskCoverage = median(normArray.map((n) => n.stats.maskCoverage));
-    const reviewQueue = buildReviewQueue(
+    reviewQueue = buildReviewQueue(
       configToProcess.pages,
       normalizationResults,
       runId,
@@ -1788,21 +2236,31 @@ export async function runPipeline(options: PipelineRunnerOptions): Promise<Pipel
       {
         ...qualityContext,
         medianMaskCoverage,
-      }
+      },
+      resolvedConfig
     );
+    emitProgress({
+      runId,
+      projectId: options.projectId,
+      stage: "review",
+      processed: reviewQueue.items.length,
+      total: reviewQueue.items.length,
+    });
+    await waitForControl(control);
     await attachOverlays(
       reviewQueue,
       normalizationResults,
-      outputDir,
+      runDir,
       bookModel,
       spreadSplitResult.gutterByPageId
     );
     const strictAcceptCount = normArray.filter(
-      (norm) => computeQualityGate(norm, { ...qualityContext, medianMaskCoverage }).accepted
+      (norm) =>
+        computeQualityGate(norm, { ...qualityContext, medianMaskCoverage }, qaConfig).accepted
     ).length;
 
     const appVersion = await getAppVersion();
-    const configHash = hashConfig(configToProcess);
+    const configHash = hashConfig(configSnapshot.resolved);
 
     const pipelineResult: PipelineRunResult = {
       runId,
@@ -1832,6 +2290,7 @@ export async function runPipeline(options: PipelineRunnerOptions): Promise<Pipel
       await savePipelineOutputs({
         runId,
         outputDir: options.outputDir,
+        runDir,
         projectRoot: options.projectRoot,
         projectId: options.projectId,
         scanConfig,
@@ -1844,8 +2303,17 @@ export async function runPipeline(options: PipelineRunnerOptions): Promise<Pipel
         native,
         appVersion,
         configHash,
+        configSnapshot: configSnapshot ?? { resolved: resolvedConfig, sources },
       });
     }
+
+    emitProgress({
+      runId,
+      projectId: options.projectId,
+      stage: "complete",
+      processed: configToProcess.pages.length,
+      total: configToProcess.pages.length,
+    });
 
     return {
       success: true,
@@ -1859,9 +2327,69 @@ export async function runPipeline(options: PipelineRunnerOptions): Promise<Pipel
       errors,
     };
   } catch (error) {
+    const isCancelled = error instanceof RunCancelledError;
     const message = error instanceof Error ? error.message : String(error);
-    errors.push({ phase: "pipeline", message });
-    console.error(`[${runId}] Pipeline failed:`, message);
+    if (isCancelled) {
+      errors.push({ phase: "pipeline", message: "Run cancelled" });
+      console.warn(`[${runId}] Pipeline cancelled by user.`);
+      emitProgress({
+        runId,
+        projectId: options.projectId,
+        stage: "cancelled",
+        processed: normalizationResults.size,
+        total: scanConfig?.pages.length ?? 0,
+      });
+    } else {
+      errors.push({ phase: "pipeline", message });
+      console.error(`[${runId}] Pipeline failed:`, message);
+      emitProgress({
+        runId,
+        projectId: options.projectId,
+        stage: "error",
+        processed: normalizationResults.size,
+        total: scanConfig?.pages.length ?? 0,
+      });
+    }
+
+    const pipelineResult: PipelineRunResult = {
+      runId,
+      status: isCancelled ? "cancelled" : "error",
+      pagesProcessed: normalizationResults.size,
+      errors: errors.map((e) => ({ pageId: e.phase, message: e.message })),
+      metrics: { durationMs: Date.now() - startTime },
+    };
+
+    if (options.outputDir && configSnapshot) {
+      await saveRunFailureOutputs({
+        runId,
+        outputDir: options.outputDir,
+        runDir,
+        projectRoot: options.projectRoot,
+        projectId: options.projectId,
+        scanConfig:
+          scanConfig ??
+          ({
+            projectId: options.projectId,
+            pages: [],
+            targetDpi: options.targetDpi ?? 300,
+            targetDimensionsMm: options.targetDimensionsMm ?? { width: 210, height: 297 },
+          } as PipelineRunConfig),
+        analysisSummary:
+          analysisSummary ??
+          ({
+            projectId: options.projectId,
+            pageCount: 0,
+            dpi: options.targetDpi ?? 300,
+            targetDimensionsMm: options.targetDimensionsMm ?? { width: 210, height: 297 },
+            targetDimensionsPx: { width: 0, height: 0 },
+            estimates: [],
+          } as CorpusSummary),
+        pipelineResult,
+        reviewQueue,
+        normalizationResults,
+        configSnapshot,
+      });
+    }
 
     return {
       success: false,
@@ -1883,13 +2411,7 @@ export async function runPipeline(options: PipelineRunnerOptions): Promise<Pipel
         targetDimensionsPx: { width: 0, height: 0 },
         estimates: [],
       },
-      pipelineResult: {
-        runId,
-        status: "error",
-        pagesProcessed: 0,
-        errors: errors.map((e) => ({ pageId: e.phase, message: e.message })),
-        metrics: { durationMs: Date.now() - startTime },
-      },
+      pipelineResult,
       errors,
     };
   }
@@ -1899,12 +2421,12 @@ const writeSidecars = async (
   config: PipelineRunConfig,
   analysis: CorpusSummary,
   normalization: Map<string, NormalizationResult>,
-  outputDir: string,
+  runDir: string,
   runId: string,
   native: PipelineCoreNative | null,
   bookModel?: BookModel
 ): Promise<void> => {
-  const sidecarDir = path.join(outputDir, "sidecars");
+  const sidecarDir = path.join(runDir, "sidecars");
   await fs.mkdir(sidecarDir, { recursive: true });
 
   const estimatesById = new Map(analysis.estimates.map((e) => [e.pageId, e]));
@@ -2009,7 +2531,7 @@ const writeSidecars = async (
         bookModel: bookModel,
       };
 
-      const outPath = path.join(sidecarDir, `${page.id}.json`);
+      const outPath = getRunSidecarPath(runDir, page.id);
       try {
         await fs.writeFile(outPath, JSON.stringify(sidecar, null, 2));
       } catch (error) {

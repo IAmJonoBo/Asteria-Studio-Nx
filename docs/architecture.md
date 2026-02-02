@@ -113,9 +113,9 @@ sequenceDiagram
    - Generate quality metrics (sharpness, contrast)
    - Create preview thumbnails (320px wide)
    - Create overlay annotations
-6. **Export**: Write normalized PNGs, previews, overlays to `pipeline-results/`; generate manifest JSON
+6. **Export**: Write normalized PNGs, previews, overlays to `pipeline-results/runs/{runId}`; generate run-scoped manifest JSON
 
-- Emit schema-compliant JSON sidecars in `pipeline-results/sidecars/`
+- Emit schema-compliant JSON sidecars per run in `pipeline-results/runs/{runId}/sidecars/`
 
 ### Planned Stages (Future)
 
@@ -132,24 +132,39 @@ Current filesystem layout:
 
 ```text
 projects/{projectId}/
+├── project.json                # Project metadata + input path
+├── pipeline.config.json        # Optional per-project overrides
 ├── input/
-│   └── raw/                    # Original source files (read-only copies)
-│       └── {BookTitle}/
-│           └── Pages/          # Individual page images (JPEG/PNG/TIFF)
-├── work/                       # Intermediate processing artifacts (future)
-└── output/
-    └── normalized/
-        ├── manifest.json       # Run metadata, config, checksums, metrics
-        └── {BookTitle}/
-            └── Pages/          # Normalized output images
+│   └── raw/                    # Optional local copy of source files
+└── work/                       # Intermediate processing artifacts (future)
 
 pipeline-results/               # Working directory (gitignored)
-├── normalized/                 # Processed images at target DPI/dimensions
-├── previews/                   # 320px width thumbnails for UI
-├── overlays/                   # Annotated visualization (crop boxes, grids)
-├── sidecars/                   # JSON layout metadata (schema-compliant)
-└── priors-sample/              # Book model from sampled pages
+└── runs/                        # Per-run artifacts
+    └── {runId}/
+        ├── normalized/          # Processed images at target DPI/dimensions
+        ├── previews/            # 320px width thumbnails for UI
+        ├── overlays/            # Annotated visualization (crop boxes, grids)
+        ├── sidecars/            # JSON layout metadata (schema-compliant)
+        ├── priors-sample/       # Book model from sampled pages
+        ├── report.json          # Run report with config snapshot + metrics
+        ├── review-queue.json    # Review queue for that run
+        ├── manifest.json        # Run-scoped manifest
+        └── exports/{timestamp}/ # Export bundles (per format + report + manifest)
+run-index.json                   # Index of known runs (paths + counts)
 ```
+
+### Run Lifecycle & Control
+
+- **Statuses**: `queued` → `running` → `paused`/`cancelled`/`error` → `success`
+- **Pause/Resume**: pipeline stages check a pause gate between batches; resume continues from the
+  current stage without restarting completed pages.
+- **Cancel**: aborts in-flight work, emits a cancelled status, and persists the manifest + report
+  snapshot for auditing.
+
+### Live Monitor & Progress Events
+
+Main process emits `asteria:run-progress` events (throttled to ~5–10Hz) to the renderer.
+Events carry stage name, processed/total counts, and throughput for the Live Monitor screen.
 
 ### Manifest Structure
 
@@ -160,8 +175,13 @@ Each pipeline run generates a `manifest.json`:
   "runId": "run-{timestamp}-{hash}",
   "version": "0.1.0",
   "timestamp": "2026-02-02T10:30:00Z",
-  "config": {
-    /* pipeline config */
+  "configSnapshot": {
+    "resolved": {
+      /* resolved pipeline config */
+    },
+    "sources": {
+      /* config paths + overrides */
+    }
   },
   "configHash": "sha256...",
   "totalPages": 783,
@@ -294,7 +314,7 @@ pub fn run_pipeline(batch_config: BatchConfig) -> Result<BatchResult>
 ### Data Artifacts
 
 **JSON Schema**: `spec/page_layout_schema.json` defines sidecar structure
-**Pipeline Config**: `spec/pipeline_config.yaml` provides defaults per project
+**Pipeline Config**: `spec/pipeline_config.yaml` provides defaults; per-project overrides live in `projects/{projectId}/pipeline.config.json` or `.yaml`
 **Manifest Format**: See Projects & Storage section above
 
 **Remote Layout Settings** (config keys):

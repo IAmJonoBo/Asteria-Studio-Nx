@@ -16,6 +16,10 @@ export default tseslint.config(
         sourceType: "module",
         project: "./tsconfig.json",
       },
+      globals: {
+        AbortController: "readonly",
+        AbortSignal: "readonly",
+      },
     },
     plugins: {
       "@typescript-eslint": tseslint.plugin,

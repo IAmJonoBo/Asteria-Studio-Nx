@@ -2,6 +2,7 @@
 /* eslint-disable no-console */
 import fs from "node:fs/promises";
 import path from "node:path";
+import { getRunDir } from "../src/main/run-paths.ts";
 
 const SUPPORTED_EXT = new Set([".jpg", ".jpeg", ".png", ".tif", ".tiff"]);
 
@@ -41,7 +42,10 @@ async function main(): Promise<void> {
   }
 
   const selected = sampleCount && sampleCount > 0 ? images.slice(0, sampleCount) : images;
-  const outDir = path.join(process.cwd(), "pipeline-results/normalized");
+  const outputDir = path.join(process.cwd(), "pipeline-results");
+  const runId = `run-${Date.now()}`;
+  const runDir = getRunDir(outputDir, runId);
+  const outDir = path.join(runDir, "normalized");
   await fs.mkdir(outDir, { recursive: true });
 
   console.log(`Exporting ${selected.length} pages to ${outDir}`);
@@ -55,6 +59,7 @@ async function main(): Promise<void> {
   );
 
   const manifest = {
+    runId,
     exportedAt: new Date().toISOString(),
     sourceRoot: resolved,
     count: selected.length,
@@ -62,7 +67,7 @@ async function main(): Promise<void> {
     note: "Pass-through export (no CV normalization applied yet)",
   };
 
-  await fs.writeFile(path.join(outDir, "manifest.json"), JSON.stringify(manifest, null, 2));
+  await fs.writeFile(path.join(runDir, "manifest.json"), JSON.stringify(manifest, null, 2));
   console.log("Export complete.");
 }
 

@@ -58,6 +58,28 @@ export const validateExportFormat = (format: "png" | "tiff" | "pdf"): void => {
   }
 };
 
+export const validateExportFormats = (formats: Array<"png" | "tiff" | "pdf">): void => {
+  if (!Array.isArray(formats) || formats.length === 0) {
+    throw new Error("Invalid export formats: expected non-empty array");
+  }
+  formats.forEach((format) => validateExportFormat(format));
+};
+
+export const validateImportCorpusRequest = (request: {
+  inputPath: string;
+  name?: string;
+}): void => {
+  if (!isPlainObject(request)) {
+    throw new Error("Invalid import request: expected object");
+  }
+  if (!isNonEmptyString(request.inputPath)) {
+    throw new Error("Invalid import request: inputPath required");
+  }
+  if (request.name !== undefined && !isNonEmptyString(request.name)) {
+    throw new Error("Invalid import request: name must be a non-empty string");
+  }
+};
+
 export const validateOverrides = (overrides: Record<string, unknown>): void => {
   if (!isPlainObject(overrides)) {
     throw new Error("Invalid overrides: expected plain object");

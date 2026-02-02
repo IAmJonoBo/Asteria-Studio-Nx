@@ -5,17 +5,57 @@ import { ReviewQueueScreen } from "./screens/ReviewQueueScreen";
 
 describe("ReviewQueueScreen - Keyboard Navigation", () => {
   type AsteriaApi = { ipc: Record<string, unknown> };
-  it("shows queue header and pages", () => {
-    render(<ReviewQueueScreen />);
+  const buildQueue = (items: Array<Record<string, unknown>>) => ({
+    runId: "run-1",
+    projectId: "proj",
+    generatedAt: "2026-01-01",
+    items,
+  });
+  const baseItems = [
+    {
+      pageId: "page-001",
+      filename: "page-001.jpg",
+      layoutProfile: "body",
+      layoutConfidence: 0.6,
+      reason: "semantic-layout",
+      qualityGate: { accepted: true, reasons: [] },
+      previews: [{ kind: "normalized", path: "/tmp/norm-1.png", width: 16, height: 16 }],
+    },
+    {
+      pageId: "page-042",
+      filename: "page-042.jpg",
+      layoutProfile: "body",
+      layoutConfidence: 0.6,
+      reason: "semantic-layout",
+      qualityGate: { accepted: true, reasons: [] },
+      previews: [{ kind: "normalized", path: "/tmp/norm-2.png", width: 16, height: 16 }],
+    },
+  ];
 
-    expect(screen.getAllByRole("heading", { name: /review queue/i }).length).toBeGreaterThan(0);
-    expect(screen.getByText(/pages need attention/i)).toBeInTheDocument();
+  it("shows queue header and pages", async () => {
+    const windowRef = globalThis as typeof globalThis & { asteria?: AsteriaApi };
+    const previousAsteria = windowRef.asteria;
+    windowRef.asteria = {
+      ipc: { "asteria:fetch-review-queue": vi.fn().mockResolvedValue(buildQueue(baseItems)) },
+    } as AsteriaApi;
+
+    render(<ReviewQueueScreen runId="run-1" />);
+
+    expect(await screen.findByText(/review queue/i)).toBeInTheDocument();
+    expect(await screen.findByText(/pages need attention/i)).toBeInTheDocument();
+
+    windowRef.asteria = previousAsteria;
   });
 
   it("supports keyboard shortcuts for triage", async () => {
     const user = userEvent.setup();
 
-    // Note: This is a simplified test. In real usage, pages would be loaded via IPC
+    const windowRef = globalThis as typeof globalThis & { asteria?: AsteriaApi };
+    const previousAsteria = windowRef.asteria;
+    windowRef.asteria = {
+      ipc: { "asteria:fetch-review-queue": vi.fn().mockResolvedValue(buildQueue(baseItems)) },
+    } as AsteriaApi;
+
     render(<ReviewQueueScreen runId="test-run" />);
 
     // Accept first page and advance
@@ -35,6 +75,13 @@ describe("ReviewQueueScreen - Keyboard Navigation", () => {
     // Toggle overlays
     await user.keyboard(" ");
     expect(screen.getAllByRole("button", { name: /show overlays/i }).length).toBeGreaterThan(0);
+
+    windowRef.asteria = previousAsteria;
+  });
+
+  it("asks to select a run when no runId is provided", () => {
+    render(<ReviewQueueScreen />);
+    expect(screen.getByText(/select a run to review/i)).toBeInTheDocument();
   });
 
   it("renders empty state when queue is empty", async () => {
@@ -59,21 +106,19 @@ describe("ReviewQueueScreen - Keyboard Navigation", () => {
   it("shows submit error when review submission fails", async () => {
     const windowRef = globalThis as typeof globalThis & { asteria?: AsteriaApi };
     const previousAsteria = windowRef.asteria;
-    const fetchQueue = vi.fn().mockResolvedValue({
-      runId: "run-1",
-      projectId: "proj",
-      generatedAt: "2026-01-01",
-      items: [
+    const fetchQueue = vi.fn().mockResolvedValue(
+      buildQueue([
         {
           pageId: "page-1",
           filename: "page-1.jpg",
+          layoutProfile: "body",
           layoutConfidence: 0.7,
           reason: "semantic-layout",
           qualityGate: { accepted: false, reasons: ["low-confidence"] },
           previews: [{ kind: "normalized", path: "/tmp/normalized.png", width: 16, height: 16 }],
         },
-      ],
-    });
+      ])
+    );
     const submitReview = vi.fn().mockRejectedValue(new Error("Network down"));
     windowRef.asteria = {
       ipc: {
@@ -85,7 +130,8 @@ describe("ReviewQueueScreen - Keyboard Navigation", () => {
     const user = userEvent.setup();
     render(<ReviewQueueScreen runId="run-1" />);
 
-    expect(await screen.findByText(/semantic layout/i)).toBeInTheDocument();
+    const semanticLayouts = await screen.findAllByText(/semantic layout/i);
+    expect(semanticLayouts.length).toBeGreaterThan(0);
     await user.keyboard("a");
 
     const submitButtons = await screen.findAllByRole("button", { name: /submit review/i });
@@ -122,9 +168,17 @@ describe("ReviewQueueScreen - Keyboard Navigation", () => {
     globalThis.Worker = MockWorker as unknown as typeof globalThis.Worker;
     globalThis.ResizeObserver = MockResizeObserver as unknown as typeof globalThis.ResizeObserver;
 
-    render(<ReviewQueueScreen />);
+    const windowRef = globalThis as typeof globalThis & { asteria?: AsteriaApi };
+    const previousAsteria = windowRef.asteria;
+    windowRef.asteria = {
+      ipc: { "asteria:fetch-review-queue": vi.fn().mockResolvedValue(buildQueue(baseItems)) },
+    } as AsteriaApi;
+
+    render(<ReviewQueueScreen runId="run-1" />);
     const headings = await screen.findAllByText(/review queue/i);
     expect(headings.length).toBeGreaterThan(0);
+
+    windowRef.asteria = previousAsteria;
 
     globalThis.Worker = originalWorker;
     globalThis.ResizeObserver = originalResizeObserver;
@@ -132,30 +186,59 @@ describe("ReviewQueueScreen - Keyboard Navigation", () => {
 
   it("enables submit when decisions exist", async () => {
     const user = userEvent.setup();
+    const windowRef = globalThis as typeof globalThis & { asteria?: AsteriaApi };
+    const previousAsteria = windowRef.asteria;
+    windowRef.asteria = {
+      ipc: { "asteria:fetch-review-queue": vi.fn().mockResolvedValue(buildQueue(baseItems)) },
+    } as AsteriaApi;
+
     render(<ReviewQueueScreen runId="test-run" />);
 
-    const submits = screen.getAllByRole("button", { name: /submit review/i });
+    await screen.findAllByText(/page-001\.jpg/i);
+    const submits = await screen.findAllByRole("button", { name: /submit review/i });
     expect(submits.some((button) => button.hasAttribute("disabled"))).toBe(true);
 
     await user.keyboard("a");
     expect(submits.some((button) => !button.hasAttribute("disabled"))).toBe(true);
+
+    windowRef.asteria = previousAsteria;
   });
 
-  it("shows page list and details panel", () => {
+  it("shows page list and details panel", async () => {
+    const windowRef = globalThis as typeof globalThis & { asteria?: AsteriaApi };
+    const previousAsteria = windowRef.asteria;
+    windowRef.asteria = {
+      ipc: { "asteria:fetch-review-queue": vi.fn().mockResolvedValue(buildQueue(baseItems)) },
+    } as AsteriaApi;
+
     render(<ReviewQueueScreen runId="test-run" />);
 
-    expect(screen.getAllByText(/page-001\.jpg/i).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/page-042\.jpg/i).length).toBeGreaterThan(0);
+    expect((await screen.findAllByText(/page-001\.jpg/i)).length).toBeGreaterThan(0);
+    expect((await screen.findAllByText(/page-042\.jpg/i)).length).toBeGreaterThan(0);
+
+    windowRef.asteria = previousAsteria;
   });
 
-  it("has accessible keyboard shortcuts displayed", () => {
+  it("has accessible keyboard shortcuts displayed", async () => {
+    const windowRef = globalThis as typeof globalThis & { asteria?: AsteriaApi };
+    const previousAsteria = windowRef.asteria;
+    windowRef.asteria = {
+      ipc: { "asteria:fetch-review-queue": vi.fn().mockResolvedValue(buildQueue(baseItems)) },
+    } as AsteriaApi;
+
     render(<ReviewQueueScreen runId="test-run" />);
 
     // Shortcuts are shown in action buttons
-    expect(screen.getAllByRole("button", { name: /accept page \(a\)/i }).length).toBeGreaterThan(0);
     expect(
-      screen.getAllByRole("button", { name: /flag for later review \(f\)/i }).length
+      (await screen.findAllByRole("button", { name: /accept page \(a\)/i })).length
     ).toBeGreaterThan(0);
-    expect(screen.getAllByRole("button", { name: /reject page \(r\)/i }).length).toBeGreaterThan(0);
+    expect(
+      (await screen.findAllByRole("button", { name: /flag for later review \(f\)/i })).length
+    ).toBeGreaterThan(0);
+    expect(
+      (await screen.findAllByRole("button", { name: /reject page \(r\)/i })).length
+    ).toBeGreaterThan(0);
+
+    windowRef.asteria = previousAsteria;
   });
 });

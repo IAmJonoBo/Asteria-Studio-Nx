@@ -3,8 +3,8 @@ version: 0.1.0
 project:
   name: null
   target_dimensions:
-    width: 210 # mm default A5 width
-    height: 297 # mm default A5 height
+    width: 210 # mm default A4 width
+    height: 297 # mm default A4 height
     unit: mm
   dpi: 400
   bleed_mm: 3
@@ -82,6 +82,32 @@ steps:
     route_low_confidence: true
     confidence_floor: 0.5
     warp_score_ceiling: 0.25
+    mask_coverage_min: 0.65
+    mask_coverage_drop_ratio: 0.7
+    skew_confidence_min: 0.35
+    shadow_score_max: 28
+    background_std_max: 32
+    shading_residual_max: 1.12
+    shading_confidence_min: 0.45
+    baseline_residual_max: 0.15
+    baseline_consistency_min: 0.55
+    baseline_skew_confidence_min: 0.5
+    baseline_noise_std_max: 20
+    book_model_min_coverage: 0.6
+    book_model_min_confidence: 0.6
+    semantic_thresholds:
+      body: 0.88
+      chapter-opening: 0.85
+      title: 0.75
+      cover: 0.75
+      front-matter: 0.82
+      back-matter: 0.82
+      appendix: 0.8
+      index: 0.8
+      illustration: 0.7
+      table: 0.8
+      blank: 0.65
+      unknown: 0.95
 export:
   formats: [png, tiff]
   include_pdf: true

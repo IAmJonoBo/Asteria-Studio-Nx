@@ -6,11 +6,18 @@ import type {
   ReviewDecision,
   ReviewQueue,
   PageData,
+  RunSummary,
+  PipelineConfigOverrides,
+  PipelineConfigSnapshot,
+  RunConfigSnapshot,
+  ProjectSummary,
+  ImportCorpusRequest,
 } from "../ipc/contracts";
 import fs from "node:fs/promises";
 import path from "node:path";
 import {
-  validateExportFormat,
+  validateExportFormats,
+  validateImportCorpusRequest,
   validateOverrides,
   validatePageId,
   validatePipelineRunConfig,
@@ -18,7 +25,37 @@ import {
 } from "../ipc/validation";
 import { analyzeCorpus } from "../ipc/corpusAnalysis";
 import { scanCorpus } from "../ipc/corpusScanner";
-import { runPipeline } from "./pipeline-runner";
+import { startRun, cancelRun, pauseRun, resumeRun } from "./run-manager";
+import { loadPipelineConfig, loadProjectOverrides, resolvePipelineConfig } from "./pipeline-config";
+import { getRunDir, getRunManifestPath, getRunSidecarPath } from "./run-paths";
+import { importCorpus, listProjects } from "./projects";
+
+type ExportFormat = "png" | "tiff" | "pdf";
+
+const listFilesByExtension = (files: string[], extensions: string[]): string[] =>
+  files.filter((file) => extensions.some((ext) => file.toLowerCase().endsWith(ext)));
+
+const copyFormatExports = async (params: {
+  format: ExportFormat;
+  exportDir: string;
+  normalizedDir: string;
+  normalizedFiles: string[];
+}): Promise<void> => {
+  const extensionsByFormat: Record<ExportFormat, string[]> = {
+    png: [".png"],
+    tiff: [".tif", ".tiff"],
+    pdf: [".pdf"],
+  };
+  const formatDir = path.join(params.exportDir, params.format);
+  await fs.mkdir(formatDir, { recursive: true });
+  const extensions = extensionsByFormat[params.format];
+  const filesToCopy = listFilesByExtension(params.normalizedFiles, extensions);
+  await Promise.all(
+    filesToCopy.map((file) =>
+      fs.copyFile(path.join(params.normalizedDir, file), path.join(formatDir, file))
+    )
+  );
+};
 
 /**
  * Register IPC handlers for orchestrator commands.
@@ -26,6 +63,9 @@ import { runPipeline } from "./pipeline-runner";
  */
 
 export function registerIpcHandlers(): void {
+  const resolveOutputDir = (): string =>
+    process.env.ASTERIA_OUTPUT_DIR ?? path.join(process.cwd(), "pipeline-results");
+
   ipcMain.handle(
     "asteria:start-run",
     async (_event: IpcMainInvokeEvent, config: PipelineRunConfig): Promise<PipelineRunResult> => {
@@ -35,18 +75,15 @@ export function registerIpcHandlers(): void {
       }
 
       const projectRoot = resolveProjectRoot(config.pages);
-      const outputDir = path.join(process.cwd(), "pipeline-results");
-      const result = await runPipeline({
-        projectRoot,
-        projectId: config.projectId,
-        targetDpi: config.targetDpi,
-        targetDimensionsMm: config.targetDimensionsMm,
-        outputDir,
-        enableSpreadSplit: true,
-        enableBookPriors: true,
-      });
-
-      return result.pipelineResult;
+      const outputDir = resolveOutputDir();
+      const runId = await startRun(config, projectRoot, outputDir);
+      return {
+        runId,
+        status: "running",
+        pagesProcessed: 0,
+        errors: [],
+        metrics: {},
+      };
     }
   );
 
@@ -69,43 +106,114 @@ export function registerIpcHandlers(): void {
     }
   );
 
+  ipcMain.handle("asteria:list-projects", async (): Promise<ProjectSummary[]> => {
+    return listProjects();
+  });
+
+  ipcMain.handle(
+    "asteria:import-corpus",
+    async (_event: IpcMainInvokeEvent, request: ImportCorpusRequest) => {
+      validateImportCorpusRequest(request);
+      return importCorpus(request);
+    }
+  );
+
   ipcMain.handle(
     "asteria:cancel-run",
     async (_event: IpcMainInvokeEvent, runId: string): Promise<void> => {
       validateRunId(runId);
-      console.warn("IPC: cancel-run", { runId });
+      await cancelRun(runId);
     }
   );
 
-  ipcMain.handle("asteria:fetch-page", async (_event: IpcMainInvokeEvent, pageId: string) => {
-    validatePageId(pageId);
-    const sidecarPath = path.join(process.cwd(), "pipeline-results", "sidecars", `${pageId}.json`);
-    try {
-      const raw = await fs.readFile(sidecarPath, "utf-8");
-      const sidecar = JSON.parse(raw) as { source?: { path?: string } };
-      const originalPath = sidecar.source?.path ?? "";
-      return {
-        id: pageId,
-        filename: path.basename(originalPath || pageId),
-        originalPath,
-        confidenceScores: {},
-      };
-    } catch {
-      return {
-        id: pageId,
-        filename: `page-${pageId}.png`,
-        originalPath: "",
-        confidenceScores: {},
-      };
+  ipcMain.handle(
+    "asteria:pause-run",
+    async (_event: IpcMainInvokeEvent, runId: string): Promise<void> => {
+      validateRunId(runId);
+      await pauseRun(runId);
     }
-  });
+  );
+
+  ipcMain.handle(
+    "asteria:resume-run",
+    async (_event: IpcMainInvokeEvent, runId: string): Promise<void> => {
+      validateRunId(runId);
+      await resumeRun(runId);
+    }
+  );
+
+  ipcMain.handle(
+    "asteria:fetch-page",
+    async (_event: IpcMainInvokeEvent, runId: string, pageId: string) => {
+      validateRunId(runId);
+      validatePageId(pageId);
+      const outputDir = resolveOutputDir();
+      const runDir = getRunDir(outputDir, runId);
+      const runSidecarPath = getRunSidecarPath(runDir, pageId);
+      const legacySidecarPath = path.join(outputDir, "sidecars", `${pageId}.json`);
+
+      try {
+        const raw = await fs.readFile(runSidecarPath, "utf-8");
+        const sidecar = JSON.parse(raw) as { source?: { path?: string } };
+        const originalPath = sidecar.source?.path ?? "";
+        return {
+          id: pageId,
+          filename: path.basename(originalPath || pageId),
+          originalPath,
+          confidenceScores: {},
+        };
+      } catch {
+        try {
+          const raw = await fs.readFile(legacySidecarPath, "utf-8");
+          const sidecar = JSON.parse(raw) as { source?: { path?: string } };
+          const originalPath = sidecar.source?.path ?? "";
+          return {
+            id: pageId,
+            filename: path.basename(originalPath || pageId),
+            originalPath,
+            confidenceScores: {},
+          };
+        } catch {
+          return {
+            id: pageId,
+            filename: `page-${pageId}.png`,
+            originalPath: "",
+            confidenceScores: {},
+          };
+        }
+      }
+    }
+  );
+
+  ipcMain.handle(
+    "asteria:fetch-sidecar",
+    async (_event: IpcMainInvokeEvent, runId: string, pageId: string) => {
+      validateRunId(runId);
+      validatePageId(pageId);
+      const outputDir = resolveOutputDir();
+      const runDir = getRunDir(outputDir, runId);
+      const runSidecarPath = getRunSidecarPath(runDir, pageId);
+      const legacySidecarPath = path.join(outputDir, "sidecars", `${pageId}.json`);
+      try {
+        const raw = await fs.readFile(runSidecarPath, "utf-8");
+        return JSON.parse(raw);
+      } catch {
+        try {
+          const raw = await fs.readFile(legacySidecarPath, "utf-8");
+          return JSON.parse(raw);
+        } catch {
+          return null;
+        }
+      }
+    }
+  );
 
   ipcMain.handle(
     "asteria:apply-override",
     async (_event: IpcMainInvokeEvent, pageId: string, overrides: Record<string, unknown>) => {
       validatePageId(pageId);
       validateOverrides(overrides);
-      const overridesDir = path.join(process.cwd(), "pipeline-results", "overrides");
+      const overridesDir = path.join(resolveOutputDir(), "overrides");
       await fs.mkdir(overridesDir, { recursive: true });
       const overridePath = path.join(overridesDir, `${pageId}.json`);
       await fs.writeFile(
@@ -117,24 +225,173 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle(
     "asteria:export-run",
-    async (
-      _event: IpcMainInvokeEvent,
-      runId: string,
-      format: "png" | "tiff" | "pdf"
-    ): Promise<string> => {
+    async (_event: IpcMainInvokeEvent, runId: string, formats: ExportFormat[]): Promise<string> => {
       validateRunId(runId);
-      validateExportFormat(format);
-      const exportDir = path.join(process.cwd(), "pipeline-results", "normalized");
+      validateExportFormats(formats);
+      const outputDir = resolveOutputDir();
+      const runDir = getRunDir(outputDir, runId);
+      const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+      const exportDir = path.join(runDir, "exports", timestamp);
       await fs.mkdir(exportDir, { recursive: true });
+
+      const manifestPath = getRunManifestPath(runDir);
+      const reportPath = path.join(runDir, "report.json");
+      try {
+        await fs.copyFile(manifestPath, path.join(exportDir, "manifest.json"));
+      } catch {
+        // ignore missing manifest
+      }
+      try {
+        await fs.copyFile(reportPath, path.join(exportDir, "report.json"));
+      } catch {
+        // ignore missing report
+      }
+
+      const normalizedDir = path.join(runDir, "normalized");
+      let normalizedFiles: string[] = [];
+      try {
+        normalizedFiles = await fs.readdir(normalizedDir);
+      } catch {
+        normalizedFiles = [];
+      }
+
+      await Promise.all(
+        formats.map((format) =>
+          copyFormatExports({ format, exportDir, normalizedDir, normalizedFiles })
+        )
+      );
+
       return exportDir;
     }
   );
 
   ipcMain.handle(
+    "asteria:get-pipeline-config",
+    async (_event: IpcMainInvokeEvent, projectId?: string): Promise<PipelineConfigSnapshot> => {
+      const { config: baseConfig, configPath, loadedFromFile } = await loadPipelineConfig();
+      const projectOverrides = projectId ? await loadProjectOverrides(projectId) : {};
+      const { resolvedConfig, sources } = resolvePipelineConfig(baseConfig, {
+        overrides: projectOverrides.overrides ?? {},
+        env: process.env,
+        configPath,
+        loadedFromFile,
+        projectConfigPath: projectOverrides.configPath,
+        projectOverrides: projectOverrides.overrides,
+      });
+      return { baseConfig, resolvedConfig, sources };
+    }
+  );
+
+  ipcMain.handle(
+    "asteria:save-project-config",
+    async (
+      _event: IpcMainInvokeEvent,
+      projectId: string,
+      overrides: PipelineConfigOverrides
+    ): Promise<void> => {
+      if (!projectId || typeof projectId !== "string") {
+        throw new Error("Invalid project id");
+      }
+      validateOverrides(overrides as Record<string, unknown>);
+      const projectRoot = path.join(process.cwd(), "projects", projectId);
+      await fs.mkdir(projectRoot, { recursive: true });
+      const overridePath = path.join(projectRoot, "pipeline.config.json");
+      if (Object.keys(overrides).length === 0) {
+        await fs.rm(overridePath, { force: true });
+        return;
+      }
+      await fs.writeFile(overridePath, JSON.stringify(overrides, null, 2));
+    }
+  );
+
+  ipcMain.handle(
+    "asteria:get-run-config",
+    async (_event: IpcMainInvokeEvent, runId: string): Promise<RunConfigSnapshot | null> => {
+      validateRunId(runId);
+      const outputDir = resolveOutputDir();
+      const indexPath = path.join(outputDir, "run-index.json");
+      let reportPath = path.join(outputDir, "runs", runId, "report.json");
+      try {
+        const raw = await fs.readFile(indexPath, "utf-8");
+        const parsed = JSON.parse(raw) as { runs?: Array<{ runId: string; reportPath?: string }> };
+        const entry = parsed.runs?.find((run) => run.runId === runId);
+        if (entry?.reportPath) {
+          reportPath = entry.reportPath;
+        }
+      } catch {
+        // fallback to default report path
+      }
+
+      try {
+        const raw = await fs.readFile(reportPath, "utf-8");
+        const report = JSON.parse(raw) as { configSnapshot?: RunConfigSnapshot };
+        return report.configSnapshot ?? null;
+      } catch {
+        return null;
+      }
+    }
+  );
+
+  ipcMain.handle("asteria:list-runs", async (): Promise<RunSummary[]> => {
+    const outputDir = resolveOutputDir();
+    const indexPath = path.join(outputDir, "run-index.json");
+    try {
+      const raw = await fs.readFile(indexPath, "utf-8");
+      const parsed = JSON.parse(raw) as { runs?: Array<RunSummary & { reviewQueuePath?: string }> };
+      if (Array.isArray(parsed.runs)) {
+        return parsed.runs.map((run) => ({
+          runId: run.runId,
+          projectId: run.projectId,
+          generatedAt: run.generatedAt,
+          reviewCount: run.reviewCount ?? 0,
+          status: run.status,
+          startedAt: run.startedAt,
+          updatedAt: run.updatedAt,
+          reportPath: run.reportPath,
+        }));
+      }
+    } catch {
+      // fall through to legacy scan
+    }
+
+    try {
+      const entries = await fs.readdir(outputDir);
+      const legacyRuns = entries
+        .filter((entry) => entry.endsWith("-review-queue.json"))
+        .map((entry) => ({
+          runId: entry.replace(/-review-queue\.json$/, ""),
+          projectId: "unknown",
+          generatedAt: "",
+          reviewCount: 0,
+        }));
+      return legacyRuns;
+    } catch {
+      return [];
+    }
+  });
+
+  ipcMain.handle(
     "asteria:fetch-review-queue",
     async (_event: IpcMainInvokeEvent, runId: string): Promise<ReviewQueue> => {
       validateRunId(runId);
-      const reviewPath = path.join(process.cwd(), "pipeline-results", `${runId}-review-queue.json`);
+      const outputDir = resolveOutputDir();
+      const indexPath = path.join(outputDir, "run-index.json");
+      let reviewPath = path.join(outputDir, `${runId}-review-queue.json`);
+      try {
+        const raw = await fs.readFile(indexPath, "utf-8");
+        const parsed = JSON.parse(raw) as {
+          runs?: Array<{ runId: string; reviewQueuePath?: string }>;
+        };
+        const entry = parsed.runs?.find((run) => run.runId === runId);
+        if (entry?.reviewQueuePath) {
+          reviewPath = entry.reviewQueuePath;
+        } else {
+          const runDir = path.join(outputDir, "runs", runId, "review-queue.json");
+          reviewPath = runDir;
+        }
+      } catch {
+        // use fallback path
+      }
       try {
         const data = await fs.readFile(reviewPath, "utf-8");
         return JSON.parse(data) as ReviewQueue;
@@ -158,7 +415,7 @@ export function registerIpcHandlers(): void {
     ): Promise<void> => {
       validateRunId(runId);
       validateOverrides({ decisions });
-      const reviewDir = path.join(process.cwd(), "pipeline-results", "reviews");
+      const reviewDir = path.join(resolveOutputDir(), "reviews");
       await fs.mkdir(reviewDir, { recursive: true });
       const reviewPath = path.join(reviewDir, `${runId}.json`);
       await fs.writeFile(

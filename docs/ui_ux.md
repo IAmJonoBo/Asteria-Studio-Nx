@@ -47,42 +47,25 @@ graph TD
 ### 2. Command Palette
 
 **Trigger**: `Ctrl+K` (Cmd+K on Mac)
-**Purpose**: Quick access to all actions and navigation
-
-```text
-┌────────────────────────────────────────┐
-│  Search commands...          [Ctrl+K] │
-├────────────────────────────────────────┤
-│  Navigation                            │
-│  > Go to Projects              Ctrl+1 │
-│  > Go to Run History           Ctrl+2 │
-│  > Go to Review Queue          Ctrl+4 │
-│  Actions                               │
-│  > Import Corpus                      │
-│  > Start New Run                      │
-│  Preferences                           │
-│  > Toggle Theme                       │
+│ > Go to Run History Ctrl+2 │
+│ > Start New Run │
 └────────────────────────────────────────┘
-```
-
-**Interactions**:
+`A` — Accept current page (green badge)
+`F` — Flag for review (yellow badge)
+`R` — Reject current page (red badge)
+`U` — Undo last decision
+`Space` — Toggle overlay visibility
+`Z` — Zoom in/out (planned)
+`Ctrl+Enter` — Submit review decisions
 
 - Type to filter commands
-- Arrow keys to navigate
-- Enter to execute
-- Escape to close
 - Categories grouped visually
-
-### 3. Projects Screen
 
 **Purpose**: Choose project, show metadata, initiate imports
 
 ```text
 ┌────────────────────────────────────────┐
-│  Projects                    [Import] │
-├────────────────────────────────────────┤
 │  mind-myth-and-magick                  │
-│  📊 783 pages • 1.2 GB • Modified 2h  │
 │  [Open Project]               [⋮]      │
 ├────────────────────────────────────────┤
 │  (Empty state)                         │
@@ -97,7 +80,17 @@ graph TD
 - Hardware status (GPU/CPU detected)
 - Model mode toggle (local/remote/auto)
 
-### 4. Review Queue
+### 4. Run History (Implemented)
+
+**Purpose**: Browse past runs, select a run for review, and inspect its config snapshot.
+
+**Current capabilities**:
+
+- List runs with review queue counts
+- Select a run and open Review Queue
+- View per-run config snapshot (read-only)
+
+### 5. Review Queue
 
 **Purpose**: Triage pages with confidence scores; keyboard-first navigation
 
@@ -108,13 +101,11 @@ graph TD
 │  [←] Page 42 of 300               [→] │
 │                                        │
 │  ┌──────────┬──────────┐              │
-│  │ Before   │ After    │              │
-│  │          │          │              │
-│  │  [img]   │  [img]   │              │
-│  │          │          │              │
+│  │ Normalized│ Source  │              │
+│  │   [img]  │ [img]*   │              │
 │  └──────────┴──────────┘              │
 │                                        │
-│  [Toggle Overlay] [Zoom] [Compare]    │
+│  [Toggle Overlay] [Zoom] [Compare]     │
 │                                        │
 │  [A] Accept  [F] Flag  [R] Reject    │
 └────────────────────────────────────────┘
@@ -128,14 +119,21 @@ graph TD
 - `R` — Reject (red badge)
 - `U` — Undo last decision
 - `Space` — Toggle overlay visibility
-- `Z` — Zoom in/out (planned)
 - `Ctrl+Enter` — Submit review decisions
+- `+` / `-` — Zoom in/out
+- `0` — Reset zoom
+- `Shift + Arrows` — Pan
 
 **Visual Feedback**:
 
 - Badge color: 🟢 Accepted, 🟡 Flagged, 🔴 Rejected
-- Confidence bars per element type
-- Overlay layers toggled with distinct colors
+- Confidence label per page (sidebar)
+- Overlay layers toggled via checkboxes (when sidecar data is available)
+
+**Implementation note**:
+
+- Compare view is shown when source previews are available.
+- Overlay layers are driven by sidecar element data; if sidecar is missing, overlays are hidden.
 
 **Data Source** (Implemented):
 
@@ -148,12 +146,7 @@ graph TD
 - Scroll sync with keyboard navigation for smooth selection updates
 - Review queue sorting offloaded to a web worker
 
-**Data Source** (Implemented):
-
-- Review queue items loaded via IPC (`asteria:fetch-review-queue`)
-- Uses run ID to fetch persisted review metadata
-
-### 5. Run Monitor (Placeholder)
+### 6. Run Monitor (Placeholder)
 
 **Purpose**: Live progress of active pipeline run
 
@@ -180,17 +173,19 @@ graph TD
 - Expandable log viewer
 - Warnings/errors inline
 
-### 6. Settings Screen (Placeholder)
+### 7. Settings Screen (Partial)
 
-**Purpose**: Configure pipeline defaults, theme, keyboard shortcuts
+**Purpose**: Configure pipeline defaults and per-project overrides (limited to key fields)
 
-**Sections** (Planned):
+**Sections** (Current):
 
-- **Pipeline**: Default DPI, dimensions, bleed/trim rules
-- **Appearance**: Theme (light/dark/auto), font size, panel layout
-- **Performance**: GPU acceleration, parallel workers, memory limits
-- **Keyboard**: Customize shortcuts, view cheat sheet
-- **Models**: Local/remote toggle, endpoint configuration
+- **Pipeline**: Target DPI, target dimensions, spread split toggle, book priors sampling
+- **QA thresholds**: Mask coverage minimum, semantic threshold (body)
+- **Source info**: Config source path and project override path
+
+**Planned**:
+
+- Appearance, performance, keyboard customization, and model configuration
 
 ## Key Interactions
 

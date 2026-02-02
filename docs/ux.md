@@ -31,6 +31,8 @@
 ```text
 Projects → Import Corpus
   ↓
+Choose folder path → Asteria creates a project entry (project.json)
+  ↓
 Configure target dimensions, DPI, pipeline stages
   ↓
 Start Run → Monitor progress
@@ -41,6 +43,9 @@ Triage: Accept (A) / Flag (F) / Reject (R)
   ↓
 Export normalized outputs + JSON sidecars
 ```
+
+**Exports behavior**: Each export produces a run-scoped bundle under
+`pipeline-results/runs/{runId}/exports/{timestamp}` and surfaces the path in the UI.
 
 ### 2. Review Queue Ergonomics (Keyboard-First)
 
@@ -55,11 +60,12 @@ Export normalized outputs + JSON sidecars
 | `R`                | Reject          | Reject page, move to next           |
 | `U`                | Undo            | Undo last decision on current page  |
 | `Space`            | Toggle overlays | Show/hide detection overlays        |
-| `Tab`              | Cycle overlays  | Switch between overlay layers       |
-| `1-9`              | Jump to page    | Quick navigation by number          |
-| `Ctrl/Cmd + Enter` | Batch apply     | Apply decision to selection/range   |
+| `+` / `-`          | Zoom            | Zoom in/out                         |
+| `0`                | Reset view      | Reset zoom/pan                      |
+| `Shift + Arrows`   | Pan             | Nudge view                          |
+| `Ctrl/Cmd + Enter` | Submit review   | Submit queued decisions             |
 
-**Overlay layers** (toggle individually):
+**Overlay layers** (available when sidecars exist):
 
 - Page bounds (blue)
 - Content box (green)
@@ -73,10 +79,9 @@ Export normalized outputs + JSON sidecars
 
 **Run states**:
 
-- `Queued` → `Running` → `Completed`
-- `Paused` (user action) → `Resuming`
-- `Cancelling` → `Cancelled` (consistent state)
-- `Failed` (with error details)
+- `Queued` → `Running` → `Paused`/`Cancelled`/`Error` → `Completed`
+- `Paused` resumes from the current stage without reprocessing completed pages
+- `Cancelled` writes a manifest/report snapshot and stops further processing
 
 **Progress visibility**:
 
@@ -86,9 +91,9 @@ Export normalized outputs + JSON sidecars
 
 **Pause/Resume semantics**:
 
-- Pause completes current atomic step, writes checkpoint
-- Resume picks up from last checkpoint
-- Cancel writes final manifest marking incomplete state
+- Pause completes the current atomic step, then gates the next stage
+- Resume continues from the last completed page/stage
+- Cancel writes a final manifest/report snapshot marking incomplete state
 
 ## Reason Codes (Plain Language)
 
@@ -175,7 +180,7 @@ Every screen includes:
 1. **UI responsiveness**: No long tasks on main thread (16ms budget)
 2. **Large lists**: Virtualized (render only visible items)
 3. **Image loading**: Progressive (low-res preview → full resolution)
-4. **IPC throttling**: Progress updates batched at 10 Hz
+4. **IPC throttling**: Progress updates throttled to 5–10 Hz
 5. **Worker offload**: Heavy image processing in Web Workers
 
 ## Settings & Presets
@@ -183,7 +188,7 @@ Every screen includes:
 **Three-tier configuration**:
 
 1. **Global defaults** (conservative, safe)
-2. **Per-project overrides** (saved in project manifest)
+2. **Per-project overrides** (projects/{projectId}/pipeline.config.json)
 3. **Per-run snapshots** (immutable, versioned)
 
 **Preset management**:
@@ -246,18 +251,19 @@ Every screen includes:
 
 ### Review Queue
 
-| Shortcut           | Action               |
-| ------------------ | -------------------- |
-| `J` / `↓`          | Next page            |
-| `K` / `↑`          | Previous page        |
-| `A`                | Accept page          |
-| `F`                | Flag for review      |
-| `R`                | Reject page          |
-| `U`                | Undo decision        |
-| `Space`            | Toggle overlays      |
-| `Tab`              | Cycle overlay layers |
-| `Ctrl/Cmd + Enter` | Batch apply          |
-| `Esc`              | Close inspector      |
+| Shortcut           | Action          |
+| ------------------ | --------------- |
+| `J` / `↓`          | Next page       |
+| `K` / `↑`          | Previous page   |
+| `A`                | Accept page     |
+| `F`                | Flag for review |
+| `R`                | Reject page     |
+| `U`                | Undo decision   |
+| `Space`            | Toggle overlays |
+| `+` / `-`          | Zoom in/out     |
+| `0`                | Reset view      |
+| `Shift + Arrows`   | Pan             |
+| `Ctrl/Cmd + Enter` | Submit review   |
 
 ### Run Monitor
 

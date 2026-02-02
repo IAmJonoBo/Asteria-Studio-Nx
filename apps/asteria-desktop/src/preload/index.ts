@@ -1,7 +1,9 @@
 import { contextBridge, ipcRenderer } from "electron";
-import type { IpcChannels } from "../ipc/contracts";
+import type { IpcRendererEvent } from "electron";
+import type { IpcChannels, RunProgressEvent } from "../ipc/contracts";
 import {
-  validateExportFormat,
+  validateExportFormats,
+  validateImportCorpusRequest,
   validateOverrides,
   validatePageId,
   validatePipelineRunConfig,
@@ -50,13 +52,48 @@ const api: IpcChannels = {
     }
     return safeInvoke("asteria:scan-corpus", rootPath, options);
   },
+  "asteria:list-projects": async () => safeInvoke("asteria:list-projects"),
+  "asteria:import-corpus": async (request: Parameters<IpcChannels["asteria:import-corpus"]>[0]) => {
+    validateImportCorpusRequest(request);
+    return safeInvoke("asteria:import-corpus", request);
+  },
+  "asteria:list-runs": async () => safeInvoke("asteria:list-runs"),
+  "asteria:get-pipeline-config": async (
+    projectId?: Parameters<IpcChannels["asteria:get-pipeline-config"]>[0]
+  ) => safeInvoke("asteria:get-pipeline-config", projectId),
+  "asteria:save-project-config": async (
+    projectId: Parameters<IpcChannels["asteria:save-project-config"]>[0],
+    overrides: Parameters<IpcChannels["asteria:save-project-config"]>[1]
+  ) => safeInvoke("asteria:save-project-config", projectId, overrides),
+  "asteria:get-run-config": async (runId: Parameters<IpcChannels["asteria:get-run-config"]>[0]) =>
+    safeInvoke("asteria:get-run-config", runId),
   "asteria:cancel-run": async (runId: Parameters<IpcChannels["asteria:cancel-run"]>[0]) => {
     validateRunId(runId);
     return safeInvoke("asteria:cancel-run", runId);
   },
-  "asteria:fetch-page": async (pageId: Parameters<IpcChannels["asteria:fetch-page"]>[0]) => {
+  "asteria:pause-run": async (runId: Parameters<IpcChannels["asteria:pause-run"]>[0]) => {
+    validateRunId(runId);
+    return safeInvoke("asteria:pause-run", runId);
+  },
+  "asteria:resume-run": async (runId: Parameters<IpcChannels["asteria:resume-run"]>[0]) => {
+    validateRunId(runId);
+    return safeInvoke("asteria:resume-run", runId);
+  },
+  "asteria:fetch-page": async (
+    runId: Parameters<IpcChannels["asteria:fetch-page"]>[0],
+    pageId: Parameters<IpcChannels["asteria:fetch-page"]>[1]
+  ) => {
+    validateRunId(runId);
     validatePageId(pageId);
-    return safeInvoke("asteria:fetch-page", pageId);
+    return safeInvoke("asteria:fetch-page", runId, pageId);
+  },
+  "asteria:fetch-sidecar": async (
+    runId: Parameters<IpcChannels["asteria:fetch-sidecar"]>[0],
+    pageId: Parameters<IpcChannels["asteria:fetch-sidecar"]>[1]
+  ) => {
+    validateRunId(runId);
+    validatePageId(pageId);
+    return safeInvoke("asteria:fetch-sidecar", runId, pageId);
   },
   "asteria:apply-override": async (
     pageId: Parameters<IpcChannels["asteria:apply-override"]>[0],
@@ -68,11 +105,11 @@ const api: IpcChannels = {
   },
   "asteria:export-run": async (
     runId: Parameters<IpcChannels["asteria:export-run"]>[0],
-    format: Parameters<IpcChannels["asteria:export-run"]>[1]
+    formats: Parameters<IpcChannels["asteria:export-run"]>[1]
   ) => {
     validateRunId(runId);
-    validateExportFormat(format);
-    return safeInvoke("asteria:export-run", runId, format);
+    validateExportFormats(formats);
+    return safeInvoke("asteria:export-run", runId, formats);
   },
   "asteria:fetch-review-queue": async (
     runId: Parameters<IpcChannels["asteria:fetch-review-queue"]>[0]
@@ -92,6 +129,13 @@ const api: IpcChannels = {
 
 contextBridge.exposeInMainWorld("asteria", {
   ipc: api,
+  onRunProgress: (handler: (event: RunProgressEvent) => void): (() => void) => {
+    const listener = (_event: IpcRendererEvent, payload: unknown): void => {
+      handler(payload as RunProgressEvent);
+    };
+    ipcRenderer.on("asteria:run-progress", listener);
+    return () => ipcRenderer.removeListener("asteria:run-progress", listener);
+  },
   ping: () => "pong",
 });
 
@@ -99,6 +143,7 @@ declare global {
   interface Window {
     asteria: {
       ipc: IpcChannels;
+      onRunProgress: (handler: (event: RunProgressEvent) => void) => () => void;
       ping: () => string;
     };
   }

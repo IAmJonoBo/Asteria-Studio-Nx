@@ -25,16 +25,25 @@ describe("IPC Contracts", () => {
       const channelNames: Array<keyof IpcChannels> = [
         "asteria:start-run",
         "asteria:cancel-run",
+        "asteria:pause-run",
+        "asteria:resume-run",
         "asteria:fetch-page",
+        "asteria:fetch-sidecar",
         "asteria:apply-override",
         "asteria:export-run",
         "asteria:analyze-corpus",
         "asteria:scan-corpus",
+        "asteria:list-projects",
+        "asteria:import-corpus",
+        "asteria:list-runs",
+        "asteria:get-pipeline-config",
+        "asteria:save-project-config",
+        "asteria:get-run-config",
         "asteria:fetch-review-queue",
         "asteria:submit-review",
       ];
 
-      expect(channelNames).toHaveLength(9);
+      expect(channelNames).toHaveLength(18);
     });
   });
 });

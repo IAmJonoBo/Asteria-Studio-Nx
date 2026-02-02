@@ -26,3 +26,5 @@ workerScope.onmessage = (event: { data: WorkerRequest }): void => {
   const response: WorkerResponse = { pages: sorted };
   workerScope.postMessage(response);
 };
+
+export {};

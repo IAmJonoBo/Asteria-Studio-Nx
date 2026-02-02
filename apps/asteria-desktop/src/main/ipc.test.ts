@@ -30,15 +30,15 @@ describe("IPC Handlers (Stubs)", () => {
     // Simulate handler response
     const result: PipelineRunResult = {
       runId: `run-${Date.now()}`,
-      status: "success",
-      pagesProcessed: mockConfig.pages.length,
+      status: "running",
+      pagesProcessed: 0,
       errors: [],
-      metrics: { durationMs: 1000 },
+      metrics: {},
     };
 
     expect(result.runId).toBeDefined();
-    expect(result.status).toBe("success");
-    expect(result.pagesProcessed).toBe(2);
+    expect(result.status).toBe("running");
+    expect(result.pagesProcessed).toBe(0);
     expect(result.errors).toHaveLength(0);
   });
 

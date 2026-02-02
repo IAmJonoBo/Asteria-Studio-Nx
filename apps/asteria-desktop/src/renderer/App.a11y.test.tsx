@@ -25,17 +25,37 @@ describe("App - Navigation & Accessibility", () => {
     render(<App />);
 
     await user.click(screen.getAllByRole("button", { name: /review queue/i })[0]);
-    expect(screen.getAllByRole("heading", { name: /review queue/i }).length).toBeGreaterThan(0);
+    expect(screen.getByText(/select a run to review/i)).toBeInTheDocument();
 
     await user.click(screen.getAllByRole("button", { name: /settings/i })[0]);
     expect(screen.getByText(/settings/i, { selector: "h1" })).toBeInTheDocument();
   });
 
-  it("shows project list with cards", () => {
+  it("shows project list with cards", async () => {
+    const windowRef = globalThis as typeof globalThis & {
+      asteria?: { ipc: Record<string, unknown> };
+    };
+    const previousAsteria = windowRef.asteria;
+    windowRef.asteria = {
+      ipc: {
+        "asteria:list-projects": async () => [
+          {
+            id: "mind-myth-magick",
+            name: "Mind, Myth and Magick",
+            path: "/projects/mind-myth-and-magick",
+            inputPath: "/projects/mind-myth-and-magick/input/raw",
+            status: "completed",
+          },
+        ],
+      },
+    };
+
     render(<App />);
 
-    expect(screen.getAllByText(/Mind, Myth and Magick/i).length).toBeGreaterThan(0);
+    expect(await screen.findByText(/Mind, Myth and Magick/i)).toBeInTheDocument();
     expect(screen.getAllByRole("button", { name: /import corpus/i }).length).toBeGreaterThan(0);
+
+    windowRef.asteria = previousAsteria;
   });
 
   it("has keyboard-accessible command palette", async () => {
