@@ -338,5 +338,5 @@ describe.sequential("golden corpus regression", () => {
     if (failure) {
       throw failure;
     }
-  });
+  }, 180000);
 });

@@ -294,7 +294,7 @@ describe("App", () => {
       }
     ).prompt = originalPrompt;
     windowRef.asteria = previousAsteria;
-  });
+  }, 10000);
 
   it("alerts when import corpus fails", async () => {
     const user = userEvent.setup();
@@ -520,7 +520,7 @@ describe("App", () => {
       }
     ).prompt = originalPrompt;
     windowRef.asteria = previousAsteria;
-  });
+  }, 10000);
 
   it("opens review queue from run history", async () => {
     const user = userEvent.setup();

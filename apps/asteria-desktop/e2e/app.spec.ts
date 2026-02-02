@@ -95,7 +95,7 @@ test.describe("Asteria Desktop App", () => {
 
     await expect(page.getByText(/why flagged/i)).toBeVisible();
 
-    await page.getByRole("button", { name: /accept/i }).click();
+    await page.getByRole("button", { name: /accept page/i }).click();
     await page.getByRole("button", { name: /submit review/i }).click();
 
     await page.waitForFunction(() => {

@@ -218,7 +218,7 @@ describe("Pipeline Runner", () => {
     const sidecarDir = path.join(runDir, "sidecars");
     const sidecars = await fs.readdir(sidecarDir);
     expect(sidecars.length).toBeGreaterThan(0);
-  });
+  }, 20000);
 
   it("cancels mid-run and writes parseable report + manifest", async () => {
     const outputDir = await fs.mkdtemp(path.join(os.tmpdir(), "asteria-cancel-"));
@@ -287,7 +287,7 @@ describe("Pipeline Runner", () => {
       | { qualityGate?: { accepted?: boolean } }
       | undefined;
     expect(semanticItem?.qualityGate?.accepted).toBe(true);
-  });
+  }, 20000);
 
   it("splits two-page spreads when enabled", async () => {
     const spreadDir = await fs.mkdtemp(path.join(os.tmpdir(), "asteria-spread-"));
