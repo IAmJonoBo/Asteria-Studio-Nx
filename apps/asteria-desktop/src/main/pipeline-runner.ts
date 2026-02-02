@@ -17,17 +17,19 @@ import type {
   LayoutProfile,
   ReviewItem,
   ReviewQueue,
+  PageLayoutElement,
 } from "../ipc/contracts.ts";
 import { scanCorpus } from "../ipc/corpusScanner.ts";
 import { analyzeCorpus, computeTargetDimensionsPx } from "../ipc/corpusAnalysis.ts";
 import { deriveBookModelFromImages } from "./book-priors.ts";
-import { getPipelineCoreNative } from "./pipeline-core-native.ts";
+import { getPipelineCoreNative, type PipelineCoreNative } from "./pipeline-core-native.ts";
 import {
   normalizePage,
   type NormalizationResult,
   type NormalizationOptions,
   type NormalizationPriors,
 } from "./normalization.ts";
+import { requestRemoteLayout } from "./remote-inference.ts";
 
 const sleep = async (ms: number): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, ms));
@@ -988,6 +990,265 @@ const mapBoxToOutput = (
   return [x0, y0, x1, y1];
 };
 
+const clampBoxToBounds = (
+  box: [number, number, number, number],
+  width: number,
+  height: number
+): [number, number, number, number] => {
+  const x0 = Math.max(0, Math.min(width - 1, Math.round(box[0])));
+  const y0 = Math.max(0, Math.min(height - 1, Math.round(box[1])));
+  const x1 = Math.max(x0 + 1, Math.min(width - 1, Math.round(box[2])));
+  const y1 = Math.max(y0 + 1, Math.min(height - 1, Math.round(box[3])));
+  return [x0, y0, x1, y1];
+};
+
+const buildElementBoxes = (
+  pageId: string,
+  outputWidth: number,
+  outputHeight: number,
+  contentBox: [number, number, number, number],
+  bookModel?: BookModel
+): PageLayoutElement[] => {
+  const pageBox: [number, number, number, number] = [0, 0, outputWidth - 1, outputHeight - 1];
+  const safeContent = clampBoxToBounds(contentBox, outputWidth, outputHeight);
+  const contentWidth = Math.max(1, safeContent[2] - safeContent[0]);
+  const contentHeight = Math.max(1, safeContent[3] - safeContent[1]);
+
+  const fromContent = (
+    x0: number,
+    y0: number,
+    x1: number,
+    y1: number
+  ): [number, number, number, number] =>
+    clampBoxToBounds(
+      [
+        safeContent[0] + contentWidth * x0,
+        safeContent[1] + contentHeight * y0,
+        safeContent[0] + contentWidth * x1,
+        safeContent[1] + contentHeight * y1,
+      ],
+      outputWidth,
+      outputHeight
+    );
+
+  const elements: PageLayoutElement[] = [];
+
+  elements.push({
+    id: `${pageId}-page-bounds`,
+    type: "page_bounds",
+    bbox: pageBox,
+    confidence: 0.6,
+    source: "local",
+    flags: ["derived"],
+  });
+
+  elements.push({
+    id: `${pageId}-text-block`,
+    type: "text_block",
+    bbox: safeContent,
+    confidence: 0.55,
+    source: "local",
+    flags: ["mask-derived"],
+  });
+
+  const titleBox = fromContent(0.12, 0.02, 0.88, 0.14);
+  elements.push({
+    id: `${pageId}-title`,
+    type: "title",
+    bbox: titleBox,
+    confidence: 0.28,
+    source: "local",
+    flags: ["heuristic"],
+  });
+
+  const runningHeadTemplates = bookModel?.runningHeadTemplates ?? [];
+  if (runningHeadTemplates.length > 0) {
+    runningHeadTemplates.forEach((template, idx) => {
+      elements.push({
+        id: `${pageId}-running-head-${idx}`,
+        type: "running_head",
+        bbox: clampBoxToBounds(template.bbox, outputWidth, outputHeight),
+        confidence: clamp01(template.confidence),
+        source: "local",
+        flags: ["book-model"],
+      });
+    });
+  } else {
+    elements.push({
+      id: `${pageId}-running-head`,
+      type: "running_head",
+      bbox: fromContent(0.1, 0.0, 0.9, 0.08),
+      confidence: 0.25,
+      source: "local",
+      flags: ["heuristic"],
+    });
+  }
+
+  const folioBands = bookModel?.folioModel?.positionBands ?? [];
+  if (folioBands.length > 0) {
+    folioBands.forEach((band, idx) => {
+      elements.push({
+        id: `${pageId}-folio-${idx}`,
+        type: "folio",
+        bbox: clampBoxToBounds(
+          [safeContent[0], band.band[0], safeContent[2], band.band[1]],
+          outputWidth,
+          outputHeight
+        ),
+        confidence: clamp01(band.confidence),
+        source: "local",
+        flags: ["book-model", `side:${band.side}`],
+      });
+    });
+  } else {
+    elements.push({
+      id: `${pageId}-folio`,
+      type: "folio",
+      bbox: fromContent(0.42, 0.9, 0.58, 0.98),
+      confidence: 0.22,
+      source: "local",
+      flags: ["heuristic"],
+    });
+  }
+
+  const ornamentLibrary = bookModel?.ornamentLibrary ?? [];
+  if (ornamentLibrary.length > 0) {
+    ornamentLibrary.forEach((ornament, idx) => {
+      elements.push({
+        id: `${pageId}-ornament-${idx}`,
+        type: "ornament",
+        bbox: clampBoxToBounds(ornament.bbox, outputWidth, outputHeight),
+        confidence: clamp01(ornament.confidence),
+        source: "local",
+        flags: ["book-model"],
+      });
+    });
+  } else {
+    elements.push({
+      id: `${pageId}-ornament`,
+      type: "ornament",
+      bbox: fromContent(0.42, 0.18, 0.58, 0.24),
+      confidence: 0.2,
+      source: "local",
+      flags: ["heuristic"],
+    });
+  }
+
+  elements.push({
+    id: `${pageId}-drop-cap`,
+    type: "drop_cap",
+    bbox: fromContent(0.02, 0.18, 0.1, 0.32),
+    confidence: 0.18,
+    source: "local",
+    flags: ["heuristic"],
+  });
+
+  elements.push({
+    id: `${pageId}-footnote`,
+    type: "footnote",
+    bbox: fromContent(0.05, 0.86, 0.95, 0.98),
+    confidence: 0.2,
+    source: "local",
+    flags: ["heuristic"],
+  });
+
+  elements.push({
+    id: `${pageId}-marginalia`,
+    type: "marginalia",
+    bbox: fromContent(0.0, 0.25, 0.08, 0.75),
+    confidence: 0.18,
+    source: "local",
+    flags: ["heuristic"],
+  });
+
+  return elements;
+};
+
+const dhash9x8Js = (data: Buffer | Uint8Array): string => {
+  if (data.length < 9 * 8) return "0";
+  let hash = 0n;
+  let bit = 0n;
+  for (let y = 0; y < 8; y++) {
+    for (let x = 0; x < 8; x++) {
+      const left = data[y * 9 + x];
+      const right = data[y * 9 + x + 1];
+      if (left < right) {
+        hash |= 1n << bit;
+      }
+      bit += 1n;
+    }
+  }
+  return hash.toString(16).padStart(16, "0");
+};
+
+const computePageDhash = async (
+  imagePath: string,
+  native: PipelineCoreNative | null
+): Promise<string> => {
+  try {
+    const { data } = await sharp(imagePath)
+      .resize(9, 8)
+      .grayscale()
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+    if (native) {
+      return native.dhash9x8(Buffer.from(data));
+    }
+    return dhash9x8Js(data);
+  } catch {
+    return "0";
+  }
+};
+
+const loadNativeLayoutElements = async (
+  pageId: string,
+  imagePath: string,
+  native: PipelineCoreNative | null
+): Promise<PageLayoutElement[] | null> => {
+  if (!native) return null;
+  try {
+    const { data, info } = await sharp(imagePath)
+      .ensureAlpha()
+      .removeAlpha()
+      .grayscale()
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+    const raw = Buffer.from(data);
+    const elements = native.detectLayoutElements(raw, info.width ?? 0, info.height ?? 0);
+    if (!Array.isArray(elements) || elements.length === 0) return null;
+    return elements.map((element, index) => ({
+      id: element.id || `${pageId}-native-${index}`,
+      type: element.type as PageLayoutElement["type"],
+      bbox: [
+        Math.round(element.bbox[0] ?? 0),
+        Math.round(element.bbox[1] ?? 0),
+        Math.round(element.bbox[2] ?? 0),
+        Math.round(element.bbox[3] ?? 0),
+      ] as [number, number, number, number],
+      confidence: clamp01(Number(element.confidence ?? 0.5)),
+      source: "local",
+      flags: ["native"],
+    }));
+  } catch {
+    return null;
+  }
+};
+
+const elementColor = (type: PageLayoutElement["type"]): string => {
+  const colors: Record<PageLayoutElement["type"], string> = {
+    page_bounds: "#3b82f6",
+    text_block: "#22c55e",
+    title: "#ec4899",
+    running_head: "#f97316",
+    folio: "#a855f7",
+    ornament: "#14b8a6",
+    drop_cap: "#facc15",
+    footnote: "#0ea5e9",
+    marginalia: "#94a3b8",
+  };
+  return colors[type] ?? "#e5e7eb";
+};
+
 const buildOverlaySvg = (
   width: number,
   height: number,
@@ -1032,10 +1293,19 @@ const attachOverlays = async (
           {
             box: [0, 0, width - 1, height - 1] as [number, number, number, number],
             color: "#3b82f6",
-            label: "crop",
+            label: "page",
           },
-          { box: maskBox, color: "#22c55e", label: "mask" },
+          { box: maskBox, color: "#22c55e", label: "content" },
         ];
+
+        const elements = buildElementBoxes(item.pageId, width, height, maskBox, bookModel);
+        elements.forEach((element) => {
+          overlayBoxes.push({
+            box: element.bbox,
+            color: elementColor(element.type),
+            label: element.type.replace("_", " "),
+          });
+        });
 
         const gutter = gutterByPageId?.get(item.pageId);
         if (gutter) {
@@ -1045,42 +1315,6 @@ const attachOverlays = async (
             box: [gx0, 0, gx1, height - 1],
             color: "#facc15",
             label: "gutter",
-          });
-        }
-
-        if (bookModel?.runningHeadTemplates?.length) {
-          bookModel.runningHeadTemplates.forEach((template) => {
-            const headBox: [number, number, number, number] = [
-              Math.max(0, Math.round(template.bbox[0])),
-              Math.max(0, Math.round(template.bbox[1])),
-              Math.min(width - 1, Math.round(template.bbox[2])),
-              Math.min(height - 1, Math.round(template.bbox[3])),
-            ];
-            overlayBoxes.push({ box: headBox, color: "#f97316", label: "head" });
-          });
-        }
-
-        if (bookModel?.folioModel?.positionBands?.length) {
-          bookModel.folioModel.positionBands.forEach((band) => {
-            const bandBox: [number, number, number, number] = [
-              0,
-              Math.max(0, Math.round(band.band[0])),
-              width - 1,
-              Math.min(height - 1, Math.round(band.band[1])),
-            ];
-            overlayBoxes.push({ box: bandBox, color: "#a855f7", label: "folio" });
-          });
-        }
-
-        if (bookModel?.ornamentLibrary?.length) {
-          bookModel.ornamentLibrary.forEach((ornament) => {
-            const ornamentBox: [number, number, number, number] = [
-              Math.max(0, Math.round(ornament.bbox[0])),
-              Math.max(0, Math.round(ornament.bbox[1])),
-              Math.min(width - 1, Math.round(ornament.bbox[2])),
-              Math.min(height - 1, Math.round(ornament.bbox[3])),
-            ];
-            overlayBoxes.push({ box: ornamentBox, color: "#14b8a6", label: "ornament" });
           });
         }
 
@@ -1425,13 +1659,20 @@ export async function runPipeline(options: PipelineRunnerOptions): Promise<Pipel
         normalizationResults,
         options.outputDir,
         runId,
-        reviewQueue,
+        native,
         bookModel
       );
 
       const normalizedDir = path.join(options.outputDir, "normalized");
       await fs.mkdir(normalizedDir, { recursive: true });
       const checksumById = new Map(configToProcess.pages.map((page) => [page.id, page.checksum]));
+      const dhashEntries = await Promise.all(
+        Array.from(normalizationResults.values()).map(async (norm) => ({
+          pageId: norm.pageId,
+          dhash: await computePageDhash(norm.normalizedPath, native),
+        }))
+      );
+      const dhashById = new Map(dhashEntries.map((entry) => [entry.pageId, entry.dhash]));
       const manifest = {
         runId,
         exportedAt: new Date().toISOString(),
@@ -1447,6 +1688,7 @@ export async function runPipeline(options: PipelineRunnerOptions): Promise<Pipel
         pages: Array.from(normalizationResults.values()).map((norm) => ({
           pageId: norm.pageId,
           checksum: checksumById.get(norm.pageId) ?? "",
+          dhash: dhashById.get(norm.pageId) ?? "0",
           normalizedFile: path.basename(norm.normalizedPath),
           previews: [
             norm.previews?.source?.path ? path.basename(norm.previews.source.path) : undefined,
@@ -1527,14 +1769,13 @@ const writeSidecars = async (
   normalization: Map<string, NormalizationResult>,
   outputDir: string,
   runId: string,
-  reviewQueue?: ReviewQueue,
+  native: PipelineCoreNative | null,
   bookModel?: BookModel
 ): Promise<void> => {
   const sidecarDir = path.join(outputDir, "sidecars");
   await fs.mkdir(sidecarDir, { recursive: true });
 
   const estimatesById = new Map(analysis.estimates.map((e) => [e.pageId, e]));
-  const reviewByPageId = new Map((reviewQueue?.items ?? []).map((item) => [item.pageId, item]));
 
   await Promise.all(
     config.pages.map(async (page, index) => {
@@ -1545,19 +1786,36 @@ const writeSidecars = async (
       const bleedMm = norm.bleedMm;
       const trimMm = norm.trimMm;
       const assessment = inferLayoutProfile(page, index, norm, config.pages.length);
+      const layoutConfidence = computeLayoutConfidence(assessment, norm);
       const deskewConfidence = Math.min(1, norm.stats.skewConfidence + 0.25);
-
-      const shadowFlags = [] as string[];
-      if (norm.shadow.present) {
-        shadowFlags.push(`shadow:${norm.shadow.side}`);
-      }
-      if (norm.stats.maskCoverage < 0.6) {
-        shadowFlags.push("low-coverage");
-      }
-
-      const reviewItem = reviewByPageId.get(page.id);
-      const accepted = reviewItem ? reviewItem.qualityGate.accepted : true;
-      const notes = reviewItem?.reason === "semantic-layout" ? "Needs confirmation" : "";
+      const outputWidth = Math.max(1, Math.round(analysis.targetDimensionsPx.width));
+      const outputHeight = Math.max(1, Math.round(analysis.targetDimensionsPx.height));
+      const maskBoxOut = mapBoxToOutput(norm.maskBox, norm.cropBox, outputWidth, outputHeight);
+      const cropBoxOut: [number, number, number, number] = [
+        0,
+        0,
+        outputWidth - 1,
+        outputHeight - 1,
+      ];
+      const cropWidth = Math.max(1, norm.cropBox[2] - norm.cropBox[0] + 1);
+      const scale = outputWidth / cropWidth;
+      const localElements = buildElementBoxes(
+        page.id,
+        outputWidth,
+        outputHeight,
+        maskBoxOut,
+        bookModel
+      );
+      const remoteElements = await requestRemoteLayout(
+        page.id,
+        norm.normalizedPath,
+        outputWidth,
+        outputHeight
+      );
+      const nativeElements = remoteElements
+        ? null
+        : await loadNativeLayoutElements(page.id, norm.normalizedPath, native);
+      const elements = remoteElements ?? nativeElements ?? localElements;
 
       const baselineLineCount = norm.corrections?.baseline?.textLineCount ?? 0;
       const cropHeight = Math.max(1, norm.cropBox[3] - norm.cropBox[1] + 1);
@@ -1584,12 +1842,12 @@ const writeSidecars = async (
         },
         dpi: Math.round(norm.dpi),
         normalization: {
-          cropBox: norm.cropBox,
-          pageMask: norm.maskBox,
+          cropBox: cropBoxOut,
+          pageMask: maskBoxOut,
           dpiSource: norm.dpiSource,
           bleed: bleedMm,
           trim: trimMm,
-          scale: 1,
+          scale,
           skewAngle: norm.skewAngle,
           warp: { method: "affine", residual: 0 },
           shadow: norm.shadow,
@@ -1603,20 +1861,7 @@ const writeSidecars = async (
               }
             : undefined,
         },
-        corrections: norm.corrections,
-        elements: [
-          {
-            id: `${page.id}-page-bounds`,
-            type: "page_bounds",
-            bbox: norm.cropBox,
-            confidence: 0.5,
-            source: "local",
-            flags: shadowFlags,
-          },
-        ],
-        layoutProfile: assessment.profile,
-        layoutConfidence: assessment.confidence,
-        layoutRationale: assessment.rationale,
+        elements,
         metrics: {
           processingMs: (analysis as unknown as { processingMs?: number }).processingMs ?? 0,
           deskewConfidence,
@@ -1626,24 +1871,10 @@ const writeSidecars = async (
           backgroundMean: norm.stats.backgroundMean,
           illuminationResidual: norm.stats.illuminationResidual,
           spineShadowScore: norm.stats.spineShadowScore,
+          layoutScore: layoutConfidence,
           baseline: baselineSummary,
         },
         bookModel: bookModel,
-        decisions: {
-          accepted,
-          notes: notes || (accepted ? "Auto-accepted" : "Requires review"),
-          overrides: shadowFlags,
-        },
-        review: reviewItem
-          ? {
-              required: true,
-              reason: reviewItem.reason,
-              layoutConfidence: reviewItem.layoutConfidence,
-              previews: reviewItem.previews,
-              qualityGate: reviewItem.qualityGate,
-            }
-          : { required: false },
-        normalizationRunId: runId,
       };
 
       const outPath = path.join(sidecarDir, `${page.id}.json`);

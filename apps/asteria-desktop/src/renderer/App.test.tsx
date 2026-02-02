@@ -6,10 +6,8 @@ describe("App", () => {
   it("shows headline and key points", () => {
     render(<App />);
 
-    expect(
-      screen.getByRole("heading", { name: /enterprise page normalization/i })
-    ).toBeInTheDocument();
-    expect(screen.getByText(/Deskew & dewarp with confidence scoring/i)).toBeInTheDocument();
-    expect(screen.getByText(/Hook up IPC to the orchestrator/i)).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /projects/i, level: 1 })).toBeInTheDocument();
+    expect(screen.getByText(/manage your corpus libraries/i)).toBeInTheDocument();
+    expect(screen.getByText(/Mind, Myth and Magick/i)).toBeInTheDocument();
   });
 });

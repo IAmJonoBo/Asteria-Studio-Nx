@@ -3,21 +3,23 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "main": "src/main/main.ts",
+  "main": "dist/main/main.js",
   "scripts": {
     "dev": "concurrently \"pnpm:dev:renderer\" \"pnpm:dev:main\"",
     "dev:renderer": "vite --config vite.config.ts",
     "dev:main": "ts-node --transpile-only src/main/main.ts",
     "build": "pnpm run build:renderer && pnpm run build:main",
     "build:renderer": "vite build",
-    "build:main": "tsc --project tsconfig.json --outDir dist",
+    "build:main": "tsc --project tsconfig.build.json",
     "typecheck": "tsc --noEmit",
     "lint": "pnpm exec eslint \"src/**/*.{ts,tsx}\"",
     "test": "vitest run --coverage",
     "test:ui": "vitest run src/renderer --coverage",
     "test:e2e": "playwright test",
     "pipeline:run": "ts-node --transpile-only scripts/run-pipeline.ts",
-    "pipeline:export": "ts-node scripts/export-normalized.ts"
+    "pipeline:export": "ts-node scripts/export-normalized.ts",
+    "package": "pnpm run build && electron-builder",
+    "dist": "pnpm run build && electron-builder --publish=never"
   },
   "dependencies": {
     "electron": "^40.1.0",
@@ -41,6 +43,7 @@
     "eslint": "^9.39.2",
     "eslint-plugin-react": "^7.37.5",
     "eslint-plugin-react-hooks": "^7.0.1",
+    "electron-builder": "^26.0.12",
     "jsdom": "^27.4.0",
     "playwright": "^1.58.1",
     "prettier": "^3.8.1",
@@ -49,5 +52,26 @@
     "typescript-eslint": "^8.54.0",
     "vite": "^7.3.1",
     "vitest": "^4.0.18"
+  },
+  "build": {
+    "appId": "studio.asteria.app",
+    "productName": "Asteria Studio",
+    "directories": {
+      "output": "dist-app"
+    },
+    "files": [
+      "dist/**",
+      "package.json"
+    ],
+    "asar": true,
+    "mac": {
+      "target": "dmg"
+    },
+    "win": {
+      "target": "nsis"
+    },
+    "linux": {
+      "target": "AppImage"
+    }
   }
 }

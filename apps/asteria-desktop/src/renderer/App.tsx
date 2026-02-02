@@ -1,50 +1,141 @@
-import { useMemo } from "react";
+import { useState } from "react";
 import type { JSX } from "react";
+import { Navigation, type NavItem } from "./components/Navigation";
+import { CommandPalette } from "./components/CommandPalette";
+import { ProjectsScreen } from "./screens/ProjectsScreen";
+import { ReviewQueueScreen } from "./screens/ReviewQueueScreen";
+import { RunsScreen, MonitorScreen, ExportsScreen, SettingsScreen } from "./screens";
+import { useTheme } from "./hooks/useTheme";
+import { useKeyboardShortcut } from "./hooks/useKeyboardShortcut";
 
 export function App(): JSX.Element {
-  const summary = useMemo(
-    () => [
-      "Deskew & dewarp with confidence scoring",
-      "Detect bounds, titles, folios, ornaments, body blocks",
-      "Normalize to target dimensions/DPI with bleed/trim",
-      "Offline-first with optional remote accelerators",
-      "Review queue with overlays and bulk actions",
-    ],
-    []
-  );
+  const [theme, setTheme] = useTheme();
+  const [activeScreen, setActiveScreen] = useState<NavItem>("projects");
+  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
+
+  useKeyboardShortcut({
+    key: "k",
+    ctrlKey: true,
+    handler: () => setCommandPaletteOpen(true),
+    description: "Open command palette",
+  });
+
+  // Navigation shortcuts (1-6)
+  ["1", "2", "3", "4", "5", "6"].forEach((key, index) => {
+    const screens: NavItem[] = ["projects", "runs", "monitor", "review", "exports", "settings"];
+    // eslint-disable-next-line react-hooks/rules-of-hooks
+    useKeyboardShortcut({
+      key,
+      ctrlKey: true,
+      handler: () => setActiveScreen(screens[index]),
+      description: `Navigate to ${screens[index]}`,
+    });
+  });
+
+  const commands = [
+    {
+      id: "nav-projects",
+      label: "Go to Projects",
+      category: "Navigation",
+      shortcut: "Ctrl+1",
+      action: () => setActiveScreen("projects"),
+    },
+    {
+      id: "nav-runs",
+      label: "Go to Run History",
+      category: "Navigation",
+      shortcut: "Ctrl+2",
+      action: () => setActiveScreen("runs"),
+    },
+    {
+      id: "nav-monitor",
+      label: "Go to Live Monitor",
+      category: "Navigation",
+      shortcut: "Ctrl+3",
+      action: () => setActiveScreen("monitor"),
+    },
+    {
+      id: "nav-review",
+      label: "Go to Review Queue",
+      category: "Navigation",
+      shortcut: "Ctrl+4",
+      action: () => setActiveScreen("review"),
+    },
+    {
+      id: "nav-exports",
+      label: "Go to Exports",
+      category: "Navigation",
+      shortcut: "Ctrl+5",
+      action: () => setActiveScreen("exports"),
+    },
+    {
+      id: "nav-settings",
+      label: "Go to Settings",
+      category: "Navigation",
+      shortcut: "Ctrl+6",
+      action: () => setActiveScreen("settings"),
+    },
+    {
+      id: "toggle-theme",
+      label: "Toggle Theme",
+      category: "Preferences",
+      action: () => setTheme(theme === "light" ? "dark" : "light"),
+    },
+    {
+      id: "import-corpus",
+      label: "Import Corpus",
+      category: "Actions",
+      action: () => console.log("Import corpus"),
+    },
+    {
+      id: "start-run",
+      label: "Start New Run",
+      category: "Actions",
+      action: () => console.log("Start run"),
+    },
+  ];
 
   return (
-    <main className="app-shell">
-      <header className="hero">
-        <div>
-          <p className="eyebrow">Asteria Studio</p>
-          <h1>Enterprise page normalization</h1>
-          <p className="lede">
-            Offline-first Electron desktop app for designers and digitization teams. Ingest scans,
-            deskew, dewarp, detect elements, and export audit-ready outputs.
-          </p>
-          <div className="pill-row">
-            <span className="pill">Local projects</span>
-            <span className="pill">GPU-aware</span>
-            <span className="pill">JSON sidecars</span>
-          </div>
-        </div>
-      </header>
-      <section className="panel">
-        <h2>Pipeline highlights</h2>
-        <ul>
-          {summary.map((item) => (
-            <li key={item}>{item}</li>
-          ))}
-        </ul>
-      </section>
-      <section className="panel">
-        <h2>Next up</h2>
-        <p>
-          Hook up IPC to the orchestrator, wire the Rust CV core bindings, and add the review queue
-          with overlays.
-        </p>
-      </section>
-    </main>
+    <div className="app-layout">
+      <Navigation active={activeScreen} onNavigate={setActiveScreen} />
+
+      <div className="app-main">
+        <header className="app-header">
+          <h2
+            style={{ margin: 0, fontSize: "14px", fontWeight: 500, color: "var(--text-secondary)" }}
+          >
+            {activeScreen.charAt(0).toUpperCase() + activeScreen.slice(1)}
+          </h2>
+          <div style={{ flex: 1 }} />
+          <button
+            className="btn btn-ghost btn-sm"
+            onClick={() => setTheme(theme === "light" ? "dark" : "light")}
+            aria-label={`Switch to ${theme === "light" ? "dark" : "light"} theme`}
+          >
+            {theme === "light" ? "🌙" : "☀️"}
+          </button>
+        </header>
+
+        <main className="app-content">
+          {activeScreen === "projects" && (
+            <ProjectsScreen
+              onImportCorpus={() => console.log("Import corpus")}
+              onOpenProject={(id) => console.log("Open project", id)}
+            />
+          )}
+          {activeScreen === "runs" && <RunsScreen />}
+          {activeScreen === "monitor" && <MonitorScreen />}
+          {activeScreen === "review" && <ReviewQueueScreen />}
+          {activeScreen === "exports" && <ExportsScreen />}
+          {activeScreen === "settings" && <SettingsScreen />}
+        </main>
+      </div>
+
+      <CommandPalette
+        isOpen={commandPaletteOpen}
+        onClose={() => setCommandPaletteOpen(false)}
+        commands={commands}
+      />
+    </div>
   );
 }

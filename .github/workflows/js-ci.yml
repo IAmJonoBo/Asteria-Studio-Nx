@@ -80,36 +80,3 @@ jobs:
         run: pnpm -C apps/asteria-desktop run test:e2e
         env:
           CI: true
-
-  codacy-cli-v2:
-    runs-on: ubuntu-latest
-    env:
-      CODACY_CLI_V2_VERSION: 1.0.0-main.275.bc32470
-      CODACY_PROJECT_TOKEN: ${{ secrets.CODACY_PROJECT_TOKEN }}
-    steps:
-      - name: Checkout
-        if: ${{ env.CODACY_PROJECT_TOKEN != '' }}
-        uses: actions/checkout@v4
-
-      - name: Download Codacy CLI v2
-        if: ${{ env.CODACY_PROJECT_TOKEN != '' }}
-        run: |
-          set -euo pipefail
-          tmpdir="/tmp/codacy-cli-v2"
-          mkdir -p "$tmpdir"
-          curl -sL "https://github.com/codacy/codacy-cli-v2/releases/download/${CODACY_CLI_V2_VERSION}/codacy-cli-v2_${CODACY_CLI_V2_VERSION}_linux_amd64.tar.gz" -o "$tmpdir/codacy-cli-v2.tgz"
-          tar xzf "$tmpdir/codacy-cli-v2.tgz" -C "$tmpdir"
-          echo "$tmpdir" >> "$GITHUB_PATH"
-
-      - name: Run Codacy CLI v2 (ESLint)
-        if: ${{ env.CODACY_PROJECT_TOKEN != '' }}
-        run: |
-          set -euo pipefail
-          codacy-cli-v2 analyze --tool eslint --config .codacy/codacy.yaml --output codacy-eslint.sarif
-
-      - name: Upload Codacy SARIF
-        if: ${{ env.CODACY_PROJECT_TOKEN != '' }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: codacy-eslint-sarif
-          path: codacy-eslint.sarif

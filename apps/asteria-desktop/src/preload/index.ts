@@ -41,11 +41,14 @@ const api: IpcChannels = {
     validatePipelineRunConfig(config);
     return safeInvoke("asteria:analyze-corpus", config);
   },
-  "asteria:scan-corpus": async (rootPath: Parameters<IpcChannels["asteria:scan-corpus"]>[0]) => {
+  "asteria:scan-corpus": async (
+    rootPath: Parameters<IpcChannels["asteria:scan-corpus"]>[0],
+    options?: Parameters<IpcChannels["asteria:scan-corpus"]>[1]
+  ) => {
     if (typeof rootPath !== "string" || rootPath.trim().length === 0) {
       throw new Error("Invalid root path for corpus scan");
     }
-    return safeInvoke("asteria:scan-corpus", rootPath);
+    return safeInvoke("asteria:scan-corpus", rootPath, options);
   },
   "asteria:cancel-run": async (runId: Parameters<IpcChannels["asteria:cancel-run"]>[0]) => {
     validateRunId(runId);

@@ -1,8 +1,5 @@
 
 
-#Ignore vscode AI rules
-.github/instructions/codacy.instructions.md
-
 # Node & tooling
 node_modules/
 dist/

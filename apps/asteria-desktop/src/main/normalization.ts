@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import sharp from "sharp";
 import type { BookModel, CorpusSummary, PageBoundsEstimate, PageData } from "../ipc/contracts.ts";
+import { getPipelineCoreNative, type PipelineCoreNative } from "./pipeline-core-native.ts";
 
 const MAX_PREVIEW_DIM = 1600;
 const DEFAULT_PADDING_PX = 12;
@@ -17,6 +18,54 @@ const COMMON_SIZES_MM = [
 ];
 
 const clamp01 = (value: number): number => Math.max(0, Math.min(1, value));
+
+const getNativeCore = (): PipelineCoreNative | null => getPipelineCoreNative();
+
+const computeRowSums = (preview: PreviewImage): number[] => {
+  const { data, width, height } = preview;
+  const native = getNativeCore();
+  if (native) {
+    const sums = native.projectionProfileY(Buffer.from(data), width, height);
+    if (sums.length === height) {
+      const maxRow = width * 255;
+      return sums.map((sum) => maxRow - sum);
+    }
+  }
+
+  const rowSums = new Array<number>(height).fill(0);
+  for (let y = 0; y < height; y++) {
+    let sum = 0;
+    for (let x = 0; x < width; x++) {
+      const v = data[y * width + x];
+      sum += 255 - v;
+    }
+    rowSums[y] = sum;
+  }
+  return rowSums;
+};
+
+const computeColSums = (preview: PreviewImage): number[] => {
+  const { data, width, height } = preview;
+  const native = getNativeCore();
+  if (native) {
+    const sums = native.projectionProfileX(Buffer.from(data), width, height);
+    if (sums.length === width) {
+      const maxCol = height * 255;
+      return sums.map((sum) => maxCol - sum);
+    }
+  }
+
+  const colSums = new Array<number>(width).fill(0);
+  for (let x = 0; x < width; x++) {
+    let sum = 0;
+    for (let y = 0; y < height; y++) {
+      const v = data[y * width + x];
+      sum += 255 - v;
+    }
+    colSums[x] = sum;
+  }
+  return colSums;
+};
 
 interface PreviewImage {
   data: Uint8Array;
@@ -310,6 +359,17 @@ const buildPreviewFromSharp = async (image: sharp.Sharp): Promise<PreviewImage> 
 };
 
 const estimateSkewAngle = (preview: PreviewImage): { angle: number; confidence: number } => {
+  const native = getNativeCore();
+  if (native) {
+    const estimate = native.estimateSkewAngle(
+      Buffer.from(preview.data),
+      preview.width,
+      preview.height
+    );
+    if (Number.isFinite(estimate.angle) && Number.isFinite(estimate.confidence)) {
+      return { angle: estimate.angle, confidence: estimate.confidence };
+    }
+  }
   const histogram = computeGradientHistogram(preview);
   const { width, height } = preview;
 
@@ -643,6 +703,28 @@ const computeEdgeBox = (
 
 const computeEdgeThreshold = (preview: PreviewImage): number => {
   const { data, width, height } = preview;
+  const native = getNativeCore();
+  if (native) {
+    const magnitudes = native.sobelMagnitude(Buffer.from(data), width, height);
+    if (magnitudes.length === width * height) {
+      let sum = 0;
+      let sumSq = 0;
+      let count = 0;
+      for (let y = 1; y < height - 1; y += 2) {
+        const rowOffset = y * width;
+        for (let x = 1; x < width - 1; x += 2) {
+          const magnitude = magnitudes[rowOffset + x] ?? 0;
+          sum += magnitude;
+          sumSq += magnitude * magnitude;
+          count++;
+        }
+      }
+      const mean = count > 0 ? sum / count : 0;
+      const variance = count > 0 ? Math.max(0, sumSq / count - mean * mean) : 0;
+      const std = Math.sqrt(variance);
+      return Math.max(8, mean + std * EDGE_THRESHOLD_SCALE);
+    }
+  }
   const gxKernel = [-1, 0, 1, -2, 0, 2, -1, 0, 1];
   const gyKernel = [1, 2, 1, 0, 0, 0, -1, -2, -1];
   let sum = 0;
@@ -672,16 +754,20 @@ const projectionStats = (values: number[]): { mean: number; std: number } => {
 };
 
 const estimateBaselineMetrics = (preview: PreviewImage, residualAngle: number): BaselineMetrics => {
-  const { data, width, height } = preview;
-  const rowSums = new Array<number>(height).fill(0);
-  for (let y = 0; y < height; y++) {
-    let sum = 0;
-    for (let x = 0; x < width; x++) {
-      const v = data[y * width + x];
-      sum += 255 - v;
-    }
-    rowSums[y] = sum;
+  const native = getNativeCore();
+  if (native) {
+    const metrics = native.baselineMetrics(
+      Buffer.from(preview.data),
+      preview.width,
+      preview.height
+    );
+    return {
+      residualAngle: Math.abs(residualAngle),
+      lineConsistency: Math.max(0, Math.min(1, metrics.lineConsistency)),
+      textLineCount: metrics.textLineCount,
+    };
   }
+  const rowSums = computeRowSums(preview);
 
   const { mean, std } = projectionStats(rowSums);
   const consistencyRaw = mean > 0 ? 1 - Math.min(1, std / (mean * 2)) : 0;
@@ -701,16 +787,15 @@ const estimateBaselineMetrics = (preview: PreviewImage, residualAngle: number): 
 };
 
 const estimateColumnMetrics = (preview: PreviewImage): ColumnMetrics => {
-  const { data, width, height } = preview;
-  const colSums = new Array<number>(width).fill(0);
-  for (let x = 0; x < width; x++) {
-    let sum = 0;
-    for (let y = 0; y < height; y++) {
-      const v = data[y * width + x];
-      sum += 255 - v;
-    }
-    colSums[x] = sum;
+  const native = getNativeCore();
+  if (native) {
+    const metrics = native.columnMetrics(Buffer.from(preview.data), preview.width, preview.height);
+    return {
+      columnCount: Math.max(1, Math.round(metrics.columnCount)),
+      columnSeparation: metrics.columnSeparation,
+    };
   }
+  const colSums = computeColSums(preview);
 
   const { mean, std } = projectionStats(colSums);
   const threshold = mean + std * 0.7;

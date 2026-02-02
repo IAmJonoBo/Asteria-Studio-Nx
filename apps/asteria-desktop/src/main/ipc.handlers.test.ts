@@ -1,7 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import path from "node:path";
 
 const handlers = vi.hoisted(() => new Map<string, (...args: unknown[]) => unknown>());
 const readFile = vi.hoisted(() => vi.fn());
+const mkdir = vi.hoisted(() => vi.fn());
+const writeFile = vi.hoisted(() => vi.fn());
 
 vi.mock("electron", () => ({
   ipcMain: {
@@ -12,15 +15,19 @@ vi.mock("electron", () => ({
 }));
 
 vi.mock("node:fs/promises", () => ({
-  default: { readFile },
+  default: { readFile, mkdir, writeFile },
   readFile,
+  mkdir,
+  writeFile,
 }));
 
 const scanCorpus = vi.hoisted(() => vi.fn());
 const analyzeCorpus = vi.hoisted(() => vi.fn());
+const runPipeline = vi.hoisted(() => vi.fn());
 
 vi.mock("../ipc/corpusScanner", () => ({ scanCorpus }));
 vi.mock("../ipc/corpusAnalysis", () => ({ analyzeCorpus }));
+vi.mock("./pipeline-runner", () => ({ runPipeline }));
 
 import { registerIpcHandlers } from "./ipc";
 
@@ -28,8 +35,11 @@ describe("IPC handler registration", () => {
   beforeEach(() => {
     handlers.clear();
     readFile.mockReset();
+    mkdir.mockReset();
+    writeFile.mockReset();
     scanCorpus.mockReset();
     analyzeCorpus.mockReset();
+    runPipeline.mockReset();
   });
 
   it("registers review queue handlers", async () => {
@@ -52,6 +62,23 @@ describe("IPC handler registration", () => {
       targetDpi: 300,
       targetDimensionsMm: { width: 210, height: 297 },
     };
+
+    runPipeline.mockResolvedValueOnce({
+      success: true,
+      runId: "run-test",
+      projectId: "proj",
+      pageCount: 1,
+      durationMs: 10,
+      scanConfig: {
+        projectId: "proj",
+        pages: config.pages,
+        targetDpi: 300,
+        targetDimensionsMm: { width: 210, height: 297 },
+      },
+      analysisSummary: { projectId: "proj", pageCount: 1, dpi: 300, estimates: [] },
+      pipelineResult: { status: "success", pagesProcessed: 1 },
+      errors: [],
+    });
 
     const result = await (handler as (event: unknown, cfg: typeof config) => Promise<unknown>)(
       {},
@@ -114,7 +141,7 @@ describe("IPC handler registration", () => {
       handler as (event: unknown, runId: string, format: "png") => Promise<unknown>
     )({}, "run-1", "png");
 
-    expect(result).toBe("/output/run-1");
+    expect(result).toBe(path.join(process.cwd(), "pipeline-results", "normalized"));
   });
 
   it("fetch-page returns default page shape", async () => {

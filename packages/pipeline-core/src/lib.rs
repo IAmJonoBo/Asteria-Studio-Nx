@@ -103,6 +103,320 @@ pub fn sobel_magnitude_js(data: Buffer, width: u32, height: u32) -> Vec<u16> {
     sobel_magnitude(&bytes[..width * height], width, height)
 }
 
+#[napi(object)]
+pub struct DeskewEstimate {
+    pub angle: f64,
+    pub confidence: f64,
+}
+
+#[napi(object)]
+pub struct BaselineMetricsResult {
+    #[allow(non_snake_case)]
+    pub lineConsistency: f64,
+    #[allow(non_snake_case)]
+    pub textLineCount: u32,
+}
+
+#[napi(object)]
+pub struct ColumnMetricsResult {
+    #[allow(non_snake_case)]
+    pub columnCount: u32,
+    #[allow(non_snake_case)]
+    pub columnSeparation: f64,
+}
+
+#[napi(object)]
+pub struct LayoutElementResult {
+    pub id: String,
+    #[napi(js_name = "type")]
+    pub element_type: String,
+    pub bbox: Vec<f64>,
+    pub confidence: f64,
+}
+
+fn gradient_histogram(data: &[u8], width: usize, height: usize) -> [f64; 181] {
+    let mut histogram = [0f64; 181];
+    if width < 3 || height < 3 {
+        return histogram;
+    }
+    let gx = [-1i32, 0, 1, -2, 0, 2, -1, 0, 1];
+    let gy = [1i32, 2, 1, 0, 0, 0, -1, -2, -1];
+    for y in 1..height - 1 {
+        for x in 1..width - 1 {
+            let mut sum_x = 0i32;
+            let mut sum_y = 0i32;
+            let mut k = 0usize;
+            for ky in -1i32..=1 {
+                for kx in -1i32..=1 {
+                    let ix = (x as i32 + kx) as usize;
+                    let iy = (y as i32 + ky) as usize;
+                    let value = data[iy * width + ix] as i32;
+                    sum_x += gx[k] * value;
+                    sum_y += gy[k] * value;
+                    k += 1;
+                }
+            }
+            let magnitude = ((sum_x * sum_x + sum_y * sum_y) as f64).sqrt();
+            if magnitude < 10.0 {
+                continue;
+            }
+            let angle = (sum_y as f64).atan2(sum_x as f64).to_degrees();
+            let bucket = (angle + 90.0).round().clamp(0.0, 180.0) as usize;
+            histogram[bucket] += magnitude;
+        }
+    }
+    histogram
+}
+
+#[napi(js_name = "estimateSkewAngle")]
+pub fn estimate_skew_angle_js(data: Buffer, width: u32, height: u32) -> DeskewEstimate {
+    let width = width as usize;
+    let height = height as usize;
+    let bytes = data.as_ref();
+    if width == 0 || height == 0 || bytes.len() < width * height {
+        return DeskewEstimate {
+            angle: 0.0,
+            confidence: 0.0,
+        };
+    }
+    let histogram = gradient_histogram(&bytes[..width * height], width, height);
+    let mut best_bucket = 90usize;
+    let mut best_val = 0f64;
+    for (idx, val) in histogram.iter().enumerate() {
+        if *val > best_val {
+            best_val = *val;
+            best_bucket = idx;
+        }
+    }
+    let window = 3i32;
+    let mut num = 0f64;
+    let mut den = 0f64;
+    let start = (best_bucket as i32 - window).max(0) as usize;
+    let end = (best_bucket as i32 + window).min(180) as usize;
+    for i in start..=end {
+        let w = histogram[i];
+        num += (i as f64 - 90.0) * w;
+        den += w;
+    }
+    let angle = if den > 0.0 { num / den } else { 0.0 };
+    let confidence = (best_val / ((width * height) as f64 * 4.0)).min(1.0);
+    DeskewEstimate { angle, confidence }
+}
+
+#[napi(js_name = "baselineMetrics")]
+pub fn baseline_metrics_js(data: Buffer, width: u32, height: u32) -> BaselineMetricsResult {
+    let width = width as usize;
+    let height = height as usize;
+    let bytes = data.as_ref();
+    if width == 0 || height == 0 || bytes.len() < width * height {
+        return BaselineMetricsResult {
+            lineConsistency: 0.0,
+            textLineCount: 0,
+        };
+    }
+    let mut row_sums = vec![0f64; height];
+    for y in 0..height {
+        let offset = y * width;
+        let mut sum = 0f64;
+        for x in 0..width {
+            sum += 255f64 - bytes[offset + x] as f64;
+        }
+        row_sums[y] = sum;
+    }
+    let mean = row_sums.iter().sum::<f64>() / (row_sums.len().max(1) as f64);
+    let variance = row_sums
+        .iter()
+        .map(|v| (v - mean) * (v - mean))
+        .sum::<f64>()
+        / (row_sums.len().max(1) as f64);
+    let std = variance.sqrt();
+    let line_consistency = if mean > 0.0 {
+        (1.0 - (std / (mean * 2.0)).min(1.0)).max(0.0)
+    } else {
+        0.0
+    };
+    let threshold = mean + std * 0.6;
+    let mut line_count = 0u32;
+    for y in 1..row_sums.len().saturating_sub(1) {
+        if row_sums[y] > threshold && row_sums[y] > row_sums[y - 1] && row_sums[y] > row_sums[y + 1] {
+            line_count += 1;
+        }
+    }
+    BaselineMetricsResult {
+        lineConsistency: line_consistency,
+        textLineCount: line_count,
+    }
+}
+
+#[napi(js_name = "columnMetrics")]
+pub fn column_metrics_js(data: Buffer, width: u32, height: u32) -> ColumnMetricsResult {
+    let width = width as usize;
+    let height = height as usize;
+    let bytes = data.as_ref();
+    if width == 0 || height == 0 || bytes.len() < width * height {
+        return ColumnMetricsResult {
+            columnCount: 0,
+            columnSeparation: 0.0,
+        };
+    }
+    let mut col_sums = vec![0f64; width];
+    for x in 0..width {
+        let mut sum = 0f64;
+        for y in 0..height {
+            sum += 255f64 - bytes[y * width + x] as f64;
+        }
+        col_sums[x] = sum;
+    }
+    let mean = col_sums.iter().sum::<f64>() / (col_sums.len().max(1) as f64);
+    let variance = col_sums
+        .iter()
+        .map(|v| (v - mean) * (v - mean))
+        .sum::<f64>()
+        / (col_sums.len().max(1) as f64);
+    let std = variance.sqrt();
+    let threshold = mean + std * 0.7;
+    let mut column_bands = 0u32;
+    let mut in_band = false;
+    for val in col_sums {
+        if val > threshold {
+            if !in_band {
+                column_bands += 1;
+                in_band = true;
+            }
+        } else {
+            in_band = false;
+        }
+    }
+    ColumnMetricsResult {
+        columnCount: column_bands.max(1),
+        columnSeparation: std,
+    }
+}
+
+fn compute_mean_std(data: &[u8]) -> (f64, f64) {
+    if data.is_empty() {
+        return (0.0, 0.0);
+    }
+    let sum: f64 = data.iter().map(|v| *v as f64).sum();
+    let mean = sum / data.len() as f64;
+    let variance = data
+        .iter()
+        .map(|v| {
+            let dv = *v as f64 - mean;
+            dv * dv
+        })
+        .sum::<f64>()
+        / data.len() as f64;
+    (mean, variance.sqrt())
+}
+
+#[napi(js_name = "detectLayoutElements")]
+pub fn detect_layout_elements_js(data: Buffer, width: u32, height: u32) -> Vec<LayoutElementResult> {
+    let width = width as usize;
+    let height = height as usize;
+    let bytes = data.as_ref();
+    if width == 0 || height == 0 || bytes.len() < width * height {
+        return vec![];
+    }
+
+    let (mean, std) = compute_mean_std(&bytes[..width * height]);
+    let threshold = (mean - std * 0.5).clamp(10.0, 245.0);
+
+    let mut min_x = width;
+    let mut min_y = height;
+    let mut max_x = 0usize;
+    let mut max_y = 0usize;
+    let mut found = false;
+
+    for y in 0..height {
+        let offset = y * width;
+        for x in 0..width {
+            if (bytes[offset + x] as f64) < threshold {
+                found = true;
+                min_x = min_x.min(x);
+                min_y = min_y.min(y);
+                max_x = max_x.max(x);
+                max_y = max_y.max(y);
+            }
+        }
+    }
+
+    let (x0, y0, x1, y1) = if found {
+        (min_x as f64, min_y as f64, max_x as f64, max_y as f64)
+    } else {
+        (0.0, 0.0, (width - 1) as f64, (height - 1) as f64)
+    };
+
+    let content_width = (x1 - x0).max(1.0);
+    let content_height = (y1 - y0).max(1.0);
+    let make_box = |fx0: f64, fy0: f64, fx1: f64, fy1: f64| -> Vec<f64> {
+        vec![
+            (x0 + content_width * fx0).clamp(0.0, (width - 1) as f64),
+            (y0 + content_height * fy0).clamp(0.0, (height - 1) as f64),
+            (x0 + content_width * fx1).clamp(0.0, (width - 1) as f64),
+            (y0 + content_height * fy1).clamp(0.0, (height - 1) as f64),
+        ]
+    };
+
+    let mut elements = Vec::new();
+    elements.push(LayoutElementResult {
+        id: "page-bounds".to_string(),
+        element_type: "page_bounds".to_string(),
+        bbox: vec![0.0, 0.0, (width - 1) as f64, (height - 1) as f64],
+        confidence: 0.6,
+    });
+    elements.push(LayoutElementResult {
+        id: "text-block".to_string(),
+        element_type: "text_block".to_string(),
+        bbox: vec![x0, y0, x1, y1],
+        confidence: 0.55,
+    });
+    elements.push(LayoutElementResult {
+        id: "title".to_string(),
+        element_type: "title".to_string(),
+        bbox: make_box(0.12, 0.02, 0.88, 0.14),
+        confidence: 0.28,
+    });
+    elements.push(LayoutElementResult {
+        id: "running-head".to_string(),
+        element_type: "running_head".to_string(),
+        bbox: make_box(0.1, 0.0, 0.9, 0.08),
+        confidence: 0.25,
+    });
+    elements.push(LayoutElementResult {
+        id: "folio".to_string(),
+        element_type: "folio".to_string(),
+        bbox: make_box(0.42, 0.9, 0.58, 0.98),
+        confidence: 0.22,
+    });
+    elements.push(LayoutElementResult {
+        id: "ornament".to_string(),
+        element_type: "ornament".to_string(),
+        bbox: make_box(0.42, 0.18, 0.58, 0.24),
+        confidence: 0.2,
+    });
+    elements.push(LayoutElementResult {
+        id: "drop-cap".to_string(),
+        element_type: "drop_cap".to_string(),
+        bbox: make_box(0.02, 0.18, 0.1, 0.32),
+        confidence: 0.18,
+    });
+    elements.push(LayoutElementResult {
+        id: "footnote".to_string(),
+        element_type: "footnote".to_string(),
+        bbox: make_box(0.05, 0.86, 0.95, 0.98),
+        confidence: 0.2,
+    });
+    elements.push(LayoutElementResult {
+        id: "marginalia".to_string(),
+        element_type: "marginalia".to_string(),
+        bbox: make_box(0.0, 0.25, 0.08, 0.75),
+        confidence: 0.18,
+    });
+
+    elements
+}
+
 /// Compute a 9x8 dHash from a downsampled 9x8 grayscale image.
 pub fn dhash_9x8(data: &[u8]) -> u64 {
     if data.len() != 9 * 8 {

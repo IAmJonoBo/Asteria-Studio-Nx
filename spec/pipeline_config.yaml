@@ -15,6 +15,9 @@ models:
   execution_mode: auto # auto | local | remote
   endpoints:
     remote_url: null # optional remote accelerator endpoint
+    remote_layout_endpoint: null # optional layout detection endpoint
+    remote_layout_token_env: ASTERIA_REMOTE_LAYOUT_TOKEN
+    remote_layout_timeout_ms: 5000
   ocr:
     engine: tesseract
     languages: [eng]

@@ -111,6 +111,17 @@ describe("Pipeline Runner", () => {
       // Write minimal JPEG marker
       await fs.writeFile(imgPath, Buffer.from([0xff, 0xd8, 0xff, 0xc0]));
     }
+
+    await sharp({
+      create: {
+        width: 16,
+        height: 16,
+        channels: 3,
+        background: { r: 255, g: 255, b: 255 },
+      },
+    })
+      .png()
+      .toFile("/tmp/normalized.png");
   });
 
   it("runPipeline scans and analyzes pages", async () => {
@@ -552,6 +563,75 @@ describe("Pipeline Runner", () => {
 
     const evaluation = evaluateResults(mockResult);
     expect(evaluation.recommendations.some((r) => r.includes("variance"))).toBe(true);
+  });
+
+  it("evaluateResults flags large corpus and zero bounds", () => {
+    const estimates = Array.from({ length: 150 }, (_, i) => ({
+      pageId: `p${i}`,
+      widthPx: 2480,
+      heightPx: 3508,
+      bleedPx: 8,
+      trimPx: 4,
+      pageBounds:
+        i === 0
+          ? ([0, 0, 0, 0] as [number, number, number, number])
+          : ([0, 0, 2480, 3508] as [number, number, number, number]),
+      contentBounds: [0, 0, 2480, 3508] as [number, number, number, number],
+    }));
+
+    const evaluation = evaluateResults({
+      success: true,
+      runId: "run-large",
+      projectId: "large-test",
+      pageCount: 150,
+      durationMs: 6000,
+      scanConfig: {
+        projectId: "large-test",
+        pages: estimates.map((e) => ({
+          id: e.pageId,
+          filename: `${e.pageId}.jpg`,
+          originalPath: "",
+          confidenceScores: {},
+        })),
+        targetDpi: 300,
+        targetDimensionsMm: { width: 210, height: 297 },
+      },
+      analysisSummary: {
+        projectId: "large-test",
+        pageCount: 150,
+        dpi: 300,
+        targetDimensionsMm: { width: 210, height: 297 },
+        targetDimensionsPx: { width: 2480, height: 3508 },
+        estimates,
+      },
+      pipelineResult: {
+        runId: "run-large",
+        status: "success",
+        pagesProcessed: 150,
+        errors: [],
+        metrics: {
+          durationMs: 6000,
+          normalization: {
+            avgSkewDeg: 0.2,
+            avgMaskCoverage: 0.92,
+            shadowRate: 0.05,
+            lowCoverageCount: 0,
+            reviewQueueCount: 0,
+            strictAcceptRate: 0.9,
+            secondPassCount: 3,
+          },
+        },
+      },
+      errors: [],
+    });
+
+    expect(evaluation.recommendations.some((rec) => rec.includes("batch processing"))).toBe(true);
+    expect(evaluation.recommendations.some((rec) => rec.includes("zero content bounds"))).toBe(
+      true
+    );
+    expect(evaluation.observations.some((obs) => obs.includes("Second-pass corrections"))).toBe(
+      true
+    );
   });
 
   it("covers layout classification and baseline validation branches", async () => {
