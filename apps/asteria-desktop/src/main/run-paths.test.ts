@@ -1,12 +1,17 @@
 import { describe, it, expect } from "vitest";
 import path from "node:path";
 import {
+  getNormalizedDir,
+  getOverlayDir,
+  getPreviewDir,
   getRunDir,
   getRunManifestPath,
   getRunNormalizedPath,
   getRunOverlayPath,
   getRunPreviewPath,
+  getRunReportPath,
   getRunReviewQueuePath,
+  getSidecarDir,
   getRunSidecarPath,
 } from "./run-paths.ts";
 
@@ -17,6 +22,10 @@ describe("run-paths", () => {
     const runDir = getRunDir(outputDir, runId);
 
     expect(runDir).toBe(path.join(outputDir, "runs", runId));
+    expect(getNormalizedDir(runDir)).toBe(path.join(runDir, "normalized"));
+    expect(getPreviewDir(runDir)).toBe(path.join(runDir, "previews"));
+    expect(getOverlayDir(runDir)).toBe(path.join(runDir, "overlays"));
+    expect(getSidecarDir(runDir)).toBe(path.join(runDir, "sidecars"));
     expect(getRunSidecarPath(runDir, "page-1")).toBe(path.join(runDir, "sidecars", "page-1.json"));
     expect(getRunNormalizedPath(runDir, "page-1")).toBe(
       path.join(runDir, "normalized", "page-1.png")
@@ -31,6 +40,7 @@ describe("run-paths", () => {
       path.join(runDir, "overlays", "page-1-overlay.png")
     );
     expect(getRunManifestPath(runDir)).toBe(path.join(runDir, "manifest.json"));
+    expect(getRunReportPath(runDir)).toBe(path.join(runDir, "report.json"));
     expect(getRunReviewQueuePath(runDir)).toBe(path.join(runDir, "review-queue.json"));
   });
 });

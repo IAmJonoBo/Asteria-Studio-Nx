@@ -3,11 +3,15 @@ import path from "node:path";
 
 const readFile = vi.hoisted(() => vi.fn());
 const writeFile = vi.hoisted(() => vi.fn());
+const rename = vi.hoisted(() => vi.fn());
+const mkdir = vi.hoisted(() => vi.fn());
 
 vi.mock("node:fs/promises", () => ({
-  default: { readFile, writeFile },
+  default: { readFile, writeFile, rename, mkdir },
   readFile,
   writeFile,
+  rename,
+  mkdir,
 }));
 
 import { readRunIndex, updateRunIndex } from "./run-index";
@@ -16,6 +20,8 @@ describe("run-index", () => {
   beforeEach(() => {
     readFile.mockReset();
     writeFile.mockReset();
+    rename.mockReset();
+    mkdir.mockReset();
   });
 
   it("readRunIndex returns empty when missing", async () => {
@@ -75,6 +81,8 @@ describe("run-index", () => {
       reviewCount: 5,
       generatedAt: "2024-01-01",
     });
+    const indexPath = path.join("/tmp/output", "run-index.json");
+    expect(rename).toHaveBeenCalledWith(expect.any(String), indexPath);
   });
 
   it("updateRunIndex writes new entries first", async () => {
@@ -87,9 +95,9 @@ describe("run-index", () => {
     });
 
     const indexPath = path.join("/tmp/output", "run-index.json");
-    expect(writeFile).toHaveBeenCalledWith(
-      indexPath,
-      JSON.stringify({ runs: [{ runId: "run-2", projectId: "proj", status: "queued" }] }, null, 2)
-    );
+    expect(writeFile).toHaveBeenCalledOnce();
+    const [, raw] = writeFile.mock.calls[0];
+    expect(String(raw)).toContain('"run-2"');
+    expect(rename).toHaveBeenCalledWith(expect.any(String), indexPath);
   });
 });

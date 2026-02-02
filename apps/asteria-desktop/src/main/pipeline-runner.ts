@@ -28,9 +28,14 @@ import { deriveBookModelFromImages } from "./book-priors.ts";
 import { getPipelineCoreNative, type PipelineCoreNative } from "./pipeline-core-native.ts";
 import {
   getRunDir,
+  getNormalizedDir,
+  getOverlayDir,
+  getPreviewDir,
   getRunManifestPath,
   getRunOverlayPath,
+  getRunReportPath,
   getRunReviewQueuePath,
+  getSidecarDir,
   getRunSidecarPath,
 } from "./run-paths.ts";
 import {
@@ -47,6 +52,7 @@ import {
   type PipelineConfig,
 } from "./pipeline-config.ts";
 import { updateRunIndex, type RunIndexStatus } from "./run-index.ts";
+import { writeJsonAtomic } from "./file-utils.ts";
 
 const sleep = async (ms: number): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, ms));
@@ -58,6 +64,23 @@ const safeReadJson = async <T>(filePath: string): Promise<T | null> => {
   } catch {
     return null;
   }
+};
+
+const updateReportStatus = async (params: {
+  runDir: string;
+  runId: string;
+  projectId: string;
+  status: RunIndexStatus;
+}): Promise<void> => {
+  const reportPath = getRunReportPath(params.runDir);
+  const existing = await safeReadJson<Record<string, unknown>>(reportPath);
+  await writeJsonAtomic(reportPath, {
+    ...(existing ?? {}),
+    runId: params.runId,
+    projectId: params.projectId,
+    status: params.status,
+    updatedAt: new Date().toISOString(),
+  });
 };
 
 const moduleDir = path.dirname(fileURLToPath(import.meta.url));
@@ -630,8 +653,8 @@ const buildFallbackSummary = (config: PipelineRunConfig): CorpusSummary => {
 };
 
 const cleanupNormalizedOutput = async (runDir: string, pages: PageData[]): Promise<void> => {
-  const normalizedDir = path.join(runDir, "normalized");
-  const previewDir = path.join(runDir, "previews");
+  const normalizedDir = getNormalizedDir(runDir);
+  const previewDir = getPreviewDir(runDir);
   const manifestPath = getRunManifestPath(runDir);
 
   try {
@@ -675,79 +698,6 @@ const cleanupNormalizedOutput = async (runDir: string, pages: PageData[]): Promi
   } catch {
     // no manifest to clean
   }
-};
-
-const resolveProjectOutputDir = (projectRoot: string): string | null => {
-  const normalizedRoot = path.resolve(projectRoot);
-  const base = path.basename(normalizedRoot);
-  const parent = path.basename(path.dirname(normalizedRoot));
-  if (base !== "raw" || parent !== "input") return null;
-  const projectBase = path.resolve(normalizedRoot, "..", "..");
-  return path.join(projectBase, "output", "normalized");
-};
-
-const syncNormalizedExports = async (
-  runId: string,
-  projectRoot: string,
-  pages: PageData[],
-  results: Map<string, NormalizationResult>
-): Promise<void> => {
-  const projectOutput = resolveProjectOutputDir(projectRoot);
-  if (!projectOutput) return;
-
-  await fs.mkdir(projectOutput, { recursive: true });
-  const checksumById = new Map(pages.map((page) => [page.id, page.checksum ?? ""]));
-
-  const manifestPath = path.join(projectOutput, "manifest.json");
-  try {
-    const existing = await fs.readFile(manifestPath, "utf-8");
-    const manifest = JSON.parse(existing) as {
-      pages?: Array<{ pageId: string; checksum?: string; normalizedFile?: string }>;
-    };
-    const currentChecksums = new Map(pages.map((page) => [page.id, page.checksum ?? ""]));
-    const deletions = (manifest.pages ?? [])
-      .filter((entry) => {
-        const current = currentChecksums.get(entry.pageId);
-        return current === undefined || current !== entry.checksum;
-      })
-      .map((entry) => entry.normalizedFile)
-      .filter((file): file is string => file !== undefined && file !== null && file !== "");
-
-    await Promise.all(
-      deletions.map(async (file) => {
-        try {
-          await fs.unlink(path.join(projectOutput, file));
-        } catch {
-          // ignore
-        }
-      })
-    );
-  } catch {
-    // no manifest
-  }
-
-  await Promise.all(
-    Array.from(results.values()).map(async (norm) => {
-      const src = norm.normalizedPath;
-      const filename = `${norm.pageId}.png`;
-      const dest = path.join(projectOutput, filename);
-      await fs.copyFile(src, dest);
-    })
-  );
-
-  const manifest = {
-    runId,
-    exportedAt: new Date().toISOString(),
-    sourceRoot: projectRoot,
-    count: results.size,
-    pages: Array.from(results.values()).map((norm) => ({
-      pageId: norm.pageId,
-      checksum: checksumById.get(norm.pageId) ?? "",
-      normalizedFile: `${norm.pageId}.png`,
-    })),
-  };
-
-  await fs.writeFile(manifestPath, JSON.stringify(manifest, null, 2));
 };
 
 const buildSecondPassOptions = (
@@ -1375,13 +1325,15 @@ const attachOverlays = async (
   normalization: Map<string, NormalizationResult>,
   runDir: string,
   bookModel?: BookModel,
-  gutterByPageId?: Map<string, { start: number; end: number }>
+  gutterByPageId?: Map<string, { start: number; end: number }>,
+  control?: RunControl
 ): Promise<void> => {
-  const overlayDir = path.join(runDir, "overlays");
+  const overlayDir = getOverlayDir(runDir);
   await fs.mkdir(overlayDir, { recursive: true });
 
   await Promise.all(
     reviewQueue.items.map(async (item) => {
+      await waitForControl(control);
       const norm = normalization.get(item.pageId);
       if (!norm) return;
       try {
@@ -1471,12 +1423,14 @@ export interface PipelineRunnerResult {
 const scanCorpusWithRetries = async (
   options: PipelineRunnerOptions,
   runId: string,
-  errors: Array<{ phase: string; message: string }>
+  errors: Array<{ phase: string; message: string }>,
+  control?: RunControl
 ): Promise<PipelineRunConfig> => {
   console.log(`[${runId}] Scanning corpus at ${options.projectRoot}...`);
   let scanConfig: PipelineRunConfig | null = null;
   for (let attempt = 1; attempt <= 2; attempt++) {
     try {
+      await waitForControl(control);
       scanConfig = await scanCorpus(options.projectRoot, {
         includeChecksums: true,
         targetDpi: options.targetDpi,
@@ -1680,7 +1634,7 @@ const writeRunManifestSnapshot = async (params: {
     },
     pages: [],
   };
-  await fs.writeFile(getRunManifestPath(params.runDir), JSON.stringify(manifest, null, 2));
+  await writeJsonAtomic(getRunManifestPath(params.runDir), manifest);
 };
 
 const savePipelineOutputs = async (params: {
@@ -1700,38 +1654,34 @@ const savePipelineOutputs = async (params: {
   appVersion: string;
   configHash: string;
   configSnapshot: { resolved: PipelineConfig; sources: PipelineConfigSources };
+  control?: RunControl;
 }): Promise<void> => {
   await fs.mkdir(params.outputDir, { recursive: true });
   await fs.mkdir(params.runDir, { recursive: true });
-  const reportPath = path.join(params.runDir, "report.json");
-  await fs.writeFile(
-    reportPath,
-    JSON.stringify(
-      {
-        runId: params.runId,
-        projectId: params.projectId,
-        scanConfig: {
-          pageCount: params.scanConfig.pages.length,
-          targetDpi: params.scanConfig.targetDpi,
-          targetDimensionsMm: params.scanConfig.targetDimensionsMm,
-        },
-        analysisSummary: params.analysisSummary,
-        pipelineResult: params.pipelineResult,
-        bookModel: params.bookModel,
-        configSnapshot: params.configSnapshot,
-        determinism: {
-          appVersion: params.appVersion,
-          configHash: params.configHash,
-          rustModuleVersion: "unknown",
-          modelHashes: [],
-          seed: "static",
-        },
-        reviewQueue: params.reviewQueue,
-      },
-      null,
-      2
-    )
-  );
+  const reportPath = getRunReportPath(params.runDir);
+  await writeJsonAtomic(reportPath, {
+    runId: params.runId,
+    projectId: params.projectId,
+    status: params.pipelineResult.status,
+    updatedAt: new Date().toISOString(),
+    scanConfig: {
+      pageCount: params.scanConfig.pages.length,
+      targetDpi: params.scanConfig.targetDpi,
+      targetDimensionsMm: params.scanConfig.targetDimensionsMm,
+    },
+    analysisSummary: params.analysisSummary,
+    pipelineResult: params.pipelineResult,
+    bookModel: params.bookModel,
+    configSnapshot: params.configSnapshot,
+    determinism: {
+      appVersion: params.appVersion,
+      configHash: params.configHash,
+      rustModuleVersion: "unknown",
+      modelHashes: [],
+      seed: "static",
+    },
+    reviewQueue: params.reviewQueue,
+  });
   console.log(`[${params.runId}] Report saved to ${reportPath}`);
 
   await updateRunIndex(params.outputDir, {
@@ -1752,14 +1702,15 @@ const savePipelineOutputs = async (params: {
     params.runDir,
     params.runId,
     params.native,
-    params.bookModel
+    params.bookModel,
+    params.control
   );
 
-  const normalizedDir = path.join(params.runDir, "normalized");
+  const normalizedDir = getNormalizedDir(params.runDir);
   await fs.mkdir(normalizedDir, { recursive: true });
-  const previewDir = path.join(params.runDir, "previews");
+  const previewDir = getPreviewDir(params.runDir);
   await fs.mkdir(previewDir, { recursive: true });
-  const overlayDir = path.join(params.runDir, "overlays");
+  const overlayDir = getOverlayDir(params.runDir);
   await fs.mkdir(overlayDir, { recursive: true });
   const checksumById = new Map(
     params.configToProcess.pages.map((page) => [page.id, page.checksum])
@@ -1796,17 +1747,10 @@ const savePipelineOutputs = async (params: {
       ].filter(Boolean),
     })),
   };
-  await fs.writeFile(getRunManifestPath(params.runDir), JSON.stringify(manifest, null, 2));
-
-  await syncNormalizedExports(
-    params.runId,
-    params.projectRoot,
-    params.configToProcess.pages,
-    params.normalizationResults
-  );
+  await writeJsonAtomic(getRunManifestPath(params.runDir), manifest);
 
   const reviewPath = getRunReviewQueuePath(params.runDir);
-  await fs.writeFile(reviewPath, JSON.stringify(params.reviewQueue, null, 2));
+  await writeJsonAtomic(reviewPath, params.reviewQueue);
   console.log(`[${params.runId}] Review queue saved to ${reviewPath}`);
 };
 
@@ -1825,34 +1769,29 @@ const saveRunFailureOutputs = async (params: {
 }): Promise<void> => {
   await fs.mkdir(params.outputDir, { recursive: true });
   await fs.mkdir(params.runDir, { recursive: true });
-  const reportPath = path.join(params.runDir, "report.json");
-  await fs.writeFile(
-    reportPath,
-    JSON.stringify(
-      {
-        runId: params.runId,
-        projectId: params.projectId,
-        scanConfig: {
-          pageCount: params.scanConfig.pages.length,
-          targetDpi: params.scanConfig.targetDpi,
-          targetDimensionsMm: params.scanConfig.targetDimensionsMm,
-        },
-        analysisSummary: params.analysisSummary,
-        pipelineResult: params.pipelineResult,
-        configSnapshot: params.configSnapshot,
-        determinism: {
-          appVersion: "unknown",
-          configHash: "unknown",
-          rustModuleVersion: "unknown",
-          modelHashes: [],
-          seed: "static",
-        },
-        reviewQueue: params.reviewQueue,
-      },
-      null,
-      2
-    )
-  );
+  const reportPath = getRunReportPath(params.runDir);
+  await writeJsonAtomic(reportPath, {
+    runId: params.runId,
+    projectId: params.projectId,
+    status: params.pipelineResult.status,
+    updatedAt: new Date().toISOString(),
+    scanConfig: {
+      pageCount: params.scanConfig.pages.length,
+      targetDpi: params.scanConfig.targetDpi,
+      targetDimensionsMm: params.scanConfig.targetDimensionsMm,
+    },
+    analysisSummary: params.analysisSummary,
+    pipelineResult: params.pipelineResult,
+    configSnapshot: params.configSnapshot,
+    determinism: {
+      appVersion: "unknown",
+      configHash: "unknown",
+      rustModuleVersion: "unknown",
+      modelHashes: [],
+      seed: "static",
+    },
+    reviewQueue: params.reviewQueue,
+  });
 
   const generatedAt = params.reviewQueue.generatedAt || new Date().toISOString();
   await updateRunIndex(params.outputDir, {
@@ -1882,10 +1821,10 @@ const saveRunFailureOutputs = async (params: {
     },
     pages: [],
   };
-  await fs.writeFile(getRunManifestPath(params.runDir), JSON.stringify(manifest, null, 2));
+  await writeJsonAtomic(getRunManifestPath(params.runDir), manifest);
 
   const reviewPath = getRunReviewQueuePath(params.runDir);
-  await fs.writeFile(reviewPath, JSON.stringify(params.reviewQueue, null, 2));
+  await writeJsonAtomic(reviewPath, params.reviewQueue);
 };
 
 const mergeOverrides = <T extends Record<string, unknown>>(base: T, update: Partial<T>): T => {
@@ -2048,6 +1987,18 @@ export async function runPipeline(options: PipelineRunnerOptions): Promise<Pipel
 
   try {
     await fs.mkdir(runDir, { recursive: true });
+    await updateRunIndex(outputDir, {
+      runId,
+      projectId: options.projectId,
+      status: "running",
+      updatedAt: new Date().toISOString(),
+    });
+    await updateReportStatus({
+      runDir,
+      runId,
+      projectId: options.projectId,
+      status: "running",
+    });
     emitProgress({
       runId,
       projectId: options.projectId,
@@ -2090,7 +2041,7 @@ export async function runPipeline(options: PipelineRunnerOptions): Promise<Pipel
     };
 
     await waitForControl(control);
-    scanConfig = await scanCorpusWithRetries(optionsWithConfig, runId, errors);
+    scanConfig = await scanCorpusWithRetries(optionsWithConfig, runId, errors, control);
     emitProgress({
       runId,
       projectId: options.projectId,
@@ -2255,7 +2206,8 @@ export async function runPipeline(options: PipelineRunnerOptions): Promise<Pipel
       normalizationResults,
       runDir,
       bookModel,
-      spreadSplitResult.gutterByPageId
+      spreadSplitResult.gutterByPageId,
+      control
     );
     const strictAcceptCount = normArray.filter(
       (norm) =>
@@ -2307,6 +2259,7 @@ export async function runPipeline(options: PipelineRunnerOptions): Promise<Pipel
         appVersion,
         configHash,
         configSnapshot: configSnapshot ?? { resolved: resolvedConfig, sources },
+        control,
       });
     }
 
@@ -2427,15 +2380,17 @@ const writeSidecars = async (
   runDir: string,
   runId: string,
   native: PipelineCoreNative | null,
-  bookModel?: BookModel
+  bookModel?: BookModel,
+  control?: RunControl
 ): Promise<void> => {
-  const sidecarDir = path.join(runDir, "sidecars");
+  const sidecarDir = getSidecarDir(runDir);
   await fs.mkdir(sidecarDir, { recursive: true });
 
   const estimatesById = new Map(analysis.estimates.map((e) => [e.pageId, e]));
 
   await Promise.all(
     config.pages.map(async (page, index) => {
+      await waitForControl(control);
       const estimate = estimatesById.get(page.id);
       const norm = normalization.get(page.id);
       if (!estimate || !norm) return;
@@ -2536,7 +2491,7 @@ const writeSidecars = async (
 
       const outPath = getRunSidecarPath(runDir, page.id);
       try {
-        await fs.writeFile(outPath, JSON.stringify(sidecar, null, 2));
+        await writeJsonAtomic(outPath, sidecar);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         console.warn(`[${runId}] Failed to write sidecar for ${page.id}: ${message}`);

@@ -4,12 +4,14 @@ import type { PipelineRunConfig } from "../ipc/contracts";
 const mkdir = vi.hoisted(() => vi.fn());
 const readFile = vi.hoisted(() => vi.fn());
 const writeFile = vi.hoisted(() => vi.fn());
+const rename = vi.hoisted(() => vi.fn());
 
 vi.mock("node:fs/promises", () => ({
-  default: { mkdir, readFile, writeFile },
+  default: { mkdir, readFile, writeFile, rename },
   mkdir,
   readFile,
   writeFile,
+  rename,
 }));
 
 const runPipeline = vi.hoisted(() => vi.fn());
@@ -29,6 +31,7 @@ describe("run-manager", () => {
     mkdir.mockReset();
     readFile.mockReset();
     writeFile.mockReset();
+    rename.mockReset();
     runPipeline.mockReset();
     updateRunIndex.mockReset();
     emitRunProgress.mockReset();
@@ -60,7 +63,7 @@ describe("run-manager", () => {
       expect.objectContaining({
         runId,
         projectId: "proj",
-        status: "running",
+        status: "queued",
       })
     );
     expect(writeFile).toHaveBeenCalled();
@@ -86,9 +89,11 @@ describe("run-manager", () => {
 
     await startRun(config, "/tmp/project", "/tmp/output");
 
-    const [, raw] = writeFile.mock.calls[0];
-    const updated = JSON.parse(String(raw)) as { status: string };
-    expect(updated.status).toBe("running");
+    const serializedWrites = writeFile.mock.calls.map((call) => String(call[1] ?? ""));
+    const manifestPayload = serializedWrites.find((payload) => payload.includes('"status"'));
+    expect(manifestPayload).toBeDefined();
+    const updated = JSON.parse(manifestPayload ?? "{}") as { status?: string };
+    expect(updated.status).toBe("queued");
 
     vi.useRealTimers();
   });
@@ -131,7 +136,7 @@ describe("run-manager", () => {
 
     expect(await cancelRun(runId)).toBe(true);
     expect(emitRunProgress).toHaveBeenCalledWith(
-      expect.objectContaining({ stage: "cancelled" }),
+      expect.objectContaining({ stage: "cancelling" }),
       true
     );
 

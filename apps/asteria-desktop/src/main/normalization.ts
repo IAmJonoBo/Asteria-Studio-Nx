@@ -3,6 +3,7 @@ import path from "node:path";
 import sharp from "sharp";
 import type { BookModel, CorpusSummary, PageBoundsEstimate, PageData } from "../ipc/contracts.ts";
 import { getPipelineCoreNative, type PipelineCoreNative } from "./pipeline-core-native.ts";
+import { getNormalizedDir, getPreviewDir } from "./run-paths.ts";
 
 const MAX_PREVIEW_DIM = 1600;
 const DEFAULT_PADDING_PX = 12;
@@ -1260,7 +1261,7 @@ export async function normalizePage(
   const cropWidth = expanded[2] - expanded[0] + 1;
   const cropHeight = expanded[3] - expanded[1] + 1;
 
-  const normalizedDir = path.join(outputDir, "normalized");
+  const normalizedDir = getNormalizedDir(outputDir);
   await fs.mkdir(normalizedDir, { recursive: true });
   const normalizedPath = path.join(normalizedDir, `${page.id}.png`);
 
@@ -1286,7 +1287,7 @@ export async function normalizePage(
 
   const previews: NormalizationResult["previews"] = {};
   if (options?.generatePreviews) {
-    const previewDir = path.join(outputDir, "previews");
+    const previewDir = getPreviewDir(outputDir);
     await fs.mkdir(previewDir, { recursive: true });
     const sourcePreviewPath = path.join(previewDir, `${page.id}-source.png`);
     const normalizedPreviewPath = path.join(previewDir, `${page.id}-normalized.png`);

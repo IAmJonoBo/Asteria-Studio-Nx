@@ -1,7 +1,8 @@
 import fs from "node:fs/promises";
 import type { PipelineRunConfig, RunProgressEvent } from "../ipc/contracts";
 import { runPipeline } from "./pipeline-runner";
-import { getRunDir, getRunManifestPath } from "./run-paths";
+import { getRunDir, getRunManifestPath, getRunReportPath } from "./run-paths";
+import { writeJsonAtomic } from "./file-utils";
 import { updateRunIndex, type RunIndexStatus } from "./run-index";
 import { clearRunProgress, emitRunProgress } from "./run-progress";
 
@@ -96,22 +97,42 @@ const updateRunManifestStatus = async (
     const raw = await fs.readFile(manifestPath, "utf-8");
     const parsed = JSON.parse(raw) as Record<string, unknown>;
     const updated = { ...parsed, status };
-    await fs.writeFile(manifestPath, JSON.stringify(updated, null, 2));
+    await writeJsonAtomic(manifestPath, updated);
   } catch {
-    await fs.writeFile(
-      manifestPath,
-      JSON.stringify(
-        {
-          runId,
-          status,
-          exportedAt: new Date().toISOString(),
-          count: 0,
-          pages: [],
-        },
-        null,
-        2
-      )
-    );
+    await writeJsonAtomic(manifestPath, {
+      runId,
+      status,
+      exportedAt: new Date().toISOString(),
+      count: 0,
+      pages: [],
+    });
+  }
+};
+
+const updateRunReportStatus = async (
+  runDir: string,
+  runId: string,
+  projectId: string,
+  status: RunIndexStatus
+): Promise<void> => {
+  const reportPath = getRunReportPath(runDir);
+  try {
+    const raw = await fs.readFile(reportPath, "utf-8");
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    await writeJsonAtomic(reportPath, {
+      ...parsed,
+      runId,
+      projectId,
+      status,
+      updatedAt: new Date().toISOString(),
+    });
+  } catch {
+    await writeJsonAtomic(reportPath, {
+      runId,
+      projectId,
+      status,
+      updatedAt: new Date().toISOString(),
+    });
   }
 };
 
@@ -136,11 +157,12 @@ export const startRun = async (
   await updateRunIndex(outputDir, {
     runId,
     projectId: config.projectId,
-    status: "running",
+    status: "queued",
     startedAt: now,
     updatedAt: now,
   });
-  await updateRunManifestStatus(runDir, runId, "running");
+  await updateRunManifestStatus(runDir, runId, "queued");
+  await updateRunReportStatus(runDir, runId, config.projectId, "queued");
 
   const runTask = runPipeline({
     projectRoot,
@@ -182,7 +204,7 @@ export const cancelRun = async (runId: string): Promise<boolean> => {
     {
       runId,
       projectId: active.projectId,
-      stage: "cancelled",
+      stage: "cancelling",
       processed: 0,
       total: 0,
       timestamp: new Date().toISOString(),
@@ -192,10 +214,12 @@ export const cancelRun = async (runId: string): Promise<boolean> => {
   await updateRunIndex(active.outputDir, {
     runId,
     projectId: active.projectId,
-    status: "cancelled",
+    status: "cancelling",
     updatedAt: new Date().toISOString(),
   });
-  await updateRunManifestStatus(getRunDir(active.outputDir, runId), runId, "cancelled");
+  const runDir = getRunDir(active.outputDir, runId);
+  await updateRunManifestStatus(runDir, runId, "cancelling");
+  await updateRunReportStatus(runDir, runId, active.projectId, "cancelling");
   return true;
 };
 
@@ -220,7 +244,9 @@ export const pauseRun = async (runId: string): Promise<boolean> => {
     status: "paused",
     updatedAt: new Date().toISOString(),
   });
-  await updateRunManifestStatus(getRunDir(active.outputDir, runId), runId, "paused");
+  const runDir = getRunDir(active.outputDir, runId);
+  await updateRunManifestStatus(runDir, runId, "paused");
+  await updateRunReportStatus(runDir, runId, active.projectId, "paused");
   return true;
 };
 
@@ -245,7 +271,9 @@ export const resumeRun = async (runId: string): Promise<boolean> => {
     status: "running",
     updatedAt: new Date().toISOString(),
   });
-  await updateRunManifestStatus(getRunDir(active.outputDir, runId), runId, "running");
+  const runDir = getRunDir(active.outputDir, runId);
+  await updateRunManifestStatus(runDir, runId, "running");
+  await updateRunReportStatus(runDir, runId, active.projectId, "running");
   return true;
 };
 

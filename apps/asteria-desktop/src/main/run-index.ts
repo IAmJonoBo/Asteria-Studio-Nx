@@ -1,7 +1,15 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import { writeJsonAtomic } from "./file-utils.ts";
 
-export type RunIndexStatus = "queued" | "running" | "paused" | "cancelled" | "error" | "success";
+export type RunIndexStatus =
+  | "queued"
+  | "running"
+  | "paused"
+  | "cancelling"
+  | "cancelled"
+  | "error"
+  | "success";
 
 export type RunIndexEntry = {
   runId: string;
@@ -47,5 +55,5 @@ export const updateRunIndex = async (outputDir: string, entry: RunIndexEntry): P
   } else {
     runs.unshift(entry);
   }
-  await fs.writeFile(indexPath, JSON.stringify({ runs }, null, 2));
+  await writeJsonAtomic(indexPath, { runs });
 };

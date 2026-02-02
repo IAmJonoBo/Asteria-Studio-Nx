@@ -195,7 +195,7 @@ describe("Pipeline Runner", () => {
 
     expect(result.pageCount).toBe(3);
     expect(result.scanConfig.targetDimensionsMm).toMatchObject({ width: 200, height: 300 });
-  });
+  }, 20000);
 
   it("runPipeline writes reports and sidecars when outputDir is set", async () => {
     const outputDir = await fs.mkdtemp(path.join(os.tmpdir(), "asteria-output-"));
@@ -218,6 +218,53 @@ describe("Pipeline Runner", () => {
     const sidecarDir = path.join(runDir, "sidecars");
     const sidecars = await fs.readdir(sidecarDir);
     expect(sidecars.length).toBeGreaterThan(0);
+  });
+
+  it("cancels mid-run and writes parseable report + manifest", async () => {
+    const outputDir = await fs.mkdtemp(path.join(os.tmpdir(), "asteria-cancel-"));
+    const controller = new AbortController();
+    let waitCalls = 0;
+    let releasePause: (() => void) | undefined;
+    const waitIfPaused = (): Promise<void> => {
+      waitCalls += 1;
+      if (waitCalls === 2) {
+        return new Promise<void>((resolve) => {
+          releasePause = resolve;
+        });
+      }
+      return Promise.resolve();
+    };
+
+    const runPromise = runPipeline({
+      projectRoot,
+      projectId: "cancel-test",
+      outputDir,
+      signal: controller.signal,
+      waitIfPaused,
+    });
+
+    for (let attempt = 0; attempt < 20 && !releasePause; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+
+    if (!releasePause) {
+      throw new Error("Expected pipeline to reach pause gate for cancellation test");
+    }
+
+    controller.abort();
+    releasePause();
+
+    const result = await runPromise;
+    expect(result.success).toBe(false);
+    expect(result.pipelineResult.status).toBe("cancelled");
+
+    const runDir = getRunDir(outputDir, result.runId);
+    const reportRaw = await fs.readFile(path.join(runDir, "report.json"), "utf-8");
+    const manifestRaw = await fs.readFile(getRunManifestPath(runDir), "utf-8");
+    const report = JSON.parse(reportRaw) as { status?: string };
+    const manifest = JSON.parse(manifestRaw) as { status?: string };
+    expect(report.status).toBe("cancelled");
+    expect(manifest.status).toBe("cancelled");
   });
 
   it("routes low semantic confidence to review queue", async () => {

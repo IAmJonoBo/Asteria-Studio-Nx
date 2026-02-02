@@ -9,6 +9,15 @@ const writeFile = vi.hoisted(() => vi.fn());
 const copyFile = vi.hoisted(() => vi.fn());
 const readdir = vi.hoisted(() => vi.fn());
 const rm = vi.hoisted(() => vi.fn());
+const rename = vi.hoisted(() => vi.fn());
+const sharpCall = vi.hoisted(() => {
+  const toFile = vi.fn().mockResolvedValue(undefined);
+  const tiff = vi.fn(() => ({ toFile }));
+  const pdf = vi.fn(() => ({ toFile }));
+  const toFormat = vi.fn(() => ({ toFile }));
+  const sharpFn = vi.fn(() => ({ tiff, pdf, toFormat, toFile }));
+  return { sharpFn, toFile, tiff, pdf, toFormat };
+});
 
 vi.mock("electron", () => ({
   ipcMain: {
@@ -19,14 +28,17 @@ vi.mock("electron", () => ({
 }));
 
 vi.mock("node:fs/promises", () => ({
-  default: { readFile, mkdir, writeFile, copyFile, readdir, rm },
+  default: { readFile, mkdir, writeFile, copyFile, readdir, rm, rename },
   readFile,
   mkdir,
   writeFile,
   copyFile,
   readdir,
   rm,
+  rename,
 }));
+
+vi.mock("sharp", () => ({ default: sharpCall.sharpFn }));
 
 const scanCorpus = vi.hoisted(() => vi.fn());
 const analyzeCorpus = vi.hoisted(() => vi.fn());
@@ -61,6 +73,12 @@ describe("IPC handler registration", () => {
     copyFile.mockReset();
     readdir.mockReset();
     rm.mockReset();
+    rename.mockReset();
+    sharpCall.sharpFn.mockReset();
+    sharpCall.toFile.mockReset();
+    sharpCall.tiff.mockReset();
+    sharpCall.pdf.mockReset();
+    sharpCall.toFormat.mockReset();
     readdir.mockResolvedValue([]);
     scanCorpus.mockReset();
     analyzeCorpus.mockReset();
@@ -267,7 +285,9 @@ describe("IPC handler registration", () => {
     const handler = handlers.get("asteria:export-run");
     expect(handler).toBeDefined();
 
-    readdir.mockResolvedValueOnce(["page1.png", "page2.tiff", "page3.pdf", "notes.txt"]);
+    readdir
+      .mockResolvedValueOnce(["page-1.json"])
+      .mockResolvedValueOnce(["page1.png", "page2.png", "notes.txt"]);
 
     await (
       handler as (
@@ -281,19 +301,31 @@ describe("IPC handler registration", () => {
     const runDir = getRunDir(outputDir, "run-2");
     const exportDir = path.join(runDir, "exports", "2024-01-01T00-00-00-000Z");
     const normalizedDir = path.join(runDir, "normalized");
+    const sidecarDir = path.join(runDir, "sidecars");
 
+    expect(copyFile).toHaveBeenCalledWith(
+      path.join(runDir, "manifest.json"),
+      path.join(exportDir, "manifest.json")
+    );
+    expect(copyFile).toHaveBeenCalledWith(
+      path.join(runDir, "report.json"),
+      path.join(exportDir, "report.json")
+    );
+    expect(copyFile).toHaveBeenCalledWith(
+      path.join(runDir, "review-queue.json"),
+      path.join(exportDir, "review-queue.json")
+    );
     expect(copyFile).toHaveBeenCalledWith(
       path.join(normalizedDir, "page1.png"),
       path.join(exportDir, "png", "page1.png")
     );
     expect(copyFile).toHaveBeenCalledWith(
-      path.join(normalizedDir, "page2.tiff"),
-      path.join(exportDir, "tiff", "page2.tiff")
+      path.join(sidecarDir, "page-1.json"),
+      path.join(exportDir, "sidecars", "page-1.json")
     );
-    expect(copyFile).toHaveBeenCalledWith(
-      path.join(normalizedDir, "page3.pdf"),
-      path.join(exportDir, "pdf", "page3.pdf")
-    );
+    expect(sharpCall.tiff).toHaveBeenCalledTimes(2);
+    expect(sharpCall.toFormat).toHaveBeenCalledTimes(2);
+    expect(sharpCall.toFormat).toHaveBeenCalledWith("pdf");
 
     vi.useRealTimers();
   });
@@ -314,20 +346,26 @@ describe("IPC handler registration", () => {
     registerIpcHandlers();
     const handler = handlers.get("asteria:fetch-page");
     expect(handler).toBeDefined();
-    readFile.mockResolvedValueOnce(JSON.stringify({ source: { path: "/tmp/source/page.png" } }));
+    readFile
+      .mockResolvedValueOnce(JSON.stringify({ runs: [] }))
+      .mockResolvedValueOnce(JSON.stringify({ source: { path: "/tmp/source/page.png" } }));
 
     const result = await (
       handler as (event: unknown, runId: string, pageId: string) => Promise<unknown>
     )({}, "run-1", "p1");
 
     expect(result).toMatchObject({ id: "p1", filename: "page.png" });
+    const runDir = getRunDir(path.join(process.cwd(), "pipeline-results"), "run-1");
+    expect(readFile).toHaveBeenCalledWith(getRunSidecarPath(runDir, "p1"), "utf-8");
   });
 
   it("fetch-page uses pageId when source path missing", async () => {
     registerIpcHandlers();
     const handler = handlers.get("asteria:fetch-page");
     expect(handler).toBeDefined();
-    readFile.mockResolvedValueOnce(JSON.stringify({ source: {} }));
+    readFile
+      .mockResolvedValueOnce(JSON.stringify({ runs: [] }))
+      .mockResolvedValueOnce(JSON.stringify({ source: {} }));
 
     const result = await (
       handler as (event: unknown, runId: string, pageId: string) => Promise<unknown>
@@ -336,28 +374,15 @@ describe("IPC handler registration", () => {
     expect(result).toMatchObject({ id: "p1", filename: "p1" });
   });
 
-  it("fetch-page falls back to legacy sidecar", async () => {
-    registerIpcHandlers();
-    const handler = handlers.get("asteria:fetch-page");
-    expect(handler).toBeDefined();
-    readFile
-      .mockRejectedValueOnce(new Error("missing"))
-      .mockResolvedValueOnce(JSON.stringify({ source: { path: "/tmp/original.png" } }));
-
-    const result = await (
-      handler as (event: unknown, runId: string, pageId: string) => Promise<unknown>
-    )({}, "run-legacy", "p10");
-
-    expect(result).toMatchObject({ id: "p10", filename: "original.png" });
-  });
-
   it("fetch-sidecar returns parsed JSON when present", async () => {
     registerIpcHandlers();
     const handler = handlers.get("asteria:fetch-sidecar");
     expect(handler).toBeDefined();
-    readFile.mockResolvedValueOnce(
-      JSON.stringify({ pageId: "p1", normalization: { cropBox: [0, 0, 10, 10] } })
-    );
+    readFile
+      .mockResolvedValueOnce(JSON.stringify({ runs: [] }))
+      .mockResolvedValueOnce(
+        JSON.stringify({ pageId: "p1", normalization: { cropBox: [0, 0, 10, 10] } })
+      );
 
     const result = await (
       handler as (event: unknown, runId: string, pageId: string) => Promise<unknown>
@@ -368,37 +393,12 @@ describe("IPC handler registration", () => {
     expect(readFile).toHaveBeenCalledWith(getRunSidecarPath(runDir, "p1"), "utf-8");
   });
 
-  it("fetch-sidecar falls back to legacy path", async () => {
-    registerIpcHandlers();
-    const handler = handlers.get("asteria:fetch-sidecar");
-    expect(handler).toBeDefined();
-    readFile
-      .mockRejectedValueOnce(new Error("missing"))
-      .mockResolvedValueOnce(
-        JSON.stringify({ pageId: "p2", normalization: { cropBox: [0, 0, 10, 10] } })
-      );
-
-    const result = await (
-      handler as (event: unknown, runId: string, pageId: string) => Promise<unknown>
-    )({}, "run-legacy", "p2");
-
-    expect(result).toMatchObject({ pageId: "p2" });
-    const outputDir = path.join(process.cwd(), "pipeline-results");
-    const runDir = getRunDir(outputDir, "run-legacy");
-    expect(readFile).toHaveBeenNthCalledWith(1, getRunSidecarPath(runDir, "p2"), "utf-8");
-    expect(readFile).toHaveBeenNthCalledWith(
-      2,
-      path.join(outputDir, "sidecars", "p2.json"),
-      "utf-8"
-    );
-  });
-
   it("fetch-sidecar returns null when missing", async () => {
     registerIpcHandlers();
     const handler = handlers.get("asteria:fetch-sidecar");
     expect(handler).toBeDefined();
     readFile
-      .mockRejectedValueOnce(new Error("missing"))
+      .mockResolvedValueOnce(JSON.stringify({ runs: [] }))
       .mockRejectedValueOnce(new Error("missing"));
 
     const result = await (
@@ -406,6 +406,10 @@ describe("IPC handler registration", () => {
     )({}, "run-miss", "p3");
 
     expect(result).toBeNull();
+    const outputDir = path.join(process.cwd(), "pipeline-results");
+    const runDir = getRunDir(outputDir, "run-miss");
+    expect(readFile).toHaveBeenCalledWith(getRunSidecarPath(runDir, "p3"), "utf-8");
+    expect(readFile).not.toHaveBeenCalledWith(path.join(outputDir, "sidecars", "p3.json"), "utf-8");
   });
 
   it("apply-override accepts overrides", async () => {
@@ -416,17 +420,26 @@ describe("IPC handler registration", () => {
     await (
       handler as (
         event: unknown,
+        runId: string,
         pageId: string,
         overrides: Record<string, unknown>
       ) => Promise<void>
-    )({}, "p42", { crop: { x: 1 } });
+    )({}, "run-1", "p42", { crop: { x: 1 } });
+
+    const outputDir = path.join(process.cwd(), "pipeline-results");
+    const runDir = getRunDir(outputDir, "run-1");
+    expect(writeFile).toHaveBeenCalled();
+    expect(rename).toHaveBeenCalledWith(
+      expect.any(String),
+      path.join(runDir, "overrides", "p42.json")
+    );
   });
 
   it("export-run handles missing normalized directory", async () => {
     registerIpcHandlers();
     const handler = handlers.get("asteria:export-run");
     expect(handler).toBeDefined();
-    readdir.mockRejectedValueOnce(new Error("missing"));
+    readdir.mockResolvedValueOnce([]).mockRejectedValueOnce(new Error("missing"));
 
     const result = await (
       handler as (event: unknown, runId: string, formats: Array<"png">) => Promise<unknown>
@@ -530,7 +543,9 @@ describe("IPC handler registration", () => {
     registerIpcHandlers();
     const handler = handlers.get("asteria:fetch-review-queue");
     expect(handler).toBeDefined();
-    readFile.mockRejectedValueOnce(new Error("missing"));
+    readFile
+      .mockRejectedValueOnce(new Error("missing"))
+      .mockRejectedValueOnce(new Error("missing"));
 
     const result = await (handler as (event: unknown, runId: string) => Promise<unknown>)(
       {},
@@ -583,24 +598,11 @@ describe("IPC handler registration", () => {
     ]);
   });
 
-  it("list-runs falls back to legacy scan", async () => {
+  it("list-runs returns empty array when index missing", async () => {
     registerIpcHandlers();
     const handler = handlers.get("asteria:list-runs");
     expect(handler).toBeDefined();
     readFile.mockRejectedValueOnce(new Error("missing"));
-    readdir.mockResolvedValueOnce(["run-2-review-queue.json"]);
-
-    const result = await (handler as (event: unknown) => Promise<unknown>)({});
-
-    expect(result).toMatchObject([{ runId: "run-2", projectId: "unknown", reviewCount: 0 }]);
-  });
-
-  it("list-runs returns empty array when legacy scan fails", async () => {
-    registerIpcHandlers();
-    const handler = handlers.get("asteria:list-runs");
-    expect(handler).toBeDefined();
-    readFile.mockRejectedValueOnce(new Error("missing"));
-    readdir.mockRejectedValueOnce(new Error("missing"));
 
     const result = await (handler as (event: unknown) => Promise<unknown>)({});
 
@@ -675,7 +677,7 @@ describe("IPC handler registration", () => {
     expect(readFile).toHaveBeenNthCalledWith(2, "/tmp/custom-report.json", "utf-8");
   });
 
-  it("list-runs falls back when index runs missing", async () => {
+  it("list-runs returns empty when index runs missing", async () => {
     registerIpcHandlers();
     const handler = handlers.get("asteria:list-runs");
     expect(handler).toBeDefined();

@@ -56,7 +56,8 @@ const formatProjectName = (id: string): string =>
 
 const resolveProjectStatus = (status?: RunIndexStatus): ProjectSummary["status"] => {
   if (!status) return "idle";
-  if (status === "running" || status === "paused" || status === "queued") return "processing";
+  if (status === "running" || status === "paused" || status === "queued" || status === "cancelling")
+    return "processing";
   if (status === "success") return "completed";
   return "error";
 };
