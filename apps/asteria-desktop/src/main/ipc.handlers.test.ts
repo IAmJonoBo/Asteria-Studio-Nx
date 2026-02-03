@@ -221,7 +221,14 @@ describe("IPC handler registration", () => {
   });
 
   it("analyze-corpus delegates to analyzer", async () => {
-    analyzeCorpus.mockResolvedValueOnce({ projectId: "proj", pageCount: 0, dpi: 300 });
+    analyzeCorpus.mockResolvedValueOnce({
+      projectId: "proj",
+      pageCount: 0,
+      dpi: 300,
+      targetDimensionsMm: { width: 210, height: 297 },
+      targetDimensionsPx: { width: 0, height: 0 },
+      estimates: [],
+    });
     registerIpcHandlers();
     const handler = handlers.get("asteria:analyze-corpus");
     expect(handler).toBeDefined();

@@ -24,6 +24,7 @@ export function RunsScreen({
   const [error, setError] = useState<string | null>(null);
   const [runConfig, setRunConfig] = useState<RunConfigSnapshot | null>(null);
   const [runConfigError, setRunConfigError] = useState<string | null>(null);
+  const selectedRun = runs.find((run) => run.runId === selectedRunId);
 
   useEffect((): void | (() => void) => {
     let cancelled = false;
@@ -180,6 +181,26 @@ export function RunsScreen({
                     ? `Generated ${new Date(run.generatedAt).toLocaleString()}`
                     : "Generated time unavailable"}
                 </div>
+                {(run.inferredDimensionsMm || run.inferredDpi) && (
+                  <div style={{ marginTop: "6px", fontSize: "12px", color: "var(--text-secondary)" }}>
+                    {run.inferredDimensionsMm && (
+                      <div>
+                        Inferred size: {run.inferredDimensionsMm.width} × {run.inferredDimensionsMm.height} mm
+                        {run.dimensionConfidence !== undefined
+                          ? ` (confidence ${run.dimensionConfidence.toFixed(2)})`
+                          : ""}
+                      </div>
+                    )}
+                    {run.inferredDpi !== undefined && (
+                      <div>
+                        Inferred DPI: {Math.round(run.inferredDpi)}
+                        {run.dpiConfidence !== undefined
+                          ? ` (confidence ${run.dpiConfidence.toFixed(2)})`
+                          : ""}
+                      </div>
+                    )}
+                  </div>
+                )}
                 <div style={{ marginTop: "6px", fontSize: "13px" }}>
                   <strong>{run.reviewCount}</strong> pages in review queue
                 </div>
@@ -217,6 +238,24 @@ export function RunsScreen({
             <p style={{ color: "var(--text-secondary)", fontSize: "12px" }}>
               Config snapshot unavailable for this run.
             </p>
+          )}
+          {selectedRun?.inferredDimensionsMm && (
+            <div style={{ fontSize: "12px", color: "var(--text-secondary)", marginBottom: "8px" }}>
+              <strong>Inferred dimensions:</strong> {selectedRun.inferredDimensionsMm.width} ×{" "}
+              {selectedRun.inferredDimensionsMm.height} mm
+              {selectedRun.dimensionConfidence !== undefined
+                ? ` (confidence ${selectedRun.dimensionConfidence.toFixed(2)})`
+                : ""}
+              {selectedRun.inferredDpi !== undefined && (
+                <>
+                  {" "}
+                  • <strong>Inferred DPI:</strong> {Math.round(selectedRun.inferredDpi)}
+                  {selectedRun.dpiConfidence !== undefined
+                    ? ` (confidence ${selectedRun.dpiConfidence.toFixed(2)})`
+                    : ""}
+                </>
+              )}
+            </div>
           )}
           {runConfig && (
             <div style={{ display: "grid", gap: "8px", fontSize: "12px" }}>
@@ -320,6 +359,27 @@ export function MonitorScreen(): JSX.Element {
                   <div style={{ fontSize: "12px", color: "var(--text-secondary)" }}>
                     Stage: {run.stage}
                   </div>
+                  {(run.inferredDimensionsMm || run.inferredDpi) && (
+                    <div style={{ fontSize: "12px", color: "var(--text-secondary)" }}>
+                      {run.inferredDimensionsMm && (
+                        <div>
+                          Inferred size: {run.inferredDimensionsMm.width} ×{" "}
+                          {run.inferredDimensionsMm.height} mm
+                          {run.dimensionConfidence !== undefined
+                            ? ` (confidence ${run.dimensionConfidence.toFixed(2)})`
+                            : ""}
+                        </div>
+                      )}
+                      {run.inferredDpi !== undefined && (
+                        <div>
+                          Inferred DPI: {Math.round(run.inferredDpi)}
+                          {run.dpiConfidence !== undefined
+                            ? ` (confidence ${run.dpiConfidence.toFixed(2)})`
+                            : ""}
+                        </div>
+                      )}
+                    </div>
+                  )}
                   <div
                     style={{ marginTop: "8px", fontSize: "12px", color: "var(--text-secondary)" }}
                   >
@@ -527,6 +587,7 @@ export function SettingsScreen({ projectId }: Readonly<SettingsScreenProps>): JS
   const [snapshot, setSnapshot] = useState<PipelineConfigSnapshot | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [latestInference, setLatestInference] = useState<RunSummary | null>(null);
   const [formState, setFormState] = useState({
     dpi: "",
     width: "",
@@ -576,6 +637,40 @@ export function SettingsScreen({ projectId }: Readonly<SettingsScreenProps>): JS
       }
     };
     void loadConfig();
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId]);
+
+  useEffect((): void | (() => void) => {
+    let cancelled = false;
+    const loadRuns = async (): Promise<void> => {
+      const windowRef: typeof globalThis & { asteria?: { ipc?: Record<string, unknown> } } =
+        globalThis;
+      if (!windowRef.asteria?.ipc) return;
+      try {
+        const listRuns = windowRef.asteria.ipc["asteria:list-runs"] as
+          | (() => Promise<RunSummary[]>)
+          | undefined;
+        const data = listRuns ? await listRuns() : [];
+        const scopedRuns = projectId
+          ? data.filter((run) => run.projectId === projectId)
+          : data;
+        const latestRun = scopedRuns.sort((a, b) => {
+          const aTime = a.generatedAt ? new Date(a.generatedAt).getTime() : 0;
+          const bTime = b.generatedAt ? new Date(b.generatedAt).getTime() : 0;
+          return bTime - aTime;
+        })[0];
+        if (!cancelled) {
+          setLatestInference(latestRun ?? null);
+        }
+      } catch {
+        if (!cancelled) {
+          setLatestInference(null);
+        }
+      }
+    };
+    void loadRuns();
     return () => {
       cancelled = true;
     };
@@ -705,6 +800,28 @@ export function SettingsScreen({ projectId }: Readonly<SettingsScreenProps>): JS
 
       {snapshot && (
         <div style={{ display: "grid", gap: "16px", maxWidth: "860px" }}>
+          {latestInference?.inferredDimensionsMm && (
+            <div className="card">
+              <h3 className="card-title">Latest inferred dimensions</h3>
+              <div style={{ display: "grid", gap: "6px", fontSize: "12px" }}>
+                <div>
+                  <strong>Size:</strong> {latestInference.inferredDimensionsMm.width} ×{" "}
+                  {latestInference.inferredDimensionsMm.height} mm
+                  {latestInference.dimensionConfidence !== undefined
+                    ? ` (confidence ${latestInference.dimensionConfidence.toFixed(2)})`
+                    : ""}
+                </div>
+                {latestInference.inferredDpi !== undefined && (
+                  <div>
+                    <strong>DPI:</strong> {Math.round(latestInference.inferredDpi)}
+                    {latestInference.dpiConfidence !== undefined
+                      ? ` (confidence ${latestInference.dpiConfidence.toFixed(2)})`
+                      : ""}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
           <div className="card">
             <h3 className="card-title">Defaults (spec)</h3>
             <div style={{ display: "grid", gap: "8px", fontSize: "12px" }}>

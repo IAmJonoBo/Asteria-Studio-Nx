@@ -373,6 +373,10 @@ export function registerIpcHandlers(): void {
           startedAt: run.startedAt,
           updatedAt: run.updatedAt,
           reportPath: run.reportPath,
+          inferredDimensionsMm: run.inferredDimensionsMm,
+          inferredDpi: run.inferredDpi,
+          dimensionConfidence: run.dimensionConfidence,
+          dpiConfidence: run.dpiConfidence,
         }));
       }
     } catch {

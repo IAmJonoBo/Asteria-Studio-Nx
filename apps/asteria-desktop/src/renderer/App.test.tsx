@@ -52,8 +52,17 @@ describe("App", () => {
       targetDpi: 300,
       targetDimensionsMm: { width: 210, height: 297 },
     });
+    const analyzeCorpus = vi.fn().mockResolvedValue({
+      targetDimensionsMm: { width: 210, height: 297 },
+      dpi: 300,
+      inferredDimensionsMm: { width: 210, height: 297 },
+      inferredDpi: 300,
+      dimensionConfidence: 0.9,
+      dpiConfidence: 0.85,
+    });
     const startRun = vi.fn().mockResolvedValue({ runId: "run-42" });
     const listRuns = vi.fn().mockResolvedValue([]);
+    const confirmMock = vi.spyOn(globalThis, "confirm").mockReturnValue(true);
     windowRef.asteria = {
       ipc: {
         "asteria:list-projects": vi.fn().mockResolvedValue([
@@ -66,6 +75,7 @@ describe("App", () => {
           },
         ]),
         "asteria:scan-corpus": scanCorpus,
+        "asteria:analyze-corpus": analyzeCorpus,
         "asteria:start-run": startRun,
         "asteria:list-runs": listRuns,
       },
@@ -84,6 +94,7 @@ describe("App", () => {
     );
     expect(await screen.findByText(/no runs yet/i)).toBeInTheDocument();
 
+    confirmMock.mockRestore();
     windowRef.asteria = previousAsteria;
   });
 

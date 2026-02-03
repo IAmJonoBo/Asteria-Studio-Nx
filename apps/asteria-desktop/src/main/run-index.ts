@@ -22,6 +22,10 @@ export type RunIndexEntry = {
   startedAt?: string;
   updatedAt?: string;
   phase?: string;
+  inferredDimensionsMm?: { width: number; height: number };
+  inferredDpi?: number;
+  dimensionConfidence?: number;
+  dpiConfidence?: number;
 };
 
 const mergeEntry = (base: RunIndexEntry, update: RunIndexEntry): RunIndexEntry => {

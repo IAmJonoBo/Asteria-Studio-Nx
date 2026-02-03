@@ -4,6 +4,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   analyzeCorpus,
+  applyDimensionInference,
   computeTargetDimensionsPx,
   estimatePageBounds,
   mmToPx,
@@ -34,6 +35,25 @@ describe("corpusAnalysis", () => {
     const dims = computeTargetDimensionsPx({ width: 210, height: 297 }, 400);
     expect(dims.width).toBeGreaterThan(3000);
     expect(dims.height).toBeGreaterThan(dims.width);
+  });
+
+  it("applies inferred dimensions when confidence is high", () => {
+    const config = buildConfig();
+    const inferredDimensionsMm = { width: 148, height: 210 };
+    const summary = {
+      projectId: config.projectId,
+      pageCount: config.pages.length,
+      dpi: config.targetDpi,
+      targetDimensionsMm: config.targetDimensionsMm,
+      targetDimensionsPx: computeTargetDimensionsPx(config.targetDimensionsMm, config.targetDpi),
+      inferredDimensionsMm,
+      inferredDpi: 300,
+      dimensionConfidence: 0.9,
+      dpiConfidence: 0.85,
+      estimates: [],
+    };
+    const updated = applyDimensionInference(config, summary, 0.75);
+    expect(updated.targetDimensionsMm).toEqual(inferredDimensionsMm);
   });
 
   it("estimates page bounds for each page", async () => {

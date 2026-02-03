@@ -117,6 +117,16 @@ export function App(): JSX.Element {
     const scanCorpus = windowRef.asteria.ipc["asteria:scan-corpus"] as
       | ((rootPath: string, options?: { projectId?: string }) => Promise<PipelineRunConfig>)
       | undefined;
+    const analyzeCorpus = windowRef.asteria.ipc["asteria:analyze-corpus"] as
+      | ((config: PipelineRunConfig) => Promise<{
+          inferredDimensionsMm?: { width: number; height: number };
+          inferredDpi?: number;
+          dimensionConfidence?: number;
+          dpiConfidence?: number;
+          targetDimensionsMm: { width: number; height: number };
+          dpi: number;
+        }>)
+      | undefined;
     const startRun = windowRef.asteria.ipc["asteria:start-run"] as
       | ((config: PipelineRunConfig) => Promise<{ runId: string }>)
       | undefined;
@@ -125,7 +135,63 @@ export function App(): JSX.Element {
       const scanConfig = await scanCorpus(selectedProject.inputPath, {
         projectId: selectedProject.id,
       });
-      const runResult = await startRun(scanConfig);
+      let effectiveConfig = scanConfig;
+      if (analyzeCorpus) {
+        const analysis = await analyzeCorpus(scanConfig);
+        if (analysis.inferredDimensionsMm || analysis.inferredDpi) {
+          const inferredDimensions = analysis.inferredDimensionsMm ?? analysis.targetDimensionsMm;
+          const inferredDpi = analysis.inferredDpi ?? analysis.dpi;
+          const dimensionConfidence = analysis.dimensionConfidence ?? 0;
+          const dpiConfidence = analysis.dpiConfidence ?? 0;
+          const useInferred = globalThis.confirm(
+            `Inferred dimensions: ${inferredDimensions.width} × ${inferredDimensions.height} mm (confidence ${dimensionConfidence.toFixed(
+              2
+            )})\nInferred DPI: ${Math.round(inferredDpi)} (confidence ${dpiConfidence.toFixed(
+              2
+            )})\n\nSelect OK to use the inferred settings, or Cancel to override them.`
+          );
+          if (useInferred) {
+            effectiveConfig = {
+              ...scanConfig,
+              targetDimensionsMm: inferredDimensions,
+              targetDpi: inferredDpi,
+            };
+          } else {
+            const widthOverride = globalThis.prompt(
+              "Override target width (mm)",
+              String(scanConfig.targetDimensionsMm.width)
+            );
+            const heightOverride = globalThis.prompt(
+              "Override target height (mm)",
+              String(scanConfig.targetDimensionsMm.height)
+            );
+            const dpiOverride = globalThis.prompt(
+              "Override target DPI",
+              String(scanConfig.targetDpi)
+            );
+            const parsedWidth = widthOverride
+              ? Number(widthOverride)
+              : scanConfig.targetDimensionsMm.width;
+            const parsedHeight = heightOverride
+              ? Number(heightOverride)
+              : scanConfig.targetDimensionsMm.height;
+            const parsedDpi = dpiOverride ? Number(dpiOverride) : scanConfig.targetDpi;
+            effectiveConfig = {
+              ...scanConfig,
+              targetDimensionsMm: {
+                width: Number.isFinite(parsedWidth)
+                  ? parsedWidth
+                  : scanConfig.targetDimensionsMm.width,
+                height: Number.isFinite(parsedHeight)
+                  ? parsedHeight
+                  : scanConfig.targetDimensionsMm.height,
+              },
+              targetDpi: Number.isFinite(parsedDpi) ? parsedDpi : scanConfig.targetDpi,
+            };
+          }
+        }
+      }
+      const runResult = await startRun(effectiveConfig);
       setSelectedRunId(runResult.runId);
       setActiveProjectId(selectedProject.id);
       setActiveScreen("runs");

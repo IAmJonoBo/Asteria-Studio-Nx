@@ -23,7 +23,12 @@ import type {
   RunProgressEvent,
 } from "../ipc/contracts.js";
 import { scanCorpus } from "../ipc/corpusScanner.js";
-import { analyzeCorpus, computeTargetDimensionsPx } from "../ipc/corpusAnalysis.js";
+import {
+  analyzeCorpus,
+  applyDimensionInference,
+  computeTargetDimensionsPx,
+  estimatePageBounds,
+} from "../ipc/corpusAnalysis.js";
 import { deriveBookModelFromImages } from "./book-priors.js";
 import { getPipelineCoreNative, type PipelineCoreNative } from "./pipeline-core-native.js";
 import {
@@ -56,6 +61,8 @@ import { writeJsonAtomic } from "./file-utils.js";
 
 const sleep = async (ms: number): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, ms));
+
+const DIMENSION_CONFIDENCE_THRESHOLD = 0.75;
 
 const safeReadJson = async <T>(filePath: string): Promise<T | null> => {
   try {
@@ -647,6 +654,8 @@ const buildFallbackSummary = (config: PipelineRunConfig): CorpusSummary => {
     dpi: config.targetDpi,
     targetDimensionsMm: config.targetDimensionsMm,
     targetDimensionsPx,
+    dimensionConfidence: 0,
+    dpiConfidence: 0,
     estimates,
     notes: "Fallback summary generated after analysis failure.",
   };
@@ -1693,6 +1702,10 @@ const savePipelineOutputs = async (params: {
     reviewCount: params.reviewQueue.items.length,
     status: params.pipelineResult.status as RunIndexStatus,
     updatedAt: new Date().toISOString(),
+    inferredDimensionsMm: params.analysisSummary.inferredDimensionsMm,
+    inferredDpi: params.analysisSummary.inferredDpi,
+    dimensionConfidence: params.analysisSummary.dimensionConfidence,
+    dpiConfidence: params.analysisSummary.dpiConfidence,
   });
 
   await writeSidecars(
@@ -1729,6 +1742,7 @@ const savePipelineOutputs = async (params: {
     sourceRoot: params.projectRoot,
     count: params.normalizationResults.size,
     configSnapshot: params.configSnapshot,
+    analysisSummary: params.analysisSummary,
     determinism: {
       appVersion: params.appVersion,
       configHash: params.configHash,
@@ -1803,6 +1817,10 @@ const saveRunFailureOutputs = async (params: {
     reviewCount: params.reviewQueue.items.length,
     status: params.pipelineResult.status as RunIndexStatus,
     updatedAt: new Date().toISOString(),
+    inferredDimensionsMm: params.analysisSummary.inferredDimensionsMm,
+    inferredDpi: params.analysisSummary.inferredDpi,
+    dimensionConfidence: params.analysisSummary.dimensionConfidence,
+    dpiConfidence: params.analysisSummary.dpiConfidence,
   });
 
   const manifest = {
@@ -1812,6 +1830,7 @@ const saveRunFailureOutputs = async (params: {
     sourceRoot: params.projectRoot,
     count: params.normalizationResults.size,
     configSnapshot: params.configSnapshot,
+    analysisSummary: params.analysisSummary,
     determinism: {
       appVersion: "unknown",
       configHash: "unknown",
@@ -2058,7 +2077,7 @@ export async function runPipeline(options: PipelineRunnerOptions): Promise<Pipel
     );
     scanConfig.pages = spreadSplitResult.pages;
 
-    const configToProcess = applySampling(scanConfig, options.sampleCount, runId);
+    let configToProcess = applySampling(scanConfig, options.sampleCount, runId);
     await waitForControl(control);
     emitProgress({
       runId,
@@ -2068,12 +2087,35 @@ export async function runPipeline(options: PipelineRunnerOptions): Promise<Pipel
       total: configToProcess.pages.length,
     });
     analysisSummary = await analyzeCorpusSafe(configToProcess, runId, errors);
+    const inferredConfig = applyDimensionInference(
+      configToProcess,
+      analysisSummary,
+      DIMENSION_CONFIDENCE_THRESHOLD
+    );
+    if (inferredConfig !== configToProcess) {
+      configToProcess = inferredConfig;
+      scanConfig.targetDimensionsMm = inferredConfig.targetDimensionsMm;
+      const { bounds, targetPx } = await estimatePageBounds(inferredConfig);
+      analysisSummary = {
+        ...analysisSummary,
+        targetDimensionsMm: inferredConfig.targetDimensionsMm,
+        targetDimensionsPx: targetPx,
+        estimates: bounds,
+        notes: analysisSummary.notes
+          ? `${analysisSummary.notes} Inferred target dimensions applied.`
+          : "Inferred target dimensions applied.",
+      };
+    }
     emitProgress({
       runId,
       projectId: options.projectId,
       stage: "analysis",
       processed: configToProcess.pages.length,
       total: configToProcess.pages.length,
+      inferredDimensionsMm: analysisSummary.inferredDimensionsMm,
+      inferredDpi: analysisSummary.inferredDpi,
+      dimensionConfidence: analysisSummary.dimensionConfidence,
+      dpiConfidence: analysisSummary.dpiConfidence,
     });
 
     // Phase 3: Normalization

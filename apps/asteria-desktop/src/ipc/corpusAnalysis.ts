@@ -10,6 +10,16 @@ const JPEG_SOF_MARKERS = new Set([
 ]);
 
 const round = (value: number): number => Math.round(value * 1000) / 1000;
+const clamp01 = (value: number): number => Math.min(1, Math.max(0, value));
+const median = (values: number[]): number => {
+  if (values.length === 0) return 0;
+  const sorted = values.slice().sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  if (sorted.length % 2 === 0) {
+    return (sorted[mid - 1] + sorted[mid]) / 2;
+  }
+  return sorted[mid];
+};
 
 export const mmToPx = (mm: number, dpi: number): number => round((mm / MM_PER_INCH) * dpi);
 
@@ -56,6 +66,96 @@ const shouldProbe = (filePath: string): boolean => {
   return ext === ".jpg" || ext === ".jpeg";
 };
 
+const computeVariance = (values: number[]): number => {
+  if (values.length === 0) return 0;
+  const mean = values.reduce((sum, value) => sum + value, 0) / values.length;
+  const variance =
+    values.reduce((sum, value) => sum + Math.pow(value - mean, 2), 0) / values.length;
+  return variance;
+};
+
+const inferTargetMetrics = async (
+  config: PipelineRunConfig,
+  dimensionProvider: DimensionProvider
+): Promise<{
+  inferredDimensionsMm?: { width: number; height: number };
+  dimensionConfidence: number;
+  inferredDpi?: number;
+  dpiConfidence: number;
+}> => {
+  const samples = await Promise.all(
+    config.pages.map(async (page) => {
+      if (!shouldProbe(page.originalPath)) return null;
+      try {
+        const dimensions = await dimensionProvider(page.originalPath);
+        return dimensions ? { width: dimensions.width, height: dimensions.height } : null;
+      } catch {
+        return null;
+      }
+    })
+  );
+  const pixelSamples = samples.filter((sample): sample is { width: number; height: number } =>
+    Boolean(sample)
+  );
+  if (pixelSamples.length === 0) {
+    return {
+      dimensionConfidence: 0,
+      dpiConfidence: 0,
+    };
+  }
+
+  const inferredWidthsMm = pixelSamples.map((sample) => (sample.width / config.targetDpi) * 25.4);
+  const inferredHeightsMm = pixelSamples.map(
+    (sample) => (sample.height / config.targetDpi) * 25.4
+  );
+  const inferredDimensionsMm = {
+    width: round(median(inferredWidthsMm)),
+    height: round(median(inferredHeightsMm)),
+  };
+  const widthCv =
+    Math.sqrt(computeVariance(inferredWidthsMm)) / Math.max(1, inferredDimensionsMm.width);
+  const heightCv =
+    Math.sqrt(computeVariance(inferredHeightsMm)) / Math.max(1, inferredDimensionsMm.height);
+  const dimensionStability = 1 - clamp01((widthCv + heightCv) / 2);
+  const dimensionCoverage = pixelSamples.length / Math.max(1, config.pages.length);
+  const dimensionConfidence = clamp01(dimensionCoverage * dimensionStability);
+
+  const inferredDpiSamples = pixelSamples.flatMap((sample) => [
+    (sample.width / config.targetDimensionsMm.width) * 25.4,
+    (sample.height / config.targetDimensionsMm.height) * 25.4,
+  ]);
+  const inferredDpi = round(median(inferredDpiSamples));
+  const dpiCv = Math.sqrt(computeVariance(inferredDpiSamples)) / Math.max(1, inferredDpi);
+  const dpiStability = 1 - clamp01(dpiCv);
+  const dpiCoverage = pixelSamples.length / Math.max(1, config.pages.length);
+  const dpiConfidence = clamp01(dpiCoverage * dpiStability);
+
+  return {
+    inferredDimensionsMm,
+    dimensionConfidence,
+    inferredDpi,
+    dpiConfidence,
+  };
+};
+
+export const applyDimensionInference = (
+  config: PipelineRunConfig,
+  summary: CorpusSummary,
+  threshold: number
+): PipelineRunConfig => {
+  if (
+    summary.dimensionConfidence !== undefined &&
+    summary.inferredDimensionsMm &&
+    summary.dimensionConfidence >= threshold
+  ) {
+    return {
+      ...config,
+      targetDimensionsMm: summary.inferredDimensionsMm,
+    };
+  }
+  return config;
+};
+
 export const estimatePageBounds = async (
   config: PipelineRunConfig,
   options?: { dimensionProvider?: DimensionProvider; bleedMm?: number; trimMm?: number }
@@ -100,6 +200,7 @@ export const estimatePageBounds = async (
 
 export const analyzeCorpus = async (config: PipelineRunConfig): Promise<CorpusSummary> => {
   validatePipelineRunConfig(config);
+  const inference = await inferTargetMetrics(config, probeJpegSize);
   const { bounds, targetPx } = await estimatePageBounds(config);
 
   return {
@@ -108,6 +209,10 @@ export const analyzeCorpus = async (config: PipelineRunConfig): Promise<CorpusSu
     dpi: config.targetDpi,
     targetDimensionsMm: config.targetDimensionsMm,
     targetDimensionsPx: targetPx,
+    inferredDimensionsMm: inference.inferredDimensionsMm,
+    inferredDpi: inference.inferredDpi,
+    dimensionConfidence: inference.dimensionConfidence,
+    dpiConfidence: inference.dpiConfidence,
     estimates: bounds,
     notes:
       "Corpus analysis uses target dimensions and probed image dimensions to seed layout bounds; replace with CV outputs when ready.",

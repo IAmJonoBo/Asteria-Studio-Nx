@@ -142,6 +142,10 @@ export interface RunSummary {
   startedAt?: string;
   updatedAt?: string;
   reportPath?: string;
+  inferredDimensionsMm?: { width: number; height: number };
+  inferredDpi?: number;
+  dimensionConfidence?: number;
+  dpiConfidence?: number;
 }
 
 export interface PageLayoutElement {
@@ -228,6 +232,10 @@ export interface RunProgressEvent {
   processed: number;
   total: number;
   throughput?: number;
+  inferredDimensionsMm?: { width: number; height: number };
+  inferredDpi?: number;
+  dimensionConfidence?: number;
+  dpiConfidence?: number;
   timestamp: string;
 }
 
@@ -247,6 +255,10 @@ export interface CorpusSummary {
   dpi: number;
   targetDimensionsMm: { width: number; height: number };
   targetDimensionsPx: { width: number; height: number };
+  inferredDimensionsMm?: { width: number; height: number };
+  inferredDpi?: number;
+  dimensionConfidence?: number;
+  dpiConfidence?: number;
   estimates: PageBoundsEstimate[];
   notes?: string;
 }
