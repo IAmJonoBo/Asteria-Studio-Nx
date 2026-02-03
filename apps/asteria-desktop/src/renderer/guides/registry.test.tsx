@@ -79,4 +79,71 @@ describe("guide registry rendering", () => {
 
     expect(highZoomLayers.map((layer) => layer.props["data-guide-layer"])).toEqual(layerIds);
   });
+
+  it("applies per-group opacity when rendering guides", () => {
+    const guideLayout: GuideLayout = {
+      layers: [
+        {
+          id: "baseline-grid",
+          guides: [
+            {
+              id: "baseline-major",
+              axis: "x",
+              position: 12,
+              kind: "major",
+            },
+          ],
+        },
+      ],
+    };
+
+    const renderedLayers = renderGuideLayers({
+      guideLayout,
+      zoom: 1,
+      canvasWidth: 200,
+      canvasHeight: 200,
+      visibleLayers: { "baseline-grid": true },
+      groupOpacities: { structural: 0.35 },
+    });
+
+    expect(renderedLayers).toHaveLength(1);
+    expect(renderedLayers[0].props.opacity).toBeCloseTo(0.35);
+  });
+
+  it("can solo a guide group", () => {
+    const layerIds = [
+      "baseline-grid",
+      "gutter-bands",
+      "header-footer-bands",
+      "diagnostic-guides",
+    ];
+    const guideLayout: GuideLayout = {
+      layers: layerIds.map((id, index) => ({
+        id,
+        guides: [
+          {
+            id: `${id}-major`,
+            axis: "x",
+            position: 12 + index * 4,
+            kind: "major",
+          },
+        ],
+      })),
+    };
+    const visibleLayers = Object.fromEntries(layerIds.map((id) => [id, true]));
+
+    const soloLayers = renderGuideLayers({
+      guideLayout,
+      zoom: 1,
+      canvasWidth: 200,
+      canvasHeight: 200,
+      visibleLayers,
+      soloGroup: "detected",
+    });
+
+    expect(soloLayers.map((layer) => layer.props["data-guide-layer"])).toEqual([
+      "gutter-bands",
+      "header-footer-bands",
+    ]);
+  });
 });

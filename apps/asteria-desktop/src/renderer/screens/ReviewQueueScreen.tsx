@@ -2,6 +2,7 @@ import type { JSX, KeyboardEvent, MouseEvent, WheelEvent, RefObject, PointerEven
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { useKeyboardShortcuts } from "../hooks/useKeyboardShortcut.js";
 import type { LayoutProfile, ReviewQueue, PageLayoutSidecar } from "../../ipc/contracts.js";
+import type { GuideGroup } from "../guides/registry.js";
 import { getDefaultGuideLayerVisibility, renderGuideLayers } from "../guides/registry.js";
 import { snapBoxWithSources, getBoxSnapCandidates } from "../utils/snapping.js";
 import type { SnapEdge } from "../utils/snapping.js";
@@ -33,6 +34,14 @@ const APPLY_SCOPE_LABELS: Record<TemplateScope, string> = {
   section: "Section",
   template: "Template",
 };
+
+const GUIDE_GROUP_LABELS: Record<GuideGroup, string> = {
+  structural: "Structural",
+  detected: "Detected",
+  diagnostic: "Diagnostic",
+};
+
+const GUIDE_GROUP_ORDER: GuideGroup[] = ["structural", "detected", "diagnostic"];
 
 type TemplateSummary = {
   id: string;
@@ -231,6 +240,9 @@ type OverlayLayersState = {
 };
 
 type OverlayLayerKey = keyof OverlayLayersState;
+
+type GuideGroupVisibility = Record<GuideGroup, boolean>;
+type GuideGroupOpacities = Record<GuideGroup, number>;
 
 type Box = [number, number, number, number];
 
@@ -1001,6 +1013,10 @@ type OverlayRenderParams = {
   normalizedPreview?: PreviewRef;
   overlaysVisible: boolean;
   overlayLayers: OverlayLayersState;
+  guideLayerVisibility: Record<string, boolean>;
+  guideGroupVisibility: GuideGroupVisibility;
+  guideGroupOpacities: GuideGroupOpacities;
+  soloGuideGroup: GuideGroup | null;
   overlayScaleX: number;
   overlayScaleY: number;
   zoom: number;
@@ -1022,6 +1038,10 @@ const buildOverlaySvg = ({
   normalizedPreview,
   overlaysVisible,
   overlayLayers,
+  guideLayerVisibility,
+  guideGroupVisibility,
+  guideGroupOpacities,
+  soloGuideGroup,
   overlayScaleX,
   overlayScaleY,
   zoom,
@@ -1177,6 +1197,9 @@ const buildOverlaySvg = ({
         canvasWidth: normalizedPreview.width,
         canvasHeight: normalizedPreview.height,
         visibleLayers: guideLayerVisibility,
+        groupVisibility: guideGroupVisibility,
+        groupOpacities: guideGroupOpacities,
+        soloGroup: soloGuideGroup,
       })}
       {overlayLayers.cropBox && cropBox && (
         <rect
@@ -1279,6 +1302,9 @@ type ReviewQueueLayoutProps = {
   zoom: number;
   rotationDeg: number;
   overlayLayers: OverlayLayersState;
+  guideGroupVisibility: GuideGroupVisibility;
+  guideGroupOpacities: GuideGroupOpacities;
+  soloGuideGroup: GuideGroup | null;
   selectedIds: Set<string>;
   listRef: RefObject<globalThis.HTMLDivElement | null>;
   scrollTop: number;
@@ -1337,6 +1363,12 @@ type ReviewQueueLayoutProps = {
   onApplyDecisionToSelection: (decision: DecisionValue) => void;
   onAcceptSameReason: () => void;
   onToggleOverlayLayer: (layerKey: OverlayLayerKey, checked: boolean) => void;
+  onToggleGuideGroup: (
+    group: GuideGroup,
+    checked: boolean,
+    event: { altKey?: boolean }
+  ) => void;
+  onGuideGroupOpacityChange: (group: GuideGroup, opacity: number) => void;
   onAccept: () => void;
   onFlag: () => void;
   onReject: () => void;
@@ -1355,6 +1387,9 @@ const ReviewQueueLayout = ({
   zoom,
   rotationDeg,
   overlayLayers,
+  guideGroupVisibility,
+  guideGroupOpacities,
+  soloGuideGroup,
   selectedIds,
   listRef,
   scrollTop,
@@ -1413,6 +1448,8 @@ const ReviewQueueLayout = ({
   onApplyDecisionToSelection,
   onAcceptSameReason,
   onToggleOverlayLayer,
+  onToggleGuideGroup,
+  onGuideGroupOpacityChange,
   onAccept,
   onFlag,
   onReject,
@@ -1783,6 +1820,60 @@ const ReviewQueueLayout = ({
                   </label>
                 ))}
               </div>
+            </div>
+
+            <div>
+              <strong style={{ fontSize: "13px" }}>Guide groups</strong>
+              <div style={{ marginTop: "8px", display: "grid", gap: "10px" }}>
+                {GUIDE_GROUP_ORDER.map((group) => {
+                  const opacity = guideGroupOpacities[group];
+                  const isChecked = soloGuideGroup
+                    ? soloGuideGroup === group
+                    : guideGroupVisibility[group];
+                  return (
+                    <div key={group} style={{ display: "grid", gap: "6px" }}>
+                      <label style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={(event) =>
+                            onToggleGuideGroup(group, event.target.checked, event.nativeEvent)
+                          }
+                          aria-label={`${GUIDE_GROUP_LABELS[group]} guide visibility`}
+                        />
+                        <span style={{ fontSize: "12px" }}>{GUIDE_GROUP_LABELS[group]}</span>
+                        {soloGuideGroup === group && (
+                          <span style={{ fontSize: "10px", color: "var(--text-tertiary)" }}>
+                            Solo
+                          </span>
+                        )}
+                      </label>
+                      <label style={{ display: "grid", gap: "4px", fontSize: "11px" }}>
+                        <span style={{ color: "var(--text-secondary)" }}>Opacity</span>
+                        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                          <input
+                            type="range"
+                            min={0}
+                            max={1}
+                            step={0.05}
+                            value={opacity}
+                            onChange={(event) =>
+                              onGuideGroupOpacityChange(group, Number(event.target.value))
+                            }
+                            aria-label={`${GUIDE_GROUP_LABELS[group]} guide opacity`}
+                          />
+                          <span style={{ fontSize: "11px", color: "var(--text-secondary)" }}>
+                            {Math.round(opacity * 100)}%
+                          </span>
+                        </div>
+                      </label>
+                    </div>
+                  );
+                })}
+              </div>
+              <p style={{ margin: "6px 0 0", fontSize: "11px", color: "var(--text-tertiary)" }}>
+                Alt-click a group to solo it.
+              </p>
             </div>
 
             <div>
@@ -2232,6 +2323,17 @@ export function ReviewQueueScreen({
     folios: true,
     ornaments: true,
   });
+  const [guideGroupVisibility, setGuideGroupVisibility] = useState<GuideGroupVisibility>({
+    structural: true,
+    detected: true,
+    diagnostic: true,
+  });
+  const [guideGroupOpacities, setGuideGroupOpacities] = useState<GuideGroupOpacities>({
+    structural: 1,
+    detected: 1,
+    diagnostic: 1,
+  });
+  const [soloGuideGroup, setSoloGuideGroup] = useState<GuideGroup | null>(null);
   const guideLayerVisibility = useMemo(() => getDefaultGuideLayerVisibility(), []);
   const snapSources = useMemo(() => {
     const templateCandidates = [
@@ -2369,6 +2471,24 @@ export function ReviewQueueScreen({
     setTrimBox(baselineBoxesRef.current.trim);
     setRotationDeg(baselineRotationRef.current);
     setAdjustmentMode(null);
+  };
+  const handleGuideGroupToggle = (
+    group: GuideGroup,
+    checked: boolean,
+    event: { altKey?: boolean }
+  ): void => {
+    if (event.altKey) {
+      setSoloGuideGroup((prev) => (prev === group ? null : group));
+      return;
+    }
+    if (soloGuideGroup) {
+      setSoloGuideGroup(null);
+    }
+    setGuideGroupVisibility((prev) => ({ ...prev, [group]: checked }));
+  };
+  const handleGuideGroupOpacityChange = (group: GuideGroup, opacity: number): void => {
+    const clamped = Math.max(0, Math.min(1, opacity));
+    setGuideGroupOpacities((prev) => ({ ...prev, [group]: clamped }));
   };
 
   useEffect(() => {
@@ -2849,6 +2969,10 @@ export function ReviewQueueScreen({
     normalizedPreview,
     overlaysVisible,
     overlayLayers,
+    guideLayerVisibility,
+    guideGroupVisibility,
+    guideGroupOpacities,
+    soloGuideGroup,
     overlayScaleX,
     overlayScaleY,
     zoom,
@@ -2874,6 +2998,9 @@ export function ReviewQueueScreen({
       zoom={zoom}
       rotationDeg={rotationDeg}
       overlayLayers={overlayLayers}
+      guideGroupVisibility={guideGroupVisibility}
+      guideGroupOpacities={guideGroupOpacities}
+      soloGuideGroup={soloGuideGroup}
       selectedIds={selectedIds}
       listRef={listRef}
       scrollTop={scrollTop}
@@ -2937,6 +3064,8 @@ export function ReviewQueueScreen({
           [layerKey]: checked,
         }))
       }
+      onToggleGuideGroup={handleGuideGroupToggle}
+      onGuideGroupOpacityChange={handleGuideGroupOpacityChange}
       onAccept={handleAccept}
       onFlag={handleFlag}
       onReject={handleReject}

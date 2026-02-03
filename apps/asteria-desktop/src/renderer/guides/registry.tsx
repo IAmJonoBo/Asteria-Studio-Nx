@@ -30,6 +30,7 @@ export type GuideRenderContext = {
   zoom: number;
   lod: GuideLod;
   palette: string;
+  opacity: number;
   hoveredGuideId?: string;
   activeGuideId?: string;
 };
@@ -141,6 +142,7 @@ const renderLinearGuideLayer = (context: GuideRenderContext): ReactElement | nul
     canvasHeight,
     lod,
     palette,
+    opacity,
     hoveredGuideId,
     activeGuideId,
   } = context;
@@ -167,7 +169,13 @@ const renderLinearGuideLayer = (context: GuideRenderContext): ReactElement | nul
   const dashTokens = guideDashTokensByLayer[layer.id] ?? defaultGuideDashTokens;
 
   return (
-    <g data-guide-layer={layer.id} stroke={palette} fill="none" pointerEvents="none">
+    <g
+      data-guide-layer={layer.id}
+      stroke={palette}
+      fill="none"
+      pointerEvents="none"
+      opacity={opacity}
+    >
       {visibleGuides.map((guide) => {
         const isMinor = guide.kind === "minor";
         const isActive = guide.id === activeGuideId;
@@ -326,6 +334,9 @@ export const renderGuideLayers = ({
   hoveredGuideId,
   activeGuideId,
   visibleLayers,
+  groupVisibility,
+  groupOpacities,
+  soloGroup,
   config,
 }: {
   guideLayout?: GuideLayout;
@@ -335,6 +346,9 @@ export const renderGuideLayers = ({
   hoveredGuideId?: string;
   activeGuideId?: string;
   visibleLayers?: Record<string, boolean>;
+  groupVisibility?: Partial<Record<GuideGroup, boolean>>;
+  groupOpacities?: Partial<Record<GuideGroup, number>>;
+  soloGroup?: GuideGroup | null;
   config?: PipelineConfig;
 }): ReactElement[] => {
   const lod = getGuideLod(zoom, config);
@@ -344,10 +358,15 @@ export const renderGuideLayers = ({
   });
 
   return guideLayerRegistry
-    .filter((layer) => visibleLayers?.[layer.id] ?? layer.defaultVisible)
+    .filter((layer) => {
+      if (soloGroup && layer.group !== soloGroup) return false;
+      if (groupVisibility && groupVisibility[layer.group] === false) return false;
+      return visibleLayers?.[layer.id] ?? layer.defaultVisible;
+    })
     .map((layer) => {
       const layerData = layerDataMap.get(layer.id);
       const palette = guidePaletteByGroup[layer.group];
+      const opacity = groupOpacities?.[layer.group] ?? 1;
       return layer.renderFn({
         layer,
         layerData,
@@ -356,6 +375,7 @@ export const renderGuideLayers = ({
         zoom,
         lod,
         palette,
+        opacity,
         hoveredGuideId,
         activeGuideId,
       });
