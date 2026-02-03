@@ -5,7 +5,7 @@ import { loadEnv } from "./config.js";
 
 loadEnv();
 
-const isDev = process.env.NODE_ENV !== "production";
+const isDev = !app.isPackaged || process.env.NODE_ENV === "development";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const ensureSharp = async (): Promise<boolean> => {
