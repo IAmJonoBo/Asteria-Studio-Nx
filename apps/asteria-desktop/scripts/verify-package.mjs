@@ -1,5 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import { spawnSync } from "node:child_process";
 import { info, note, section, startStep } from "./cli.mjs";
 
 const appRoot = process.cwd();
@@ -62,6 +63,122 @@ const listArtifacts = async (root) => {
   }
 };
 
+const run = (command, args) => {
+  const result = spawnSync(command, args, { stdio: "inherit" });
+  if (result.error || result.status !== 0) {
+    throw result.error ?? new Error(`${command} failed`);
+  }
+};
+
+const runCapture = (command, args) => {
+  const result = spawnSync(command, args, { encoding: "utf-8" });
+  return {
+    status: result.status ?? 1,
+    stdout: result.stdout ?? "",
+    stderr: result.stderr ?? "",
+  };
+};
+
+const findMountedVolumes = (dmgPath) => {
+  const infoResult = runCapture("hdiutil", ["info"]);
+  if (infoResult.status !== 0) return [];
+
+  const mounts = [];
+  let currentMatches = false;
+  for (const line of infoResult.stdout.split("\n")) {
+    const trimmed = line.trim();
+    if (trimmed.startsWith("image-path")) {
+      const value = trimmed.split(":").slice(1).join(":").trim();
+      currentMatches = value === dmgPath || value.endsWith(path.basename(dmgPath));
+      continue;
+    }
+    if (currentMatches && trimmed.startsWith("mount-point")) {
+      const mountPoint = trimmed.split(":").slice(1).join(":").trim();
+      if (mountPoint) mounts.push(mountPoint);
+      continue;
+    }
+    if (currentMatches && trimmed.includes("/dev/disk")) {
+      const parts = trimmed.split(/\s+/).filter(Boolean);
+      const last = parts[parts.length - 1];
+      if (last?.startsWith("/")) {
+        mounts.push(last);
+      }
+    }
+    if (!trimmed) currentMatches = false;
+  }
+
+  return mounts;
+};
+
+const detachExistingMounts = async (dmgPath) => {
+  const mounts = findMountedVolumes(dmgPath);
+  for (const mount of mounts) {
+    try {
+      run("hdiutil", ["detach", mount, "-force"]);
+    } catch {
+      // ignore
+    }
+  }
+};
+
+const findAppUnpackedInMount = async (mountRoot) => {
+  const entries = await fs.readdir(mountRoot, { withFileTypes: true });
+  const appEntry = entries.find((entry) => entry.isDirectory() && entry.name.endsWith(".app"));
+  if (!appEntry) return [];
+  const appRoot = path.join(mountRoot, appEntry.name);
+  const unpacked = path.join(appRoot, "Contents", "Resources", "app.asar.unpacked");
+  const stats = await statSafe(unpacked);
+  if (stats?.isDirectory()) {
+    return [unpacked];
+  }
+  return [];
+};
+
+const withMountedDmg = async (dmgPath, fn) => {
+  const existingMounts = findMountedVolumes(dmgPath);
+  if (existingMounts.length > 0) {
+    return await fn(existingMounts[0]);
+  }
+
+  const mountRoot = await fs.mkdtemp(path.join(process.env.TMPDIR ?? "/tmp", "asteria-dmg-"));
+  let attached = false;
+
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const result = runCapture("hdiutil", [
+      "attach",
+      dmgPath,
+      "-nobrowse",
+      "-noverify",
+      "-readonly",
+      "-mountpoint",
+      mountRoot,
+    ]);
+    if (result.status === 0) {
+      attached = true;
+      break;
+    }
+    if (result.stderr.includes("Resource busy")) {
+      await detachExistingMounts(dmgPath);
+      continue;
+    }
+    throw new Error(`hdiutil failed: ${result.stderr.trim() || "unknown error"}`);
+  }
+
+  if (!attached) {
+    throw new Error("hdiutil failed after retry");
+  }
+
+  try {
+    return await fn(mountRoot);
+  } finally {
+    try {
+      run("hdiutil", ["detach", mountRoot, "-force"]);
+    } catch {
+      // best-effort detach
+    }
+  }
+};
+
 const main = async () => {
   section("PACKAGED ARTEFACT VERIFY");
   info(`Dist: ${distRoot}`);
@@ -75,7 +192,40 @@ const main = async () => {
   note("Top-level artefacts:");
   await listArtifacts(distRoot);
 
-  const unpackedRoots = await findUnpackedRoots(distRoot);
+  let unpackedRoots = await findUnpackedRoots(distRoot);
+  if (unpackedRoots.length === 0) {
+    const entries = await fs.readdir(distRoot, { withFileTypes: true });
+    const dmgEntries = entries.filter(
+      (entry) =>
+        entry.isFile() &&
+        entry.name.toLowerCase().endsWith(".dmg") &&
+        !entry.name.startsWith(".temp")
+    );
+    const dmgFiles = dmgEntries.map((entry) => path.join(distRoot, entry.name));
+    const fallbackDmgFiles =
+      dmgFiles.length === 0
+        ? entries
+            .filter((entry) => entry.isFile() && entry.name.toLowerCase().endsWith(".dmg"))
+            .map((entry) => path.join(distRoot, entry.name))
+        : dmgFiles;
+
+    if (fallbackDmgFiles.length > 0) {
+      if (process.platform !== "darwin") {
+        note("DMG found, but unpack verification requires macOS. Skipping native module checks.");
+        process.exit(0);
+      }
+
+      const dmgPath = fallbackDmgFiles[0];
+      note(`Mounting DMG for inspection: ${path.basename(dmgPath)}`);
+      await withMountedDmg(dmgPath, async (mountRoot) => {
+        unpackedRoots = await findAppUnpackedInMount(mountRoot);
+        if (unpackedRoots.length === 0) {
+          unpackedRoots = await findUnpackedRoots(mountRoot);
+        }
+      });
+    }
+  }
+
   if (unpackedRoots.length === 0) {
     console.error("No app.asar.unpacked directory found.");
     process.exit(1);
