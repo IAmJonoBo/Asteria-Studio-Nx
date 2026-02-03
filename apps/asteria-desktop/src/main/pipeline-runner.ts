@@ -20,6 +20,7 @@ import type {
   ReviewItem,
   ReviewQueue,
   PageLayoutElement,
+  BaselineGridGuide,
   RunProgressEvent,
 } from "../ipc/contracts.js";
 import { scanCorpus } from "../ipc/corpusScanner.js";
@@ -562,6 +563,71 @@ const medianBox = (
 
 const mad = (values: number[], center: number): number =>
   median(values.map((value) => Math.abs(value - center)));
+
+type BaselineMetrics = NonNullable<NormalizationResult["corrections"]>["baseline"];
+
+const BASELINE_GRID_MIN_PEAKS = 4;
+const BASELINE_GRID_MAX_MAD_RATIO = 0.35;
+const BASELINE_GRID_MIN_SHARPNESS = 0.25;
+
+const isTextDominantProfile = (profile: LayoutProfile): boolean =>
+  ["body", "chapter-opening", "front-matter", "back-matter", "appendix", "index"].includes(
+    profile
+  );
+
+const computeBaselineGridData = (
+  baseline: BaselineMetrics | undefined,
+  outputHeight: number
+): {
+  spacingNorm: number;
+  spacingMADNorm: number;
+  offsetNorm: number;
+  spacingPx?: number;
+  spacingMADPx?: number;
+  offsetPx?: number;
+  peaksY: number[];
+  peakSharpness: number;
+  confidence: number;
+  angleDeg: number;
+} => {
+  const peaksY = baseline?.peaksY ?? [];
+  const deltas = peaksY.slice(1).map((val, idx) => val - peaksY[idx]);
+  const spacingNorm = baseline?.spacingNorm ?? median(deltas);
+  const spacingMADNorm =
+    baseline?.spacingMADNorm ??
+    (spacingNorm > 0 ? median(deltas.map((delta) => Math.abs(delta - spacingNorm))) : 0);
+  const offsetNorm =
+    baseline?.offsetNorm ??
+    (spacingNorm > 0 ? median(peaksY.map((peak) => peak % spacingNorm)) : 0);
+  const spacingPx = spacingNorm > 0 ? spacingNorm * outputHeight : undefined;
+  const spacingMADPx = spacingMADNorm > 0 ? spacingMADNorm * outputHeight : undefined;
+  const offsetPx = offsetNorm > 0 ? offsetNorm * outputHeight : undefined;
+  return {
+    spacingNorm,
+    spacingMADNorm,
+    offsetNorm,
+    spacingPx,
+    spacingMADPx,
+    offsetPx,
+    peaksY,
+    peakSharpness: baseline?.peakSharpness ?? 0,
+    confidence: baseline?.confidence ?? 0,
+    angleDeg: baseline?.angleDeg ?? 0,
+  };
+};
+
+const shouldRenderBaselineGrid = (
+  profile: LayoutProfile,
+  baselineData: ReturnType<typeof computeBaselineGridData>
+): boolean => {
+  if (!isTextDominantProfile(profile)) return false;
+  if (baselineData.peaksY.length < BASELINE_GRID_MIN_PEAKS) return false;
+  if (baselineData.spacingNorm <= 0) return false;
+  if (baselineData.spacingMADNorm / baselineData.spacingNorm > BASELINE_GRID_MAX_MAD_RATIO)
+    return false;
+  if (baselineData.peakSharpness < BASELINE_GRID_MIN_SHARPNESS) return false;
+  return true;
+};
 
 const madBox = (
   boxes: Array<[number, number, number, number]>,
@@ -2647,15 +2713,31 @@ const writeSidecars = async (
       });
 
       const baselineLineCount = norm.corrections?.baseline?.textLineCount ?? 0;
+      const baselineData = computeBaselineGridData(norm.corrections?.baseline, outputHeight);
       const cropHeight = Math.max(1, norm.cropBox[3] - norm.cropBox[1] + 1);
-      const medianSpacingPx = baselineLineCount > 0 ? cropHeight / baselineLineCount : undefined;
+      const fallbackSpacingPx =
+        baselineLineCount > 0 ? cropHeight / baselineLineCount : undefined;
+      const medianSpacingPx = baselineData.spacingPx ?? fallbackSpacingPx;
       const lineStraightnessResidual = Math.abs(norm.corrections?.baseline?.residualAngle ?? 0);
       const baselineSummary = {
         medianSpacingPx,
-        spacingMAD: undefined,
+        spacingMAD: baselineData.spacingMADPx,
         lineStraightnessResidual,
-        confidence: norm.stats.baselineConsistency ?? 0.5,
+        confidence: norm.corrections?.baseline?.confidence ?? norm.stats.baselineConsistency ?? 0.5,
+        peaksY: baselineData.peaksY,
       };
+      const baselineGridGuide: BaselineGridGuide | undefined = shouldRenderBaselineGrid(
+        assessment.profile,
+        baselineData
+      )
+        ? {
+            spacingPx: baselineData.spacingPx,
+            offsetPx: baselineData.offsetPx,
+            angleDeg: baselineData.angleDeg,
+            confidence: baselineData.confidence,
+            source: "auto",
+          }
+        : undefined;
       const spread = resolveSpreadMetadata(page.id, spreadMetaByPageId, gutterByPageId);
 
       const sidecar = {
@@ -2691,6 +2773,7 @@ const writeSidecars = async (
                 confidence: norm.shading.confidence,
               }
             : undefined,
+          guides: baselineGridGuide ? { baselineGrid: baselineGridGuide } : undefined,
         },
         elements,
         overrides: {},

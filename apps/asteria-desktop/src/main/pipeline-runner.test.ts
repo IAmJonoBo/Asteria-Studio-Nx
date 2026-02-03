@@ -477,6 +477,50 @@ describe("Pipeline Runner", () => {
     await expect(fs.stat(path.join(outputDir, "overlays"))).rejects.toThrow();
   });
 
+  it("runs two pipelines in parallel without output collisions", async () => {
+    const outputDir = await fs.mkdtemp(path.join(os.tmpdir(), "asteria-parallel-"));
+    const runIdA = "run-parallel-a";
+    const runIdB = "run-parallel-b";
+
+    const [resultA, resultB] = await Promise.all([
+      runPipeline({
+        projectRoot,
+        projectId: "parallel-a",
+        outputDir,
+        sampleCount: 1,
+        runId: runIdA,
+      }),
+      runPipeline({
+        projectRoot,
+        projectId: "parallel-b",
+        outputDir,
+        sampleCount: 1,
+        runId: runIdB,
+      }),
+    ]);
+
+    expect(resultA.success).toBe(true);
+    expect(resultB.success).toBe(true);
+
+    const runDirA = getRunDir(outputDir, runIdA);
+    const runDirB = getRunDir(outputDir, runIdB);
+    expect(runDirA).not.toBe(runDirB);
+
+    await expect(fs.stat(getRunManifestPath(runDirA))).resolves.toBeTruthy();
+    await expect(fs.stat(getRunManifestPath(runDirB))).resolves.toBeTruthy();
+    await expect(fs.stat(path.join(runDirA, "review-queue.json"))).resolves.toBeTruthy();
+    await expect(fs.stat(path.join(runDirB, "review-queue.json"))).resolves.toBeTruthy();
+
+    const manifestA = JSON.parse(await fs.readFile(getRunManifestPath(runDirA), "utf-8")) as {
+      runId?: string;
+    };
+    const manifestB = JSON.parse(await fs.readFile(getRunManifestPath(runDirB), "utf-8")) as {
+      runId?: string;
+    };
+    expect(manifestA.runId).toBe(runIdA);
+    expect(manifestB.runId).toBe(runIdB);
+  }, 20000);
+
   it("runPipeline applies second-pass corrections for low-acceptance pages", async () => {
     const testDir = await fs.mkdtemp(path.join(os.tmpdir(), "asteria-second-pass-"));
     const filenames = ["low-mask.jpg", "low-skew.jpg", "shadow.jpg", "body.jpg"];

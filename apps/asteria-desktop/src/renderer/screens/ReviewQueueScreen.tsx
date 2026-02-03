@@ -1,6 +1,7 @@
 import type { JSX, KeyboardEvent, MouseEvent, WheelEvent, MutableRefObject, PointerEvent } from "react";
 import { useState, useEffect, useRef, useMemo } from "react";
 import { useKeyboardShortcuts } from "../hooks/useKeyboardShortcut.js";
+import { renderGuideLayers } from "../guides/registry.js";
 import type { ReviewQueue, PageLayoutSidecar } from "../../ipc/contracts.js";
 import { snapBoxWithSources, getBoxSnapCandidates } from "../utils/snapping.js";
 import type { SnapEdge } from "../utils/snapping.js";
@@ -26,6 +27,7 @@ interface ReviewPage {
 
 interface ReviewQueueScreenProps {
   runId?: string;
+  runDir?: string;
 }
 
 type DecisionValue = "accept" | "flag" | "reject";
@@ -90,6 +92,14 @@ type Box = [number, number, number, number];
 
 type AdjustmentMode = "crop" | "trim" | null;
 
+type BaselineGridOverrides = {
+  spacingPx: number | null;
+  offsetPx: number | null;
+  angleDeg: number | null;
+  snapToPeaks: boolean;
+  markCorrect: boolean;
+};
+
 type OverlayHandleEdge =
   | "left"
   | "right"
@@ -133,6 +143,68 @@ const getConfidenceColor = (confidence: number): string => {
   if (confidence < 0.5) return "var(--color-error)";
   if (confidence < 0.7) return "var(--color-warning)";
   return "var(--color-success)";
+};
+
+const isFiniteNumber = (value: unknown): value is number =>
+  typeof value === "number" && Number.isFinite(value);
+
+const buildBaselineGridOverrides = (
+  sidecar: PageLayoutSidecar | null | undefined
+): BaselineGridOverrides => {
+  const overrides = sidecar?.overrides;
+  const guides =
+    overrides && typeof overrides === "object" && "guides" in overrides
+      ? (overrides.guides as Record<string, unknown> | null)
+      : null;
+  const baselineGrid =
+    guides && typeof guides === "object" && "baselineGrid" in guides
+      ? (guides.baselineGrid as Record<string, unknown> | null)
+      : null;
+
+  const overrideSpacing = baselineGrid && isFiniteNumber(baselineGrid.spacingPx)
+    ? baselineGrid.spacingPx
+    : null;
+  const overrideOffset = baselineGrid && isFiniteNumber(baselineGrid.offsetPx)
+    ? baselineGrid.offsetPx
+    : null;
+  const overrideAngle = baselineGrid && isFiniteNumber(baselineGrid.angleDeg)
+    ? baselineGrid.angleDeg
+    : null;
+  const overrideSnap =
+    baselineGrid && typeof baselineGrid.snapToPeaks === "boolean"
+      ? baselineGrid.snapToPeaks
+      : null;
+  const overrideCorrect =
+    baselineGrid && typeof baselineGrid.markCorrect === "boolean"
+      ? baselineGrid.markCorrect
+      : null;
+
+  const autoSpacing =
+    sidecar?.bookModel?.baselineGrid?.dominantSpacingPx ??
+    sidecar?.metrics?.baseline?.medianSpacingPx ??
+    null;
+
+  return {
+    spacingPx: overrideSpacing ?? (isFiniteNumber(autoSpacing) ? autoSpacing : null),
+    offsetPx: overrideOffset,
+    angleDeg: overrideAngle,
+    snapToPeaks: overrideSnap ?? true,
+    markCorrect: overrideCorrect ?? false,
+  };
+};
+
+const areBaselineGridOverridesEqual = (
+  current: BaselineGridOverrides,
+  baseline: BaselineGridOverrides | null
+): boolean => {
+  if (!baseline) return false;
+  return (
+    current.spacingPx === baseline.spacingPx &&
+    current.offsetPx === baseline.offsetPx &&
+    current.angleDeg === baseline.angleDeg &&
+    current.snapToPeaks === baseline.snapToPeaks &&
+    current.markCorrect === baseline.markCorrect
+  );
 };
 
 const resolvePreviewSrc = (preview?: PreviewRef): string | undefined => {
@@ -526,21 +598,21 @@ const getReasonInfo = (code: string): ReasonInfo => {
 const ITEM_HEIGHT = 86;
 const OVERSCAN = 6;
 
-const useReviewQueuePages = (runId?: string): ReviewPage[] => {
+const useReviewQueuePages = (runId?: string, runDir?: string): ReviewPage[] => {
   const [pages, setPages] = useState<ReviewPage[]>([]);
 
   useEffect((): void | (() => void) => {
     let cancelled = false;
     const loadQueue = async (): Promise<void> => {
       const windowRef: typeof globalThis & {
-        asteria?: { ipc?: { [key: string]: (runId: string) => Promise<ReviewQueue> } };
+        asteria?: { ipc?: { [key: string]: (runId: string, runDir: string) => Promise<ReviewQueue> } };
       } = globalThis;
-      if (!runId || !windowRef.asteria?.ipc) {
+      if (!runId || !runDir || !windowRef.asteria?.ipc) {
         if (!cancelled) setPages([]);
         return;
       }
       try {
-        const queue = await windowRef.asteria.ipc["asteria:fetch-review-queue"](runId);
+        const queue = await windowRef.asteria.ipc["asteria:fetch-review-queue"](runId, runDir);
         if (cancelled) return;
         setPages(mapReviewQueue(queue));
       } catch {
@@ -551,7 +623,7 @@ const useReviewQueuePages = (runId?: string): ReviewPage[] => {
     return () => {
       cancelled = true;
     };
-  }, [runId]);
+  }, [runDir, runId]);
 
   return pages;
 };
@@ -651,6 +723,7 @@ const useQueueViewport = (
 
 const useSidecarData = (
   runId: string | undefined,
+  runDir: string | undefined,
   currentPage: ReviewPage | undefined
 ): { sidecar: PageLayoutSidecar | null; sidecarError: string | null } => {
   const [sidecar, setSidecar] = useState<PageLayoutSidecar | null>(null);
@@ -667,11 +740,15 @@ const useSidecarData = (
       const windowRef: typeof globalThis & {
         asteria?: {
           ipc?: {
-            [key: string]: (runId: string, pageId: string) => Promise<PageLayoutSidecar | null>;
+            [key: string]: (
+              runId: string,
+              runDir: string,
+              pageId: string
+            ) => Promise<PageLayoutSidecar | null>;
           };
         };
       } = globalThis;
-      if (!runId || !windowRef.asteria?.ipc) {
+      if (!runId || !runDir || !windowRef.asteria?.ipc) {
         setSidecar(null);
         setSidecarError(null);
         return;
@@ -679,6 +756,7 @@ const useSidecarData = (
       try {
         const sidecarData = await windowRef.asteria.ipc["asteria:fetch-sidecar"](
           runId,
+          runDir,
           currentPage.id
         );
         if (cancelled) return;
@@ -695,7 +773,7 @@ const useSidecarData = (
     return () => {
       cancelled = true;
     };
-  }, [currentPage, runId]);
+  }, [currentPage, runDir, runId]);
 
   return { sidecar, sidecarError };
 };
@@ -707,6 +785,7 @@ type OverlayRenderParams = {
   overlayLayers: OverlayLayersState;
   overlayScaleX: number;
   overlayScaleY: number;
+  zoom: number;
   cropBox: Box | null;
   trimBox: Box | null;
   adjustmentMode: AdjustmentMode;
@@ -724,6 +803,7 @@ const buildOverlaySvg = ({
   overlayLayers,
   overlayScaleX,
   overlayScaleY,
+  zoom,
   cropBox,
   trimBox,
   adjustmentMode,
@@ -845,6 +925,12 @@ const buildOverlaySvg = ({
           </text>
         </g>
       )}
+      {renderGuideLayers({
+        guideLayout: sidecar.guides,
+        zoom,
+        canvasWidth: normalizedPreview.width,
+        canvasHeight: normalizedPreview.height,
+      })}
       {overlayLayers.cropBox && cropBox && (
         <rect
           x={cropBox[0] * overlayScaleX}
@@ -1505,6 +1591,100 @@ const ReviewQueueLayout = ({
                 </p>
               </div>
             </div>
+
+            <div>
+              <strong style={{ fontSize: "13px" }}>Baseline grid</strong>
+              <div style={{ marginTop: "8px", display: "grid", gap: "8px" }}>
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+                    gap: "8px",
+                  }}
+                >
+                  <label style={{ display: "grid", gap: "4px", fontSize: "11px" }}>
+                    Spacing (px)
+                    <input
+                      type="number"
+                      step="0.1"
+                      value={baselineSpacingPx ?? ""}
+                      onChange={(event) => {
+                        const value = event.target.value;
+                        const parsed = Number(value);
+                        setBaselineSpacingPx(value === "" || !Number.isFinite(parsed) ? null : parsed);
+                      }}
+                    />
+                  </label>
+                  <label style={{ display: "grid", gap: "4px", fontSize: "11px" }}>
+                    Offset (px)
+                    <input
+                      type="number"
+                      step="0.1"
+                      value={baselineOffsetPx ?? ""}
+                      onChange={(event) => {
+                        const value = event.target.value;
+                        const parsed = Number(value);
+                        setBaselineOffsetPx(value === "" || !Number.isFinite(parsed) ? null : parsed);
+                      }}
+                    />
+                  </label>
+                  <label style={{ display: "grid", gap: "4px", fontSize: "11px" }}>
+                    Angle (°)
+                    <input
+                      type="number"
+                      step="0.1"
+                      value={baselineAngleDeg ?? ""}
+                      onChange={(event) => {
+                        const value = event.target.value;
+                        const parsed = Number(value);
+                        setBaselineAngleDeg(value === "" || !Number.isFinite(parsed) ? null : parsed);
+                      }}
+                    />
+                  </label>
+                </div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: "12px" }}>
+                  <label style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                    <input
+                      type="checkbox"
+                      checked={baselineSnapToPeaks}
+                      onChange={(event) => setBaselineSnapToPeaks(event.target.checked)}
+                    />
+                    <span style={{ fontSize: "12px" }}>Snap to peaks</span>
+                  </label>
+                  <label style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                    <input
+                      type="checkbox"
+                      checked={baselineMarkCorrect}
+                      onChange={(event) => setBaselineMarkCorrect(event.target.checked)}
+                    />
+                    <span style={{ fontSize: "12px" }}>Mark correct</span>
+                  </label>
+                </div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: "8px", alignItems: "center" }}>
+                  <button
+                    className="btn btn-primary btn-sm"
+                    onClick={onApplyOverride}
+                    disabled={isApplyingOverride}
+                  >
+                    {isApplyingOverride ? "Applying…" : "Apply override"}
+                  </button>
+                  {lastOverrideAppliedAt && (
+                    <span style={{ fontSize: "11px", color: "var(--text-secondary)" }}>
+                      Applied {new Date(lastOverrideAppliedAt).toLocaleTimeString()}
+                    </span>
+                  )}
+                  {overrideError && (
+                    <span style={{ fontSize: "11px", color: "var(--color-error)" }}>
+                      {overrideError}
+                    </span>
+                  )}
+                </div>
+                <p style={{ margin: 0, fontSize: "11px", color: "var(--text-tertiary)" }}>
+                  Tune spacing, offset, and angle for the page baseline grid. Snap-to-peaks aligns
+                  to detected line clusters, and mark-correct confirms the guide for training.
+                </p>
+              </div>
+            </div>
           </div>
 
           <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
@@ -1570,8 +1750,11 @@ const ReviewQueueLayout = ({
   );
 };
 
-export function ReviewQueueScreen({ runId }: Readonly<ReviewQueueScreenProps>): JSX.Element {
-  const pages = useReviewQueuePages(runId);
+export function ReviewQueueScreen({
+  runId,
+  runDir,
+}: Readonly<ReviewQueueScreenProps>): JSX.Element {
+  const pages = useReviewQueuePages(runId, runDir);
   const queuePages = useQueueWorker(pages);
   const { selectedIndex, setSelectedIndex } = useQueueSelection(queuePages);
   const { listRef, scrollTop, setScrollTop, viewportHeight } = useQueueViewport(selectedIndex);
@@ -1587,7 +1770,7 @@ export function ReviewQueueScreen({ runId }: Readonly<ReviewQueueScreenProps>): 
   const panOriginRef = useRef<{ x: number; y: number } | null>(null);
   const [isPanning, setIsPanning] = useState(false);
   const currentPage = queuePages[selectedIndex];
-  const { sidecar, sidecarError } = useSidecarData(runId, currentPage);
+  const { sidecar, sidecarError } = useSidecarData(runId, runDir, currentPage);
   const normalizedPreview = currentPage?.previews.normalized;
   const sourcePreview = currentPage?.previews.source;
   const [adjustmentMode, setAdjustmentMode] = useState<AdjustmentMode>(null);
@@ -1596,6 +1779,11 @@ export function ReviewQueueScreen({ runId }: Readonly<ReviewQueueScreenProps>): 
   const [isApplyingOverride, setIsApplyingOverride] = useState(false);
   const [overrideError, setOverrideError] = useState<string | null>(null);
   const [lastOverrideAppliedAt, setLastOverrideAppliedAt] = useState<string | null>(null);
+  const [baselineSpacingPx, setBaselineSpacingPx] = useState<number | null>(null);
+  const [baselineOffsetPx, setBaselineOffsetPx] = useState<number | null>(null);
+  const [baselineAngleDeg, setBaselineAngleDeg] = useState<number | null>(null);
+  const [baselineSnapToPeaks, setBaselineSnapToPeaks] = useState(true);
+  const [baselineMarkCorrect, setBaselineMarkCorrect] = useState(false);
   const overlaySvgRef = useRef<globalThis.SVGSVGElement | null>(null);
   const [snapGuidesState, setSnapGuidesState] = useState<SnapGuidesState>({
     guides: [],
@@ -1616,6 +1804,7 @@ export function ReviewQueueScreen({ runId }: Readonly<ReviewQueueScreenProps>): 
     trim: null,
   });
   const baselineRotationRef = useRef(0);
+  const baselineGuidesRef = useRef<BaselineGridOverrides | null>(null);
   const [overlayLayers, setOverlayLayers] = useState({
     pageBounds: true,
     cropBox: true,
@@ -1787,13 +1976,20 @@ export function ReviewQueueScreen({ runId }: Readonly<ReviewQueueScreenProps>): 
     const baseCropBox = sidecar?.normalization?.cropBox ?? null;
     const rawTrimBox = buildTrimBoxFromCrop(baseCropBox, sidecar?.normalization?.trim, sidecar?.dpi);
     const baseTrimBox = baseCropBox && rawTrimBox ? clampBox(rawTrimBox, baseCropBox) : null;
+    const baselineGrid = buildBaselineGridOverrides(sidecar);
     baselineBoxesRef.current = {
       crop: baseCropBox,
       trim: baseTrimBox ?? null,
     };
+    baselineGuidesRef.current = baselineGrid;
     setCropBox(baseCropBox);
     setTrimBox(baseTrimBox ?? null);
     setRotationDeg(0);
+    setBaselineSpacingPx(baselineGrid.spacingPx);
+    setBaselineOffsetPx(baselineGrid.offsetPx);
+    setBaselineAngleDeg(baselineGrid.angleDeg);
+    setBaselineSnapToPeaks(baselineGrid.snapToPeaks);
+    setBaselineMarkCorrect(baselineGrid.markCorrect);
     baselineRotationRef.current = 0;
     setAdjustmentMode(null);
     setOverrideError(null);
@@ -1923,9 +2119,11 @@ export function ReviewQueueScreen({ runId }: Readonly<ReviewQueueScreenProps>): 
 
   const handleSubmitReview = async (): Promise<void> => {
     const windowRef: typeof globalThis & {
-      asteria?: { ipc?: { [key: string]: (runId: string, payload: unknown) => Promise<unknown> } };
+      asteria?: {
+        ipc?: { [key: string]: (runId: string, runDir: string, payload: unknown) => Promise<unknown> };
+      };
     } = globalThis;
-    if (!runId || !windowRef.asteria?.ipc || decisions.size === 0) return;
+    if (!runId || !runDir || !windowRef.asteria?.ipc || decisions.size === 0) return;
     setIsSubmitting(true);
     setSubmitError(null);
     try {
@@ -1933,7 +2131,7 @@ export function ReviewQueueScreen({ runId }: Readonly<ReviewQueueScreenProps>): 
         pageId,
         decision: decisionValue === "flag" ? "adjust" : decisionValue,
       }));
-      await windowRef.asteria.ipc["asteria:submit-review"](runId, payload);
+      await windowRef.asteria.ipc["asteria:submit-review"](runId, runDir, payload);
       setDecisions(new Map());
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to submit review";
@@ -1944,9 +2142,16 @@ export function ReviewQueueScreen({ runId }: Readonly<ReviewQueueScreenProps>): 
   };
 
   const handleApplyOverride = async (): Promise<void> => {
-    if (!runId || !currentPage) return;
+    if (!runId || !runDir || !currentPage) return;
     const overrides: Record<string, unknown> = {};
     const normalization: Record<string, unknown> = {};
+    const baselineGrid: BaselineGridOverrides = {
+      spacingPx: baselineSpacingPx ?? null,
+      offsetPx: baselineOffsetPx ?? null,
+      angleDeg: baselineAngleDeg ?? null,
+      snapToPeaks: baselineSnapToPeaks,
+      markCorrect: baselineMarkCorrect,
+    };
     if (rotationDeg !== baselineRotationRef.current) {
       normalization.rotationDeg = rotationDeg;
     }
@@ -1962,6 +2167,9 @@ export function ReviewQueueScreen({ runId }: Readonly<ReviewQueueScreenProps>): 
     }
     if (Object.keys(normalization).length > 0) {
       overrides.normalization = normalization;
+    }
+    if (!areBaselineGridOverridesEqual(baselineGrid, baselineGuidesRef.current)) {
+      overrides.guides = { baselineGrid };
     }
     if (Object.keys(overrides).length === 0) {
       setOverrideError("No changes to save — adjustments match current values");
@@ -1982,13 +2190,14 @@ export function ReviewQueueScreen({ runId }: Readonly<ReviewQueueScreenProps>): 
     setIsApplyingOverride(true);
     setOverrideError(null);
     try {
-      await windowRef.asteria.ipc["asteria:apply-override"](runId, currentPage.id, overrides);
+      await windowRef.asteria.ipc["asteria:apply-override"](runId, runDir, currentPage.id, overrides);
       setLastOverrideAppliedAt(new Date().toISOString());
       baselineBoxesRef.current = {
         crop: cropBox,
         trim: trimBox,
       };
       baselineRotationRef.current = rotationDeg;
+      baselineGuidesRef.current = baselineGrid;
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to apply override";
       setOverrideError(message);
@@ -2113,7 +2322,7 @@ export function ReviewQueueScreen({ runId }: Readonly<ReviewQueueScreenProps>): 
     },
   ]);
 
-  if (!runId) {
+  if (!runId || !runDir) {
     return (
       <div className="empty-state">
         <div className="empty-state-icon" aria-hidden="true">
@@ -2144,6 +2353,7 @@ export function ReviewQueueScreen({ runId }: Readonly<ReviewQueueScreenProps>): 
     overlayLayers,
     overlayScaleX,
     overlayScaleY,
+    zoom,
     cropBox: activeCropBox,
     trimBox: activeTrimBox,
     adjustmentMode,

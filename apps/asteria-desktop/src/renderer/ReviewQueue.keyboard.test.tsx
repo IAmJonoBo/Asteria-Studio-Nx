@@ -46,7 +46,7 @@ describe("ReviewQueueScreen - Keyboard Navigation", () => {
       ipc: { "asteria:fetch-review-queue": vi.fn().mockResolvedValue(buildQueue(baseItems)) },
     } as AsteriaApi;
 
-    render(<ReviewQueueScreen runId="run-1" />);
+    render(<ReviewQueueScreen runId="run-1" runDir="/tmp/runs/run-1" />);
 
     expect(await screen.findByText(/review queue/i)).toBeInTheDocument();
     expect(await screen.findByText(/pages need attention/i)).toBeInTheDocument();
@@ -63,7 +63,7 @@ describe("ReviewQueueScreen - Keyboard Navigation", () => {
       ipc: { "asteria:fetch-review-queue": vi.fn().mockResolvedValue(buildQueue(baseItems)) },
     } as AsteriaApi;
 
-    render(<ReviewQueueScreen runId="test-run" />);
+    render(<ReviewQueueScreen runId="test-run" runDir="/tmp/runs/test-run" />);
 
     // Accept first page and advance
     await user.keyboard("a");
@@ -104,7 +104,7 @@ describe("ReviewQueueScreen - Keyboard Navigation", () => {
       ipc: { "asteria:fetch-review-queue": fetchQueue },
     } as AsteriaApi;
 
-    render(<ReviewQueueScreen runId="run-empty" />);
+    render(<ReviewQueueScreen runId="run-empty" runDir="/tmp/runs/run-empty" />);
     expect(await screen.findByText(/no pages need review/i)).toBeInTheDocument();
 
     windowRef.asteria = previousAsteria;
@@ -135,7 +135,7 @@ describe("ReviewQueueScreen - Keyboard Navigation", () => {
     } as AsteriaApi;
 
     const user = userEvent.setup();
-    render(<ReviewQueueScreen runId="run-1" />);
+    render(<ReviewQueueScreen runId="run-1" runDir="/tmp/runs/run-1" />);
 
     const semanticLayouts = await screen.findAllByText(/semantic layout/i);
     expect(semanticLayouts.length).toBeGreaterThan(0);
@@ -181,7 +181,7 @@ describe("ReviewQueueScreen - Keyboard Navigation", () => {
       ipc: { "asteria:fetch-review-queue": vi.fn().mockResolvedValue(buildQueue(baseItems)) },
     } as AsteriaApi;
 
-    render(<ReviewQueueScreen runId="run-1" />);
+    render(<ReviewQueueScreen runId="run-1" runDir="/tmp/runs/run-1" />);
     const headings = await screen.findAllByText(/review queue/i);
     expect(headings.length).toBeGreaterThan(0);
 
@@ -199,7 +199,7 @@ describe("ReviewQueueScreen - Keyboard Navigation", () => {
       ipc: { "asteria:fetch-review-queue": vi.fn().mockResolvedValue(buildQueue(baseItems)) },
     } as AsteriaApi;
 
-    render(<ReviewQueueScreen runId="test-run" />);
+    render(<ReviewQueueScreen runId="test-run" runDir="/tmp/runs/test-run" />);
 
     await screen.findAllByText(/page-001\.jpg/i);
     const submits = await screen.findAllByRole("button", { name: /submit review/i });
@@ -218,7 +218,7 @@ describe("ReviewQueueScreen - Keyboard Navigation", () => {
       ipc: { "asteria:fetch-review-queue": vi.fn().mockResolvedValue(buildQueue(baseItems)) },
     } as AsteriaApi;
 
-    render(<ReviewQueueScreen runId="test-run" />);
+    render(<ReviewQueueScreen runId="test-run" runDir="/tmp/runs/test-run" />);
 
     expect((await screen.findAllByText(/page-001\.jpg/i)).length).toBeGreaterThan(0);
     expect((await screen.findAllByText(/page-042\.jpg/i)).length).toBeGreaterThan(0);
@@ -233,7 +233,7 @@ describe("ReviewQueueScreen - Keyboard Navigation", () => {
       ipc: { "asteria:fetch-review-queue": vi.fn().mockResolvedValue(buildQueue(baseItems)) },
     } as AsteriaApi;
 
-    render(<ReviewQueueScreen runId="test-run" />);
+    render(<ReviewQueueScreen runId="test-run" runDir="/tmp/runs/test-run" />);
 
     // Shortcuts are shown in action buttons
     expect(
