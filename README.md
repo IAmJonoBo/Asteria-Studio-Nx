@@ -141,6 +141,19 @@ pnpm package:verify
 pnpm package:full
 ```
 
+### CI Helpers
+
+```bash
+# Local CI-style quality gate (format, lint, typecheck, build, coverage)
+pnpm ci:quality
+
+# E2E smoke tests
+pnpm ci:e2e
+
+# Build + package + verify
+pnpm ci:desktop
+```
+
 ### Pipeline Evaluation
 
 ```bash

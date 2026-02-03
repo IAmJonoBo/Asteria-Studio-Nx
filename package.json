@@ -26,6 +26,9 @@
     "golden:generate": "pnpm -C apps/asteria-desktop golden:generate",
     "golden:bless": "pnpm -C apps/asteria-desktop golden:bless",
     "golden:test": "pnpm -C apps/asteria-desktop golden:test",
+    "ci:quality": "pnpm format && pnpm lint && pnpm typecheck && pnpm build && pnpm build:verify && pnpm test",
+    "ci:e2e": "pnpm test:e2e",
+    "ci:desktop": "pnpm build && pnpm build:verify && pnpm package:full",
     "hooks:setup": "git config core.hooksPath .githooks"
   },
   "packageManager": "pnpm@10.28.2",

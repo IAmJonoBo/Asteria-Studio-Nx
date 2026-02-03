@@ -32,18 +32,7 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Build desktop app
-        run: pnpm -C apps/asteria-desktop run build
+      - name: Build + package + verify
+        run: pnpm run ci:desktop
         env:
           NODE_ENV: production
-
-      - name: Verify build artefacts
-        run: pnpm -C apps/asteria-desktop run build:verify
-
-      - name: Package desktop app
-        run: pnpm -C apps/asteria-desktop run package
-        env:
-          NODE_ENV: production
-
-      - name: Verify packaged artefacts
-        run: pnpm -C apps/asteria-desktop run package:verify
