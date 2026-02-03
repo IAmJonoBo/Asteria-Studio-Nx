@@ -181,6 +181,29 @@ stateDiagram-v2
 Main process emits `asteria:run-progress` events (throttled to ~5–10Hz) to the renderer.
 Events carry stage name, processed/total counts, and throughput for the Live Monitor screen.
 
+### Debugging IPC
+
+Common failure cases:
+
+- **`window.asteria` is undefined**: preload did not load. Confirm `webPreferences.preload`
+  points to `src/preload/index.ts` (built path) and that `contextIsolation` is enabled.
+- **"No handler registered" / invoke errors**: `registerIpcHandlers()` may not be called or
+  the channel name is misspelled. Verify the channel exists in `src/ipc/contracts.ts`.
+- **"Request failed" with no details**: preload sanitizes errors; check the main process
+  terminal output for the full stack trace.
+- **Validation errors**: payloads fail schema guards in `src/ipc/validation.ts`. Compare
+  the renderer payload shape with the contract type.
+- **Hot-reload desync**: renderer refreshes but preload/main are stale. Restart `pnpm dev`
+  or hard-reload the window.
+
+Logging tips:
+
+- In renderer devtools, run `window.asteria.ping()` to confirm the bridge is alive.
+- Add temporary `console.log` statements in `src/main/ipc.ts` and `src/preload/index.ts`
+  to trace channel flow.
+- For deeper Electron logs, start dev with `ELECTRON_ENABLE_LOGGING=1` and
+  `ELECTRON_ENABLE_STACK_DUMPING=1`.
+
 ### Manifest Structure
 
 Each pipeline run generates a `manifest.json`:

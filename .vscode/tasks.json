@@ -1,0 +1,43 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Asteria: Dev",
+      "type": "shell",
+      "command": "pnpm dev",
+      "problemMatcher": []
+    },
+    {
+      "label": "Asteria: Test",
+      "type": "shell",
+      "command": "pnpm test",
+      "problemMatcher": []
+    },
+    {
+      "label": "Asteria: Golden (test)",
+      "type": "shell",
+      "command": "pnpm golden:test",
+      "problemMatcher": []
+    },
+    {
+      "label": "Asteria: Pipeline (run)",
+      "type": "shell",
+      "command": "pnpm pipeline:run ${input:pipelineProjectRoot} ${input:pipelineSampleCount}",
+      "problemMatcher": []
+    }
+  ],
+  "inputs": [
+    {
+      "id": "pipelineProjectRoot",
+      "type": "promptString",
+      "description": "Project root (input/raw)",
+      "default": "projects/mind-myth-and-magick/input/raw"
+    },
+    {
+      "id": "pipelineSampleCount",
+      "type": "promptString",
+      "description": "Sample count (blank for all)",
+      "default": "300"
+    }
+  ]
+}

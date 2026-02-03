@@ -7,12 +7,22 @@
     "packages/*"
   ],
   "scripts": {
+    "bootstrap": "node tools/bootstrap.mjs",
+    "dev": "pnpm -C apps/asteria-desktop dev",
     "lint": "pnpm -C apps/asteria-desktop lint",
+    "format": "pnpm -C apps/asteria-desktop format",
+    "format:write": "pnpm -C apps/asteria-desktop format:write",
     "test": "pnpm -C apps/asteria-desktop test",
+    "test:e2e": "pnpm -C apps/asteria-desktop test:e2e",
+    "typecheck": "pnpm -C apps/asteria-desktop typecheck",
     "build": "pnpm -C apps/asteria-desktop build",
+    "build:app": "pnpm -C apps/asteria-desktop build",
+    "pipeline:run": "pnpm -C apps/asteria-desktop pipeline:run",
+    "pipeline:export": "pnpm -C apps/asteria-desktop pipeline:export",
     "golden:generate": "pnpm -C apps/asteria-desktop golden:generate",
     "golden:bless": "pnpm -C apps/asteria-desktop golden:bless",
-    "golden:test": "pnpm -C apps/asteria-desktop golden:test"
+    "golden:test": "pnpm -C apps/asteria-desktop golden:test",
+    "hooks:setup": "git config core.hooksPath .githooks"
   },
   "packageManager": "pnpm@10.28.2",
   "engines": {

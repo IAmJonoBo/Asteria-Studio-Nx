@@ -30,6 +30,7 @@ packages/pipeline-core/target/
 # Local env
 .env
 .env.*
+!.env.example
 
 # Project artefacts we keep local
 projects/mind-myth-and-magick/output/

@@ -20,6 +20,8 @@
     "build:main": "tsc --project tsconfig.build.json",
     "build:launcher": "node scripts/create-launcher.mjs",
     "typecheck": "tsc --noEmit",
+    "format": "prettier --check \"src/**/*.{ts,tsx,js,jsx,json,md,css,scss}\"",
+    "format:write": "prettier --write \"src/**/*.{ts,tsx,js,jsx,json,md,css,scss}\"",
     "lint": "pnpm exec eslint \"src/**/*.{ts,tsx}\"",
     "test": "node scripts/run-vitest.mjs run --coverage",
     "test:ui": "node scripts/run-vitest.mjs run src/renderer --coverage",

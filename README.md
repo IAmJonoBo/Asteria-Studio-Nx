@@ -66,27 +66,64 @@ asteria-studio/
 
 ## Quick Start
 
-### Development
+### Bootstrap
+
+```bash
+pnpm bootstrap
+```
+
+Expected output (abridged):
+
+```text
+========================================================================
+ASTERIA BOOTSTRAP
+========================================================================
+Installing dependencies (pnpm install)
+...
+Checking Rust toolchain (optional)
+rustc: <version>     # or "Rust toolchain not found. This is optional for now."
+```
+
+### First Run
+
+```bash
+pnpm dev
+```
+
+Expected output (abridged):
+
+```text
+VITE v7.x  ready in ...
+Local:   http://localhost:5173/
+```
+
+Then an Electron window should open with the Asteria Studio shell.
+
+### Development Commands
 
 ```bash
 # Use Node 24 LTS (see .node-version) + pnpm 10.28
-# Install dependencies
-pnpm install
 
 # Start dev server (renderer + main process)
-pnpm -C apps/asteria-desktop dev
+pnpm dev
 
 # Run unit tests with coverage
-pnpm -C apps/asteria-desktop test
+pnpm test
 
 # Run E2E tests
-pnpm -C apps/asteria-desktop test:e2e
+pnpm test:e2e
 
 # Type checking
-pnpm -C apps/asteria-desktop typecheck
+pnpm typecheck
+
+# Format check
+pnpm format
+
+# Format write
+pnpm format:write
 
 # Build production assets + launcher
-pnpm -C apps/asteria-desktop build
+pnpm build
 
 # Run built app (macOS/Linux)
 apps/asteria-desktop/dist/asteria-studio
@@ -96,10 +133,10 @@ apps/asteria-desktop/dist/asteria-studio
 
 ```bash
 # Run pipeline on sample corpus (normalize 300 pages)
-pnpm -C apps/asteria-desktop pipeline:run projects/mind-myth-and-magick 300
+pnpm pipeline:run projects/mind-myth-and-magick 300
 
 # Export normalized outputs only (no priors or full analysis)
-pnpm -C apps/asteria-desktop pipeline:export projects/mind-myth-and-magick 50
+pnpm pipeline:export projects/mind-myth-and-magick 50
 ```
 
 Results written to `apps/asteria-desktop/pipeline-results/` with:
@@ -109,6 +146,53 @@ Results written to `apps/asteria-desktop/pipeline-results/` with:
 - `overlays/` — annotated visualization
 - `sidecars/` — JSON layout metadata
 - `priors-sample/` — book model from first N pages
+
+### Configuration (.env)
+
+Copy `.env.example` to `.env` to set local overrides. The app loads `.env` and `.env.local`
+from the repo root on startup and in CLI scripts.
+
+Common settings:
+
+- `ASTERIA_OUTPUT_DIR` — override pipeline results directory
+- `ASTERIA_PIPELINE_CONFIG_PATH` — override `spec/pipeline_config.yaml`
+- `ASTERIA_NORMALIZE_CONCURRENCY` — tune normalization parallelism
+- `ASTERIA_REMOTE_LAYOUT_ENDPOINT` — optional remote layout inference URL
+- `ASTERIA_REMOTE_LAYOUT_TOKEN` — optional auth token for remote inference
+- `ASTERIA_REMOTE_LAYOUT_TIMEOUT_MS` — request timeout in milliseconds
+
+### Rust (Optional)
+
+Rust is only required if you are actively developing the native CV core in
+`packages/pipeline-core`. If Rust is not installed, the pipeline continues using the
+TypeScript + Sharp implementation and reports `rustModuleVersion: "unknown"` in run manifests.
+Remote inference (if configured) still works without Rust.
+
+### VS Code Tasks
+
+Common tasks are available in `.vscode/tasks.json`:
+
+- `Asteria: Dev`
+- `Asteria: Test`
+- `Asteria: Golden (test)`
+- `Asteria: Pipeline (run)`
+
+### Git Hooks
+
+Enable the repo hooks once per clone:
+
+```bash
+git config core.hooksPath .githooks
+```
+
+Or:
+
+```bash
+pnpm hooks:setup
+```
+
+The pre-commit hook runs `pnpm format`, `pnpm lint`, and `pnpm typecheck` to catch
+issues before CI.
 
 ## Documentation
 

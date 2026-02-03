@@ -1,7 +1,10 @@
 import { app, BrowserWindow } from "electron";
 import { fileURLToPath } from "url";
 import path from "path";
+import { loadEnv } from "./config.js";
 import { registerIpcHandlers } from "./ipc.js";
+
+loadEnv();
 
 const isDev = process.env.NODE_ENV !== "production";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));

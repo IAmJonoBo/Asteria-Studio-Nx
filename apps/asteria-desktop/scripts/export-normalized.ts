@@ -3,6 +3,9 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { getRunDir } from "../src/main/run-paths.ts";
+import { loadEnv } from "../src/main/config.ts";
+
+loadEnv();
 
 const SUPPORTED_EXT = new Set([".jpg", ".jpeg", ".png", ".tif", ".tiff"]);
 
