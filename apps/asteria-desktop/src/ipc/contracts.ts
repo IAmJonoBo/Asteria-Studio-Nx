@@ -107,6 +107,7 @@ export interface TemplateTrainingSignal {
   overrides: Record<string, unknown>;
   sourcePageId?: string;
   layoutProfile?: LayoutProfile;
+  runId?: string;
 }
 
 export interface ReviewItem {

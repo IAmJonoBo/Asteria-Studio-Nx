@@ -1,5 +1,5 @@
 import type { JSX, KeyboardEvent, MouseEvent, WheelEvent, MutableRefObject, PointerEvent } from "react";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { useKeyboardShortcuts } from "../hooks/useKeyboardShortcut.js";
 import type { LayoutProfile, ReviewQueue, PageLayoutSidecar } from "../../ipc/contracts.js";
 
@@ -77,13 +77,49 @@ const mapReviewQueue = (queue: ReviewQueue): ReviewPage[] => {
   });
 };
 
-const formatLayoutProfileLabel = (profile: LayoutProfile): string =>
-  profile
-    .split("-")
+const LAYOUT_PROFILE_LABEL_OVERRIDES: Partial<Record<LayoutProfile, string>> = {
+  // Example: override for profiles that need special title casing
+  // "front-matter": "Front Matter",
+};
+
+const formatLayoutProfileLabel = (profile: LayoutProfile): string => {
+  const override = LAYOUT_PROFILE_LABEL_OVERRIDES[profile];
+  if (override) {
+    return override;
+  }
+
+  return profile
+    .split(/[-\s]+/)
+    .filter((segment) => segment.length > 0)
     .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
     .join(" ");
+};
 
-const getTemplateKey = (page?: ReviewPage): LayoutProfile => page?.layoutProfile ?? "unknown";
+/**
+ * Helper to append a new error message to an existing error string.
+ */
+const appendError = (existing: string | null, newMessage: string): string => {
+  const currentError = existing ?? "";
+  const separator = currentError ? "; " : "";
+  return `${currentError}${separator}${newMessage}`;
+};
+
+const getTemplateKey = (page?: ReviewPage): LayoutProfile => {
+  if (!page) {
+    // Fallback for unexpected undefined page; keep a distinct bucket.
+    return "unknown" as LayoutProfile;
+  }
+
+  if (!page.layoutProfile) {
+    // Group pages without a layout profile by their reason to avoid
+    // collapsing all such pages into a single "unknown" bucket.
+    const normalizedReason =
+      page.reason?.trim().toLowerCase().replace(/\s+/g, "-") || "no-reason";
+    return `unknown-${normalizedReason}` as LayoutProfile;
+  }
+
+  return page.layoutProfile;
+};
 
 const buildTemplateSummaries = (pages: ReviewPage[]): TemplateSummary[] => {
   const groups = new Map<LayoutProfile, ReviewPage[]>();
@@ -100,10 +136,13 @@ const buildTemplateSummaries = (pages: ReviewPage[]): TemplateSummary[] => {
   const summaries: TemplateSummary[] = [];
   groups.forEach((groupPages, key) => {
     const totalConfidence = groupPages.reduce((sum, page) => sum + page.confidence, 0);
-    const minConfidence = groupPages.reduce(
-      (min, page) => Math.min(min, page.confidence),
-      groupPages[0]?.confidence ?? 0
-    );
+    const minConfidence =
+      groupPages.length > 0
+        ? groupPages.reduce(
+            (min, page) => Math.min(min, page.confidence),
+            Number.POSITIVE_INFINITY
+          )
+        : 0;
     const issueCounts = new Map<string, number>();
     groupPages.forEach((page) => {
       page.issues.forEach((issue) => {
@@ -131,6 +170,11 @@ const buildTemplateSummaries = (pages: ReviewPage[]): TemplateSummary[] => {
 const getTemplatePages = (pages: ReviewPage[], templateKey: LayoutProfile): ReviewPage[] =>
   pages.filter((page) => getTemplateKey(page) === templateKey);
 
+/**
+ * Returns a contiguous block of pages with the same template as the page at the given index.
+ * Assumes pages in the review queue maintain document order; if pages are filtered, sorted,
+ * or reordered in the UI, this logic may produce unexpected results.
+ */
 const getSectionPages = (pages: ReviewPage[], index: number): ReviewPage[] => {
   if (!pages[index]) return [];
   const templateKey = getTemplateKey(pages[index]);
@@ -183,6 +227,25 @@ type OverlayHandleEdge =
 type OverlayHandle = {
   boxType: "crop" | "trim";
   edge: OverlayHandleEdge;
+};
+
+/**
+ * Helper for type-safe IPC channel access.
+ * Returns undefined if the IPC bridge is not available or the channel doesn't exist.
+ */
+const getIpcChannel = <TArgs extends unknown[], TReturn>(
+  channelName: string
+): ((...args: TArgs) => Promise<TReturn>) | undefined => {
+  const windowRef = globalThis as typeof globalThis & {
+    asteria?: {
+      ipc?: {
+        [key: string]: (...args: unknown[]) => Promise<unknown>;
+      };
+    };
+  };
+  const channel = windowRef.asteria?.ipc?.[channelName];
+  if (!channel) return undefined;
+  return channel as (...args: TArgs) => Promise<TReturn>;
 };
 
 const getDecisionBadgeClass = (decisionValue: DecisionValue): string => {
@@ -1492,12 +1555,32 @@ const ReviewQueueLayout = ({
                   <span style={{ fontSize: "12px", color: "var(--text-secondary)" }}>
                     Apply override scope
                   </span>
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
+                  <div
+                    role="radiogroup"
+                    aria-label="Apply override scope"
+                    style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}
+                    onKeyDown={(e: KeyboardEvent) => {
+                      const scopes: TemplateScope[] = ["page", "section", "template"];
+                      const currentIndex = scopes.indexOf(applyScope);
+                      if (e.key === "ArrowRight" || e.key === "ArrowDown") {
+                        e.preventDefault();
+                        const nextIndex = (currentIndex + 1) % scopes.length;
+                        onApplyScopeChange(scopes[nextIndex]);
+                      } else if (e.key === "ArrowLeft" || e.key === "ArrowUp") {
+                        e.preventDefault();
+                        const prevIndex = (currentIndex - 1 + scopes.length) % scopes.length;
+                        onApplyScopeChange(scopes[prevIndex]);
+                      }
+                    }}
+                  >
                     {(["page", "section", "template"] as TemplateScope[]).map((scope) => (
                       <button
                         key={scope}
+                        role="radio"
+                        aria-checked={applyScope === scope}
                         className={`btn btn-sm ${applyScope === scope ? "btn-primary" : "btn-secondary"}`}
                         onClick={() => onApplyScopeChange(scope)}
+                        tabIndex={applyScope === scope ? 0 : -1}
                       >
                         {scope === "page" ? "This page" : scope === "section" ? "Section" : "Template"}
                       </button>
@@ -1579,7 +1662,7 @@ const ReviewQueueLayout = ({
                     <div style={{ fontSize: "12px", fontWeight: 600, marginBottom: "6px" }}>
                       Representative pages (guides overlay)
                     </div>
-                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: "8px" }}>
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 150px))", gap: "8px" }}>
                       {representativePages.map((page) => {
                         const preview = page.previews.overlay ?? page.previews.normalized ?? page.previews.source;
                         const previewSrc = resolvePreviewSrc(preview);
@@ -1737,7 +1820,7 @@ export function ReviewQueueScreen({ runId }: Readonly<ReviewQueueScreenProps>): 
     ornaments: true,
   });
 
-  const templateSummaries = buildTemplateSummaries(queuePages);
+  const templateSummaries = useMemo(() => buildTemplateSummaries(queuePages), [queuePages]);
   const templateKey = getTemplateKey(currentPage);
   const templateSummary = templateSummaries.find((summary) => summary.id === templateKey) ?? null;
   const templatePages = currentPage ? getTemplatePages(queuePages, templateKey) : [];
@@ -1752,9 +1835,20 @@ export function ReviewQueueScreen({ runId }: Readonly<ReviewQueueScreenProps>): 
         : templatePages;
   const applyTargetCount = applyTargets.length;
   const representativePages = templateSummary
-    ? [...templateSummary.pages]
-        .sort((a, b) => b.confidence - a.confidence)
-        .slice(0, 3)
+    ? (() => {
+        const pages = [...templateSummary.pages].sort((a, b) => a.confidence - b.confidence);
+        const count = pages.length;
+
+        if (count <= 3) {
+          return pages;
+        }
+
+        const lowIndex = 0;
+        const highIndex = count - 1;
+        const medianIndex = Math.floor((count - 1) / 2);
+
+        return [pages[lowIndex], pages[medianIndex], pages[highIndex]];
+      })()
     : [];
 
   const toggleSelected = createToggleSelected(setSelectedIds);
@@ -2014,14 +2108,11 @@ export function ReviewQueueScreen({ runId }: Readonly<ReviewQueueScreenProps>): 
       return;
     }
 
-    const windowRef: typeof globalThis & {
-      asteria?: {
-        ipc?: {
-          [key: string]: (...args: unknown[]) => Promise<unknown>;
-        };
-      };
-    } = globalThis;
-    if (!windowRef.asteria?.ipc) {
+    const applyOverrideChannel = getIpcChannel<
+      [runId: string, pageId: string, overrides: Record<string, unknown>],
+      void
+    >("asteria:apply-override");
+    if (!applyOverrideChannel) {
       setOverrideError("IPC unavailable.");
       return;
     }
@@ -2032,30 +2123,39 @@ export function ReviewQueueScreen({ runId }: Readonly<ReviewQueueScreenProps>): 
       const failures: string[] = [];
       for (const targetPage of applyTargets) {
         try {
-          await windowRef.asteria.ipc["asteria:apply-override"](runId, targetPage.id, overrides);
+          await applyOverrideChannel(runId, targetPage.id, overrides);
         } catch (error) {
           const message = error instanceof Error ? error.message : "Failed to apply override";
           failures.push(`${targetPage.filename}: ${message}`);
         }
       }
       if (failures.length > 0) {
-        setOverrideError(`Applied with errors: ${failures[0]}`);
+        const failureSummary =
+          failures.length === 1
+            ? failures[0]
+            : `${failures[0]} (and ${failures.length - 1} other error${failures.length - 1 === 1 ? "" : "s"})`;
+        // Log all failures so the full list is visible for debugging.
+        // eslint-disable-next-line no-console
+        console.error("Failed to apply overrides for some pages:", failures);
+        setOverrideError(
+          `Applied with ${failures.length} error${failures.length === 1 ? "" : "s"}: ${failureSummary}`,
+        );
+      } else {
+        setLastOverrideAppliedAt(appliedAt);
+        baselineBoxesRef.current = {
+          crop: cropBox,
+          trim: trimBox,
+        };
+        baselineRotationRef.current = rotationDeg;
       }
-      setLastOverrideAppliedAt(appliedAt);
-      baselineBoxesRef.current = {
-        crop: cropBox,
-        trim: trimBox,
-      };
-      baselineRotationRef.current = rotationDeg;
       if (applyScope !== "page") {
-        const recordTemplateTraining = windowRef.asteria?.ipc?.[
-          "asteria:record-template-training"
-        ] as
-          | ((runId: string, signal: Record<string, unknown>) => Promise<void>)
-          | undefined;
-        if (recordTemplateTraining) {
+        const recordTemplateTrainingChannel = getIpcChannel<
+          [runId: string, signal: Record<string, unknown>],
+          void
+        >("asteria:record-template-training");
+        if (recordTemplateTrainingChannel) {
           try {
-            await recordTemplateTraining(runId, {
+            await recordTemplateTrainingChannel(runId, {
               templateId: templateKey,
               scope: applyScope,
               appliedAt,
@@ -2067,9 +2167,14 @@ export function ReviewQueueScreen({ runId }: Readonly<ReviewQueueScreenProps>): 
           } catch (error) {
             const message =
               error instanceof Error ? error.message : "Failed to record template training signal";
-            setOverrideError(message);
+            setOverrideError(appendError(overrideError, `Training signal error: ${message}`));
           }
         }
+      }
+      if (applyScope !== "page" && failures.length === 0) {
+        setOverrideError(
+          appendError(overrideError, `Overrides applied to multiple pages. Other pages in this ${applyScope} may show stale data until you refresh the review queue.`)
+        );
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to apply override";

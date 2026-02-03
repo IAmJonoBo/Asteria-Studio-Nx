@@ -13,9 +13,11 @@ import type {
   RunManifestSummary,
   ProjectSummary,
   ImportCorpusRequest,
+  TemplateTrainingSignal,
 } from "../ipc/contracts.js";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { randomUUID } from "node:crypto";
 import sharp from "sharp";
 import {
   validateExportFormats,
@@ -48,6 +50,25 @@ import { writeJsonAtomic } from "./file-utils.js";
 import { importCorpus, listProjects, normalizeCorpusPath } from "./projects.js";
 
 type ExportFormat = "png" | "tiff" | "pdf";
+
+const readTemplateSignals = async (templateDir: string): Promise<Array<Record<string, unknown>>> => {
+  const templateSignals: Array<Record<string, unknown>> = [];
+  try {
+    const templateFiles = await fs.readdir(templateDir);
+    for (const file of templateFiles) {
+      if (!file.endsWith(".json")) continue;
+      try {
+        const raw = await fs.readFile(path.join(templateDir, file), "utf-8");
+        templateSignals.push(JSON.parse(raw) as Record<string, unknown>);
+      } catch {
+        // ignore malformed template signal
+      }
+    }
+  } catch {
+    // ignore missing template training signals
+  }
+  return templateSignals;
+};
 
 const listFilesByExtension = (files: string[], extensions: string[]): string[] =>
   files.filter((file) => extensions.some((ext) => file.toLowerCase().endsWith(ext)));
@@ -630,39 +651,20 @@ export function registerIpcHandlers(): void {
     "asteria:record-template-training",
     async (_event: IpcMainInvokeEvent, runId: string, signal: Record<string, unknown>) => {
       validateRunId(runId);
-      validateTemplateTrainingSignal(signal as Parameters<typeof validateTemplateTrainingSignal>[0]);
+      validateTemplateTrainingSignal(signal as unknown as TemplateTrainingSignal);
       const outputDir = resolveOutputDir();
       const runDir = await resolveRunDir(outputDir, runId);
       const trainingDir = getTrainingDir(runDir);
       const templateDir = path.join(trainingDir, "template");
       await fs.mkdir(templateDir, { recursive: true });
-      const safeTemplateId = String(signal.templateId ?? "unknown").replace(/[\\/]/g, "_");
-      const appliedAt =
-        typeof signal.appliedAt === "string" ? signal.appliedAt : new Date().toISOString();
+      const safeTemplateId = String(signal.templateId ?? "unknown").replace(/[\\/:*?"<>|]/g, "_");
       const payload = {
         runId,
         ...signal,
-        appliedAt,
+        appliedAt: signal.appliedAt as string,
       };
-      const filename = `${safeTemplateId}-${Date.now()}.json`;
+      const filename = `${safeTemplateId}-${Date.now()}-${randomUUID()}.json`;
       await writeJsonAtomic(path.join(templateDir, filename), payload);
-
-      const manifestPath = path.join(trainingDir, "manifest.json");
-      try {
-        const raw = await fs.readFile(manifestPath, "utf-8");
-        const manifest = JSON.parse(raw) as Record<string, unknown>;
-        const existing = Array.isArray(manifest.templateSignals)
-          ? (manifest.templateSignals as Array<Record<string, unknown>>)
-          : [];
-        const updated = [...existing, payload];
-        await writeJsonAtomic(manifestPath, {
-          ...manifest,
-          templateSignals: updated,
-          templateCount: updated.length,
-        });
-      } catch {
-        // ignore missing manifest
-      }
     }
   );
 
@@ -745,22 +747,8 @@ export function registerIpcHandlers(): void {
         await writeJsonAtomic(path.join(trainingDir, `${safePageId}.json`), trainingSignal);
       }
 
-      const templateSignals: Array<Record<string, unknown>> = [];
       const templateDir = path.join(trainingDir, "template");
-      try {
-        const templateFiles = await fs.readdir(templateDir);
-        for (const file of templateFiles) {
-          if (!file.endsWith(".json")) continue;
-          try {
-            const raw = await fs.readFile(path.join(templateDir, file), "utf-8");
-            templateSignals.push(JSON.parse(raw) as Record<string, unknown>);
-          } catch {
-            // ignore malformed template signal
-          }
-        }
-      } catch {
-        // ignore missing template training signals
-      }
+      const templateSignals = await readTemplateSignals(templateDir);
 
       await writeJsonAtomic(path.join(trainingDir, "manifest.json"), {
         runId,

@@ -6,8 +6,9 @@ import {
   validatePageLayoutSidecar,
   validatePipelineRunConfig,
   validateRunId,
+  validateTemplateTrainingSignal,
 } from "./validation.js";
-import type { PageLayoutSidecar, PipelineRunConfig } from "./contracts.js";
+import type { PageLayoutSidecar, PipelineRunConfig, TemplateTrainingSignal } from "./contracts.js";
 
 const buildValidConfig = (): PipelineRunConfig => ({
   projectId: "proj-1",
@@ -99,5 +100,82 @@ describe("IPC validation", () => {
     const invalid = buildValidSidecar();
     invalid.normalization.shading = { confidence: 2 };
     expect(() => validatePageLayoutSidecar(invalid)).toThrow(/shading.confidence/);
+  });
+});
+
+describe("validateTemplateTrainingSignal", () => {
+  const buildValidSignal = (): TemplateTrainingSignal => ({
+    templateId: "body",
+    scope: "template",
+    appliedAt: "2026-02-03T15:00:00Z",
+    pages: ["page-1", "page-2"],
+    overrides: { normalization: { rotationDeg: 0.5 } },
+    sourcePageId: "page-1",
+    layoutProfile: "body",
+  });
+
+  it("accepts valid template training signals", () => {
+    expect(() => validateTemplateTrainingSignal(buildValidSignal())).not.toThrow();
+  });
+
+  it("accepts section scope", () => {
+    const signal = buildValidSignal();
+    signal.scope = "section";
+    expect(() => validateTemplateTrainingSignal(signal)).not.toThrow();
+  });
+
+  it("rejects signal when templateId is missing", () => {
+    const invalid = buildValidSignal();
+    delete (invalid as Partial<TemplateTrainingSignal>).templateId;
+    expect(() => validateTemplateTrainingSignal(invalid as TemplateTrainingSignal)).toThrow(/templateId required/);
+  });
+
+  it("rejects signal when scope is invalid", () => {
+    const invalid = buildValidSignal();
+    (invalid as { scope: string }).scope = "invalid";
+    expect(() => validateTemplateTrainingSignal(invalid as TemplateTrainingSignal)).toThrow(/scope must be template or section/);
+  });
+
+  it("rejects signal when appliedAt is missing", () => {
+    const invalid = buildValidSignal();
+    delete (invalid as Partial<TemplateTrainingSignal>).appliedAt;
+    expect(() => validateTemplateTrainingSignal(invalid as TemplateTrainingSignal)).toThrow(/appliedAt required/);
+  });
+
+  it("rejects signal when pages array is empty", () => {
+    const invalid = buildValidSignal();
+    invalid.pages = [];
+    expect(() => validateTemplateTrainingSignal(invalid)).toThrow(/pages must be a non-empty array/);
+  });
+
+  it("rejects signal when pages contains non-string", () => {
+    const invalid = buildValidSignal();
+    (invalid.pages as unknown[]) = ["page-1", 123];
+    expect(() => validateTemplateTrainingSignal(invalid as TemplateTrainingSignal)).toThrow(/pages\[1\] must be a string/);
+  });
+
+  it("validates nested overrides", () => {
+    const invalid = buildValidSignal();
+    invalid.overrides = { normalization: { fn: () => null } };
+    expect(() => validateTemplateTrainingSignal(invalid as TemplateTrainingSignal)).toThrow(/overrides/);
+  });
+
+  it("accepts optional sourcePageId and layoutProfile", () => {
+    const signal = buildValidSignal();
+    delete signal.sourcePageId;
+    delete signal.layoutProfile;
+    expect(() => validateTemplateTrainingSignal(signal)).not.toThrow();
+  });
+
+  it("rejects when sourcePageId is not a string", () => {
+    const invalid = buildValidSignal();
+    (invalid as { sourcePageId: unknown }).sourcePageId = 123;
+    expect(() => validateTemplateTrainingSignal(invalid as TemplateTrainingSignal)).toThrow(/sourcePageId must be a string/);
+  });
+
+  it("rejects when layoutProfile is not a string", () => {
+    const invalid = buildValidSignal();
+    (invalid as { layoutProfile: unknown }).layoutProfile = 123;
+    expect(() => validateTemplateTrainingSignal(invalid as TemplateTrainingSignal)).toThrow(/layoutProfile must be a string/);
   });
 });

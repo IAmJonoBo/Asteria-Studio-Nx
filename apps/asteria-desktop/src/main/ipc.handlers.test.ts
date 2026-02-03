@@ -926,4 +926,85 @@ describe("IPC handler registration", () => {
 
     expect(result).toBeNull();
   });
+
+  it("record-template-training writes signal to template directory", async () => {
+    registerIpcHandlers();
+    const handler = handlers.get("asteria:record-template-training");
+    expect(handler).toBeDefined();
+
+    const signal = {
+      templateId: "body",
+      scope: "template",
+      appliedAt: "2026-02-03T15:00:00Z",
+      pages: ["page-1", "page-2"],
+      overrides: { normalization: { rotationDeg: 0.5 } },
+      sourcePageId: "page-1",
+      layoutProfile: "body",
+    };
+
+    await (handler as (event: unknown, runId: string, signal: unknown) => Promise<void>)(
+      {},
+      "run-6",
+      signal
+    );
+
+    const outputDir = path.join(process.cwd(), "pipeline-results");
+    const runDir = getRunDir(outputDir, "run-6");
+    const templateDir = path.join(runDir, "training", "template");
+    expect(mkdir).toHaveBeenCalledWith(templateDir, { recursive: true });
+    expect(writeFile).toHaveBeenCalledWith(
+      expect.stringMatching(new RegExp(path.join(templateDir.replace(/\\/g, "\\\\"), "\\.body-.*\\.json.*\\.tmp$"))),
+      expect.stringMatching(/"runId"\s*:\s*"run-6"/)
+    );
+  });
+
+  it("record-template-training validates signal payload", async () => {
+    registerIpcHandlers();
+    const handler = handlers.get("asteria:record-template-training");
+    expect(handler).toBeDefined();
+
+    const invalidSignal = {
+      templateId: "body",
+      scope: "invalid-scope",
+      appliedAt: "2026-02-03T15:00:00Z",
+      pages: ["page-1"],
+      overrides: {},
+    };
+
+    await expect(
+      (handler as (event: unknown, runId: string, signal: unknown) => Promise<void>)(
+        {},
+        "run-7",
+        invalidSignal
+      )
+    ).rejects.toThrow(/scope must be template or section/);
+  });
+
+  it("record-template-training sanitizes templateId for filename", async () => {
+    registerIpcHandlers();
+    const handler = handlers.get("asteria:record-template-training");
+    expect(handler).toBeDefined();
+
+    const signal = {
+      templateId: "body/chapter:1",
+      scope: "section",
+      appliedAt: "2026-02-03T15:00:00Z",
+      pages: ["page-1"],
+      overrides: { normalization: { rotationDeg: 0.5 } },
+    };
+
+    await (handler as (event: unknown, runId: string, signal: unknown) => Promise<void>)(
+      {},
+      "run-8",
+      signal
+    );
+
+    const outputDir = path.join(process.cwd(), "pipeline-results");
+    const runDir = getRunDir(outputDir, "run-8");
+    const templateDir = path.join(runDir, "training", "template");
+    expect(writeFile).toHaveBeenCalledWith(
+      expect.stringMatching(new RegExp(path.join(templateDir.replace(/\\/g, "\\\\"), "\\.body_chapter_1-.*\\.json.*\\.tmp$"))),
+      expect.any(String)
+    );
+  });
 });

@@ -109,6 +109,13 @@ export const validateTemplateTrainingSignal = (signal: TemplateTrainingSignal): 
     throw new Error("Invalid template training signal: scope must be template or section");
   }
 
+  // Note: The scope field represents user intent for how overrides should be applied:
+  // - "template": User intends to apply to all pages with this layoutProfile
+  // - "section": User intends to apply to a contiguous block of pages with this layoutProfile
+  // The pages array contains the actual page IDs that received the override.
+  // Validation ensures scope is valid, but does not verify semantic consistency
+  // (e.g., whether pages array matches the stated scope intent).
+
   if (!isNonEmptyString(signal.appliedAt)) {
     throw new Error("Invalid template training signal: appliedAt required");
   }
