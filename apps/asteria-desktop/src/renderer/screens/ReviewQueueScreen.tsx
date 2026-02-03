@@ -1993,103 +1993,241 @@ const ReviewQueueLayout = ({
 
             <div>
               <strong style={{ fontSize: "13px" }}>Template inspector</strong>
-              {templateSummary ? (
-                <div style={{ marginTop: "8px", display: "grid", gap: "12px" }}>
-                  <div
-                    style={{
-                      border: "1px solid var(--border)",
-                      borderRadius: "8px",
-                      padding: "10px",
-                      background: "var(--bg-surface)",
-                    }}
-                  >
-                    <div style={{ fontWeight: 600, fontSize: "13px" }}>{templateSummary.label}</div>
-                    <div
-                      style={{ fontSize: "12px", color: "var(--text-secondary)", marginTop: "4px" }}
-                    >
-                      {templateSummary.pages.length} pages • Avg{" "}
-                      {(templateSummary.averageConfidence * 100).toFixed(0)}% confidence • Min{" "}
-                      {(templateSummary.minConfidence * 100).toFixed(0)}%
-                    </div>
-                    <div
-                      style={{ fontSize: "12px", color: "var(--text-secondary)", marginTop: "4px" }}
-                    >
-                      Guide coverage: {(templateSummary.guideCoverage * 100).toFixed(0)}%
-                    </div>
-                    <div style={{ marginTop: "6px", fontSize: "12px" }}>
-                      {templateSummary.issueSummary.length === 0 ? (
-                        <span style={{ color: "var(--text-secondary)" }}>No recurring issues.</span>
-                      ) : (
-                        <span>
-                          Common issues:{" "}
-                          {templateSummary.issueSummary
-                            .map((entry) => `${entry.issue} (${entry.count})`)
-                            .join(", ")}
-                        </span>
-                      )}
-                    </div>
+              <div style={{ marginTop: "8px", display: "grid", gap: "12px" }}>
+                <div
+                  style={{
+                    border: "1px solid var(--border)",
+                    borderRadius: "8px",
+                    padding: "10px",
+                    background: "var(--bg-surface)",
+                  }}
+                >
+                  <div style={{ fontWeight: 600, fontSize: "12px" }}>Template clusters</div>
+                  <div style={{ marginTop: "6px", fontSize: "12px" }}>
+                    {currentTemplateCluster ? (
+                      <span>
+                        Assigned cluster: <strong>{currentTemplateCluster.id}</strong> •{" "}
+                        {formatLayoutProfileLabel(currentTemplateCluster.pageType)}
+                        {templateAssignmentConfidence !== undefined
+                          ? ` • ${(templateAssignmentConfidence * 100).toFixed(0)}% confidence`
+                          : ""}
+                      </span>
+                    ) : (
+                      <span style={{ color: "var(--text-secondary)" }}>
+                        No template cluster assignment found for this page.
+                      </span>
+                    )}
                   </div>
-                  <div>
-                    <div style={{ fontSize: "12px", fontWeight: 600, marginBottom: "6px" }}>
-                      Representative pages (guides overlay)
-                    </div>
+                  {templateClusters.length > 0 ? (
                     <div
                       style={{
                         display: "grid",
-                        gridTemplateColumns: "repeat(auto-fit, minmax(120px, 150px))",
+                        gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
                         gap: "8px",
+                        marginTop: "8px",
                       }}
                     >
-                      {representativePages.map((page) => {
-                        const preview =
-                          page.previews.overlay ?? page.previews.normalized ?? page.previews.source;
-                        const previewSrc = resolvePreviewSrc(preview);
+                      {templateClusters.map((cluster) => {
+                        const isCurrent = currentTemplateCluster?.id === cluster.id;
                         return (
                           <div
-                            key={page.id}
+                            key={cluster.id}
                             style={{
                               border: "1px solid var(--border)",
                               borderRadius: "6px",
-                              padding: "6px",
-                              background: "var(--bg-primary)",
+                              padding: "8px",
+                              background: isCurrent ? "var(--bg-primary)" : "var(--bg-surface)",
+                              display: "grid",
+                              gap: "4px",
                             }}
                           >
-                            {previewSrc ? (
-                              <img
-                                src={previewSrc}
-                                alt={`Preview for ${page.filename}`}
-                                style={{ display: "block", width: "100%", height: "auto" }}
-                              />
-                            ) : (
-                              <div style={{ fontSize: "11px", color: "var(--text-secondary)" }}>
-                                No preview
-                              </div>
-                            )}
-                            <div
-                              style={{
-                                fontSize: "10px",
-                                color: "var(--text-tertiary)",
-                                marginTop: "4px",
-                              }}
-                            >
-                              {page.filename}
+                            <div style={{ fontWeight: 600, fontSize: "12px" }}>
+                              {cluster.id}
+                              {isCurrent ? " • Current" : ""}
+                            </div>
+                            <div style={{ fontSize: "11px", color: "var(--text-secondary)" }}>
+                              {formatLayoutProfileLabel(cluster.pageType)}
+                            </div>
+                            <div style={{ fontSize: "11px", color: "var(--text-secondary)" }}>
+                              {cluster.pageIds.length} pages •{" "}
+                              {(cluster.confidence * 100).toFixed(0)}% confidence
                             </div>
                           </div>
                         );
                       })}
-                      {representativePages.length === 0 && (
-                        <div style={{ fontSize: "11px", color: "var(--text-secondary)" }}>
-                          No representative pages available.
-                        </div>
-                      )}
                     </div>
+                  ) : (
+                    <div style={{ marginTop: "8px", fontSize: "11px", color: "var(--text-secondary)" }}>
+                      No template clusters available in the sidecar.
+                    </div>
+                  )}
+                  <div
+                    style={{
+                      marginTop: "10px",
+                      display: "flex",
+                      flexWrap: "wrap",
+                      gap: "8px",
+                      alignItems: "center",
+                    }}
+                  >
+                    <button
+                      className="btn btn-secondary btn-sm"
+                      onClick={() => void handleTemplateClusterAction("confirm")}
+                      disabled={
+                        isTemplateActionPending ||
+                        (!currentTemplateCluster && !templateAssignmentId)
+                      }
+                      aria-label="Confirm template cluster"
+                    >
+                      {isTemplateActionPending ? "Saving…" : "Confirm cluster"}
+                    </button>
+                    <label
+                      style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "11px" }}
+                    >
+                      <span>Correct to</span>
+                      <select
+                        value={selectedTemplateClusterId ?? ""}
+                        onChange={(event) => setSelectedTemplateClusterId(event.target.value)}
+                        disabled={templateClusters.length === 0}
+                        aria-label="Template cluster selection"
+                      >
+                        <option value="" disabled>
+                          Select cluster
+                        </option>
+                        {templateClusters.map((cluster) => (
+                          <option key={cluster.id} value={cluster.id}>
+                            {cluster.id} • {formatLayoutProfileLabel(cluster.pageType)}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <button
+                      className="btn btn-secondary btn-sm"
+                      onClick={() => void handleTemplateClusterAction("correct")}
+                      disabled={
+                        isTemplateActionPending ||
+                        !selectedTemplateClusterId ||
+                        templateClusters.length === 0
+                      }
+                      aria-label="Correct template cluster"
+                    >
+                      {isTemplateActionPending ? "Saving…" : "Correct assignment"}
+                    </button>
+                    {templateActionStatus && (
+                      <span style={{ fontSize: "11px", color: "var(--text-secondary)" }}>
+                        {templateActionStatus}
+                      </span>
+                    )}
+                    {templateActionError && (
+                      <span style={{ fontSize: "11px", color: "var(--color-error)" }}>
+                        {templateActionError}
+                      </span>
+                    )}
                   </div>
                 </div>
-              ) : (
-                <p style={{ margin: "8px 0 0", fontSize: "12px", color: "var(--text-secondary)" }}>
-                  No template summary available for this page.
-                </p>
-              )}
+                {templateSummary ? (
+                  <div>
+                    <div style={{ fontSize: "12px", fontWeight: 600, marginBottom: "6px" }}>
+                      Layout template summary
+                    </div>
+                    <div
+                      style={{
+                        border: "1px solid var(--border)",
+                        borderRadius: "8px",
+                        padding: "10px",
+                        background: "var(--bg-surface)",
+                      }}
+                    >
+                      <div style={{ fontWeight: 600, fontSize: "13px" }}>{templateSummary.label}</div>
+                      <div
+                        style={{ fontSize: "12px", color: "var(--text-secondary)", marginTop: "4px" }}
+                      >
+                        {templateSummary.pages.length} pages • Avg{" "}
+                        {(templateSummary.averageConfidence * 100).toFixed(0)}% confidence • Min{" "}
+                        {(templateSummary.minConfidence * 100).toFixed(0)}%
+                      </div>
+                      <div
+                        style={{ fontSize: "12px", color: "var(--text-secondary)", marginTop: "4px" }}
+                      >
+                        Guide coverage: {(templateSummary.guideCoverage * 100).toFixed(0)}%
+                      </div>
+                      <div style={{ marginTop: "6px", fontSize: "12px" }}>
+                        {templateSummary.issueSummary.length === 0 ? (
+                          <span style={{ color: "var(--text-secondary)" }}>
+                            No recurring issues.
+                          </span>
+                        ) : (
+                          <span>
+                            Common issues:{" "}
+                            {templateSummary.issueSummary
+                              .map((entry) => `${entry.issue} (${entry.count})`)
+                              .join(", ")}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <p style={{ margin: 0, fontSize: "12px", color: "var(--text-secondary)" }}>
+                    No layout template summary available for this page.
+                  </p>
+                )}
+                <div>
+                  <div style={{ fontSize: "12px", fontWeight: 600, marginBottom: "6px" }}>
+                    Representative pages (guides overlay)
+                  </div>
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "repeat(auto-fit, minmax(120px, 150px))",
+                      gap: "8px",
+                    }}
+                  >
+                    {representativePages.map((page) => {
+                      const preview =
+                        page.previews.overlay ?? page.previews.normalized ?? page.previews.source;
+                      const previewSrc = resolvePreviewSrc(preview);
+                      return (
+                        <div
+                          key={page.id}
+                          style={{
+                            border: "1px solid var(--border)",
+                            borderRadius: "6px",
+                            padding: "6px",
+                            background: "var(--bg-primary)",
+                          }}
+                        >
+                          {previewSrc ? (
+                            <img
+                              src={previewSrc}
+                              alt={`Preview for ${page.filename}`}
+                              style={{ display: "block", width: "100%", height: "auto" }}
+                            />
+                          ) : (
+                            <div style={{ fontSize: "11px", color: "var(--text-secondary)" }}>
+                              No preview
+                            </div>
+                          )}
+                          <div
+                            style={{
+                              fontSize: "10px",
+                              color: "var(--text-tertiary)",
+                              marginTop: "4px",
+                            }}
+                          >
+                            {page.filename}
+                          </div>
+                        </div>
+                      );
+                    })}
+                    {representativePages.length === 0 && (
+                      <div style={{ fontSize: "11px", color: "var(--text-secondary)" }}>
+                        No representative pages available.
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
               <strong style={{ fontSize: "13px" }}>Baseline grid</strong>
               <div style={{ marginTop: "8px", display: "grid", gap: "8px" }}>
                 <div
@@ -2428,6 +2566,34 @@ export function ReviewQueueScreen({
   }
   const applyTargetCount = applyTargets.length;
   const representativePages = templateSummary ? getRepresentativePages(templateSummary) : [];
+  const templateClusters = useMemo(() => sidecar?.bookModel?.pageTemplates ?? [], [sidecar]);
+  const templateAssignmentId = sidecar?.templateId;
+  const templateAssignmentConfidence = sidecar?.templateConfidence;
+  const currentTemplateCluster = useMemo(() => {
+    if (!currentPage) return null;
+    if (templateAssignmentId) {
+      return templateClusters.find((template) => template.id === templateAssignmentId) ?? null;
+    }
+    return (
+      templateClusters.find((template) => template.pageIds.includes(currentPage.id)) ?? null
+    );
+  }, [currentPage, templateAssignmentId, templateClusters]);
+  const [selectedTemplateClusterId, setSelectedTemplateClusterId] = useState<string | null>(null);
+  const [templateActionStatus, setTemplateActionStatus] = useState<string | null>(null);
+  const [templateActionError, setTemplateActionError] = useState<string | null>(null);
+  const [isTemplateActionPending, setIsTemplateActionPending] = useState(false);
+
+  useEffect(() => {
+    if (currentTemplateCluster?.id) {
+      setSelectedTemplateClusterId(currentTemplateCluster.id);
+      return;
+    }
+    if (templateClusters.length > 0) {
+      setSelectedTemplateClusterId(templateClusters[0].id);
+      return;
+    }
+    setSelectedTemplateClusterId(null);
+  }, [currentTemplateCluster?.id, templateClusters]);
 
   const toggleSelected = createToggleSelected(setSelectedIds);
   const applyDecisionToSelection = createApplyDecisionToSelection(selectedIds, setDecisions);
@@ -2820,6 +2986,62 @@ export function ReviewQueueScreen({
       setOverrideError(message);
     } finally {
       setIsApplyingOverride(false);
+    }
+  };
+
+  const handleTemplateClusterAction = async (action: "confirm" | "correct"): Promise<void> => {
+    if (!runId || !currentPage) return;
+    const recordTemplateTrainingChannel = getIpcChannel<
+      [runId: string, signal: Record<string, unknown>],
+      void
+    >("asteria:record-template-training");
+    if (!recordTemplateTrainingChannel) {
+      setTemplateActionError("IPC unavailable.");
+      return;
+    }
+    const templateId =
+      action === "confirm" ? currentTemplateCluster?.id ?? templateAssignmentId : null;
+    const targetTemplateId =
+      action === "correct" ? selectedTemplateClusterId ?? null : templateId;
+    const resolvedTemplateId = action === "confirm" ? templateId : targetTemplateId;
+    if (!resolvedTemplateId) {
+      setTemplateActionError("No template cluster selected.");
+      return;
+    }
+    setTemplateActionError(null);
+    setTemplateActionStatus(null);
+    setIsTemplateActionPending(true);
+    const appliedAt = new Date().toISOString();
+    const targetCluster =
+      templateClusters.find((cluster) => cluster.id === resolvedTemplateId) ?? null;
+    const overrides = {
+      templateCluster: {
+        action,
+        fromTemplateId: templateAssignmentId ?? currentTemplateCluster?.id ?? null,
+        toTemplateId: targetTemplateId,
+        assignmentConfidence: templateAssignmentConfidence ?? null,
+        clusterConfidence: targetCluster?.confidence ?? null,
+      },
+    };
+    try {
+      await recordTemplateTrainingChannel(runId, {
+        templateId: resolvedTemplateId,
+        scope: "template",
+        appliedAt,
+        pages: [currentPage.id],
+        overrides,
+        sourcePageId: currentPage.id,
+        layoutProfile: currentPage.layoutProfile,
+      });
+      setTemplateActionStatus(
+        action === "confirm" ? "Template assignment confirmed." : "Template correction saved."
+      );
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Failed to record template training signal";
+      setTemplateActionError(message);
+    } finally {
+      setIsTemplateActionPending(false);
     }
   };
 
