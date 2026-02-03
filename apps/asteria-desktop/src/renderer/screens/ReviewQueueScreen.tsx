@@ -90,6 +90,14 @@ type Box = [number, number, number, number];
 
 type AdjustmentMode = "crop" | "trim" | null;
 
+type BaselineGridOverrides = {
+  spacingPx: number | null;
+  offsetPx: number | null;
+  angleDeg: number | null;
+  snapToPeaks: boolean;
+  markCorrect: boolean;
+};
+
 type OverlayHandleEdge =
   | "left"
   | "right"
@@ -115,6 +123,68 @@ const getConfidenceColor = (confidence: number): string => {
   if (confidence < 0.5) return "var(--color-error)";
   if (confidence < 0.7) return "var(--color-warning)";
   return "var(--color-success)";
+};
+
+const isFiniteNumber = (value: unknown): value is number =>
+  typeof value === "number" && Number.isFinite(value);
+
+const buildBaselineGridOverrides = (
+  sidecar: PageLayoutSidecar | null | undefined
+): BaselineGridOverrides => {
+  const overrides = sidecar?.overrides;
+  const guides =
+    overrides && typeof overrides === "object" && "guides" in overrides
+      ? (overrides.guides as Record<string, unknown> | null)
+      : null;
+  const baselineGrid =
+    guides && typeof guides === "object" && "baselineGrid" in guides
+      ? (guides.baselineGrid as Record<string, unknown> | null)
+      : null;
+
+  const overrideSpacing = baselineGrid && isFiniteNumber(baselineGrid.spacingPx)
+    ? baselineGrid.spacingPx
+    : null;
+  const overrideOffset = baselineGrid && isFiniteNumber(baselineGrid.offsetPx)
+    ? baselineGrid.offsetPx
+    : null;
+  const overrideAngle = baselineGrid && isFiniteNumber(baselineGrid.angleDeg)
+    ? baselineGrid.angleDeg
+    : null;
+  const overrideSnap =
+    baselineGrid && typeof baselineGrid.snapToPeaks === "boolean"
+      ? baselineGrid.snapToPeaks
+      : null;
+  const overrideCorrect =
+    baselineGrid && typeof baselineGrid.markCorrect === "boolean"
+      ? baselineGrid.markCorrect
+      : null;
+
+  const autoSpacing =
+    sidecar?.bookModel?.baselineGrid?.dominantSpacingPx ??
+    sidecar?.metrics?.baseline?.medianSpacingPx ??
+    null;
+
+  return {
+    spacingPx: overrideSpacing ?? (isFiniteNumber(autoSpacing) ? autoSpacing : null),
+    offsetPx: overrideOffset,
+    angleDeg: overrideAngle,
+    snapToPeaks: overrideSnap ?? true,
+    markCorrect: overrideCorrect ?? false,
+  };
+};
+
+const areBaselineGridOverridesEqual = (
+  current: BaselineGridOverrides,
+  baseline: BaselineGridOverrides | null
+): boolean => {
+  if (!baseline) return false;
+  return (
+    current.spacingPx === baseline.spacingPx &&
+    current.offsetPx === baseline.offsetPx &&
+    current.angleDeg === baseline.angleDeg &&
+    current.snapToPeaks === baseline.snapToPeaks &&
+    current.markCorrect === baseline.markCorrect
+  );
 };
 
 const resolvePreviewSrc = (preview?: PreviewRef): string | undefined => {
@@ -1437,6 +1507,100 @@ const ReviewQueueLayout = ({
                 </p>
               </div>
             </div>
+
+            <div>
+              <strong style={{ fontSize: "13px" }}>Baseline grid</strong>
+              <div style={{ marginTop: "8px", display: "grid", gap: "8px" }}>
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+                    gap: "8px",
+                  }}
+                >
+                  <label style={{ display: "grid", gap: "4px", fontSize: "11px" }}>
+                    Spacing (px)
+                    <input
+                      type="number"
+                      step="0.1"
+                      value={baselineSpacingPx ?? ""}
+                      onChange={(event) => {
+                        const value = event.target.value;
+                        const parsed = Number(value);
+                        setBaselineSpacingPx(value === "" || !Number.isFinite(parsed) ? null : parsed);
+                      }}
+                    />
+                  </label>
+                  <label style={{ display: "grid", gap: "4px", fontSize: "11px" }}>
+                    Offset (px)
+                    <input
+                      type="number"
+                      step="0.1"
+                      value={baselineOffsetPx ?? ""}
+                      onChange={(event) => {
+                        const value = event.target.value;
+                        const parsed = Number(value);
+                        setBaselineOffsetPx(value === "" || !Number.isFinite(parsed) ? null : parsed);
+                      }}
+                    />
+                  </label>
+                  <label style={{ display: "grid", gap: "4px", fontSize: "11px" }}>
+                    Angle (°)
+                    <input
+                      type="number"
+                      step="0.1"
+                      value={baselineAngleDeg ?? ""}
+                      onChange={(event) => {
+                        const value = event.target.value;
+                        const parsed = Number(value);
+                        setBaselineAngleDeg(value === "" || !Number.isFinite(parsed) ? null : parsed);
+                      }}
+                    />
+                  </label>
+                </div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: "12px" }}>
+                  <label style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                    <input
+                      type="checkbox"
+                      checked={baselineSnapToPeaks}
+                      onChange={(event) => setBaselineSnapToPeaks(event.target.checked)}
+                    />
+                    <span style={{ fontSize: "12px" }}>Snap to peaks</span>
+                  </label>
+                  <label style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                    <input
+                      type="checkbox"
+                      checked={baselineMarkCorrect}
+                      onChange={(event) => setBaselineMarkCorrect(event.target.checked)}
+                    />
+                    <span style={{ fontSize: "12px" }}>Mark correct</span>
+                  </label>
+                </div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: "8px", alignItems: "center" }}>
+                  <button
+                    className="btn btn-primary btn-sm"
+                    onClick={onApplyOverride}
+                    disabled={isApplyingOverride}
+                  >
+                    {isApplyingOverride ? "Applying…" : "Apply override"}
+                  </button>
+                  {lastOverrideAppliedAt && (
+                    <span style={{ fontSize: "11px", color: "var(--text-secondary)" }}>
+                      Applied {new Date(lastOverrideAppliedAt).toLocaleTimeString()}
+                    </span>
+                  )}
+                  {overrideError && (
+                    <span style={{ fontSize: "11px", color: "var(--color-error)" }}>
+                      {overrideError}
+                    </span>
+                  )}
+                </div>
+                <p style={{ margin: 0, fontSize: "11px", color: "var(--text-tertiary)" }}>
+                  Tune spacing, offset, and angle for the page baseline grid. Snap-to-peaks aligns
+                  to detected line clusters, and mark-correct confirms the guide for training.
+                </p>
+              </div>
+            </div>
           </div>
 
           <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
@@ -1531,6 +1695,11 @@ export function ReviewQueueScreen({
   const [isApplyingOverride, setIsApplyingOverride] = useState(false);
   const [overrideError, setOverrideError] = useState<string | null>(null);
   const [lastOverrideAppliedAt, setLastOverrideAppliedAt] = useState<string | null>(null);
+  const [baselineSpacingPx, setBaselineSpacingPx] = useState<number | null>(null);
+  const [baselineOffsetPx, setBaselineOffsetPx] = useState<number | null>(null);
+  const [baselineAngleDeg, setBaselineAngleDeg] = useState<number | null>(null);
+  const [baselineSnapToPeaks, setBaselineSnapToPeaks] = useState(true);
+  const [baselineMarkCorrect, setBaselineMarkCorrect] = useState(false);
   const overlaySvgRef = useRef<globalThis.SVGSVGElement | null>(null);
   const dragHandleRef = useRef<{
     handle: OverlayHandle;
@@ -1544,6 +1713,7 @@ export function ReviewQueueScreen({
     trim: null,
   });
   const baselineRotationRef = useRef(0);
+  const baselineGuidesRef = useRef<BaselineGridOverrides | null>(null);
   const [overlayLayers, setOverlayLayers] = useState({
     pageBounds: true,
     cropBox: true,
@@ -1632,13 +1802,20 @@ export function ReviewQueueScreen({
     const baseCropBox = sidecar?.normalization?.cropBox ?? null;
     const rawTrimBox = buildTrimBoxFromCrop(baseCropBox, sidecar?.normalization?.trim, sidecar?.dpi);
     const baseTrimBox = baseCropBox && rawTrimBox ? clampBox(rawTrimBox, baseCropBox) : null;
+    const baselineGrid = buildBaselineGridOverrides(sidecar);
     baselineBoxesRef.current = {
       crop: baseCropBox,
       trim: baseTrimBox ?? null,
     };
+    baselineGuidesRef.current = baselineGrid;
     setCropBox(baseCropBox);
     setTrimBox(baseTrimBox ?? null);
     setRotationDeg(0);
+    setBaselineSpacingPx(baselineGrid.spacingPx);
+    setBaselineOffsetPx(baselineGrid.offsetPx);
+    setBaselineAngleDeg(baselineGrid.angleDeg);
+    setBaselineSnapToPeaks(baselineGrid.snapToPeaks);
+    setBaselineMarkCorrect(baselineGrid.markCorrect);
     baselineRotationRef.current = 0;
     setAdjustmentMode(null);
     setOverrideError(null);
@@ -1790,6 +1967,13 @@ export function ReviewQueueScreen({
     if (!runId || !runDir || !currentPage) return;
     const overrides: Record<string, unknown> = {};
     const normalization: Record<string, unknown> = {};
+    const baselineGrid: BaselineGridOverrides = {
+      spacingPx: baselineSpacingPx ?? null,
+      offsetPx: baselineOffsetPx ?? null,
+      angleDeg: baselineAngleDeg ?? null,
+      snapToPeaks: baselineSnapToPeaks,
+      markCorrect: baselineMarkCorrect,
+    };
     if (rotationDeg !== baselineRotationRef.current) {
       normalization.rotationDeg = rotationDeg;
     }
@@ -1805,6 +1989,9 @@ export function ReviewQueueScreen({
     }
     if (Object.keys(normalization).length > 0) {
       overrides.normalization = normalization;
+    }
+    if (!areBaselineGridOverridesEqual(baselineGrid, baselineGuidesRef.current)) {
+      overrides.guides = { baselineGrid };
     }
     if (Object.keys(overrides).length === 0) {
       setOverrideError("No changes to save — adjustments match current values");
@@ -1832,6 +2019,7 @@ export function ReviewQueueScreen({
         trim: trimBox,
       };
       baselineRotationRef.current = rotationDeg;
+      baselineGuidesRef.current = baselineGrid;
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to apply override";
       setOverrideError(message);
