@@ -75,6 +75,26 @@ Export normalized outputs + JSON sidecars
 - Folios (cyan)
 - Gutter bands (red)
 
+### 2a. Guides Mode (Visual Inspection)
+
+Guides Mode is a focused inspection layer that emphasizes structural guides and alignment.
+It is used to verify bounds, text baselines, and gutter splits without altering review decisions.
+
+**Behavior**:
+
+- Shows guide layers with a legend and consistent color tokens.
+- Dims the source image slightly to prioritize guide visibility.
+- Keeps review decisions unchanged; it is a read-only inspection mode.
+
+**Guides Mode shortcuts**:
+
+| Key               | Action                 | Description                                   |
+| ----------------- | ---------------------- | --------------------------------------------- |
+| `G`               | Toggle Guides Mode     | Enter/exit guides inspection                  |
+| `Shift + G`       | Cycle guide sets       | All → Layout → Text → Baselines               |
+| `Ctrl/Cmd + G`    | Toggle guide legend    | Show/hide legend for quick inspection         |
+| `Esc`             | Exit Guides Mode       | Returns to standard review overlays           |
+
 ### 3. Run Status & Feedback
 
 **Run states**:

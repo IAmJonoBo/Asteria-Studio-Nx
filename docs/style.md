@@ -96,6 +96,39 @@ Folios:          #06b6d4 (cyan)
 Gutter:          #ef4444 (red)
 ```
 
+### Guides
+
+Guides use dedicated tokens to keep overlay visuals consistent across the app.
+
+**Guide color tokens**:
+
+```text
+--guide-page-bounds:    #3b82f6 (blue)
+--guide-content-box:    #10b981 (green)
+--guide-text-block:     #f59e0b (amber)
+--guide-ornament:       #8b5cf6 (purple)
+--guide-running-head:   #ec4899 (pink)
+--guide-folio:          #06b6d4 (cyan)
+--guide-gutter:         #ef4444 (red)
+--guide-baseline:       #22c55e (emerald)
+```
+
+**Stroke specs**:
+
+```text
+Guide stroke width: 2px (default)
+Guide stroke width (selected): 3px
+Hit target: 6px visual buffer around line segments
+```
+
+**Dash specs**:
+
+```text
+Solid:    no dash (primary guides and selected elements)
+Dashed:   6px dash / 4px gap (secondary guides, inferred bounds)
+Dotted:   2px dot / 4px gap (baselines and helper rulers)
+```
+
 ### Border Radius
 
 ```text
