@@ -16,6 +16,7 @@ package-lock.json
 
 # App build outputs
 apps/asteria-desktop/dist/
+apps/asteria-desktop/dist-app/
 apps/asteria-desktop/.vite/
 apps/asteria-desktop/node_modules/
 apps/asteria-desktop/pipeline-results/
