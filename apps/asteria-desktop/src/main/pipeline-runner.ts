@@ -22,6 +22,7 @@ import type {
   PageLayoutElement,
   BaselineGridGuide,
   RunProgressEvent,
+  PageTemplate,
 } from "../ipc/contracts.js";
 import { scanCorpus } from "../ipc/corpusScanner.js";
 import {
@@ -30,7 +31,7 @@ import {
   computeTargetDimensionsPx,
   estimatePageBounds,
 } from "../ipc/corpusAnalysis.js";
-import { deriveBookModelFromImages } from "./book-priors.js";
+import { deriveBookModelFromImages, hashBand, ORNAMENT_BAND } from "./book-priors.js";
 import { getPipelineCoreNative, type PipelineCoreNative } from "./pipeline-core-native.js";
 import {
   getRunDir,
@@ -543,6 +544,386 @@ const classifyByStructure = (
 };
 
 const clamp01 = (value: number): number => Math.max(0, Math.min(1, value));
+
+const computeBoxArea = (box: [number, number, number, number]): number => {
+  const width = Math.max(0, box[2] - box[0]);
+  const height = Math.max(0, box[3] - box[1]);
+  return width * height;
+};
+
+const intersectArea = (
+  box: [number, number, number, number],
+  other: [number, number, number, number]
+): number => {
+  const x0 = Math.max(box[0], other[0]);
+  const y0 = Math.max(box[1], other[1]);
+  const x1 = Math.min(box[2], other[2]);
+  const y1 = Math.min(box[3], other[3]);
+  if (x1 <= x0 || y1 <= y0) return 0;
+  return (x1 - x0) * (y1 - y0);
+};
+
+type PageTemplateFeatures = {
+  pageId: string;
+  pageType: LayoutProfile;
+  margins: { top: number; right: number; bottom: number; left: number };
+  columnCount: number;
+  columnValleyRatio: number;
+  headBandRatio: number;
+  footerBandRatio: number;
+  folioBandScore: number;
+  ornamentHashes: string[];
+  textDensity: number;
+  whitespaceRatio: number;
+  baselineConsistency?: number;
+  baselineSpacingPx?: number;
+  baselineSpacingRatio?: number;
+  gutterSignature?: number;
+};
+
+type PageTemplateAssignment = {
+  pageId: string;
+  templateId?: string;
+  confidence: number;
+};
+
+type TemplateBuilder = {
+  id: string;
+  pageType: LayoutProfile;
+  pageIds: string[];
+  count: number;
+  mean: Omit<PageTemplateFeatures, "pageId" | "pageType" | "ornamentHashes">;
+  ornamentHashes: Set<string>;
+  confidenceSum: number;
+};
+
+const TEXT_ELEMENT_TYPES = new Set<PageLayoutElement["type"]>([
+  "text_block",
+  "title",
+  "running_head",
+  "footnote",
+  "marginalia",
+  "drop_cap",
+]);
+
+const computeTextFeatures = (params: {
+  elements: PageLayoutElement[];
+  maskBox: [number, number, number, number];
+  width: number;
+  height: number;
+}): {
+  textDensity: number;
+  whitespaceRatio: number;
+  headBandRatio: number;
+  footerBandRatio: number;
+  columnCount: number;
+  columnValleyRatio: number;
+  contentBox: [number, number, number, number];
+} => {
+  const { elements, maskBox, width, height } = params;
+  const textElements = elements.filter((element) => TEXT_ELEMENT_TYPES.has(element.type));
+  const maskArea = Math.max(1, computeBoxArea(maskBox));
+  const textArea = textElements.reduce((sum, element) => sum + computeBoxArea(element.bbox), 0);
+  const textDensity = clamp01(textArea / maskArea);
+  const whitespaceRatio = clamp01(1 - textDensity);
+  const bandHeight = Math.round(height * 0.15);
+  const headBand: [number, number, number, number] = [0, 0, width, bandHeight];
+  const footerBand: [number, number, number, number] = [
+    0,
+    Math.max(0, height - bandHeight),
+    width,
+    height,
+  ];
+  const headBandArea = textElements.reduce(
+    (sum, element) => sum + intersectArea(element.bbox, headBand),
+    0
+  );
+  const footerBandArea = textElements.reduce(
+    (sum, element) => sum + intersectArea(element.bbox, footerBand),
+    0
+  );
+  const headBandRatio = textArea > 0 ? clamp01(headBandArea / textArea) : 0;
+  const footerBandRatio = textArea > 0 ? clamp01(footerBandArea / textArea) : 0;
+
+  const contentBox =
+    textElements.length > 0
+      ? textElements.reduce(
+          (acc, element) => [
+            Math.min(acc[0], element.bbox[0]),
+            Math.min(acc[1], element.bbox[1]),
+            Math.max(acc[2], element.bbox[2]),
+            Math.max(acc[3], element.bbox[3]),
+          ],
+          [
+            textElements[0].bbox[0],
+            textElements[0].bbox[1],
+            textElements[0].bbox[2],
+            textElements[0].bbox[3],
+          ] as [number, number, number, number]
+        )
+      : maskBox;
+
+  const centers = textElements.map((element) => (element.bbox[0] + element.bbox[2]) / 2);
+  const medianCenter =
+    centers.length > 0
+      ? centers.slice().sort((a, b) => a - b)[Math.floor(centers.length / 2)]
+      : width / 2;
+  const leftElements = textElements.filter(
+    (element) => (element.bbox[0] + element.bbox[2]) / 2 <= medianCenter
+  );
+  const rightElements = textElements.filter(
+    (element) => (element.bbox[0] + element.bbox[2]) / 2 > medianCenter
+  );
+  const leftMaxX = leftElements.reduce((max, element) => Math.max(max, element.bbox[2]), 0);
+  const rightMinX = rightElements.reduce(
+    (min, element) => Math.min(min, element.bbox[0]),
+    width
+  );
+  const gap = Math.max(0, rightMinX - leftMaxX);
+  const columnValleyRatio =
+    leftElements.length >= 2 && rightElements.length >= 2 && gap > width * 0.04
+      ? clamp01(gap / width)
+      : 0;
+  const columnCount = columnValleyRatio > 0 ? 2 : 1;
+
+  return {
+    textDensity,
+    whitespaceRatio,
+    headBandRatio,
+    footerBandRatio,
+    columnCount,
+    columnValleyRatio,
+    contentBox,
+  };
+};
+
+const computeFolioBandScore = (
+  elements: PageLayoutElement[],
+  folioModel: BookModel["folioModel"],
+  height: number
+): number => {
+  if (!folioModel?.positionBands?.length) return 0;
+  const folios = elements.filter((element) => element.type === "folio");
+  if (folios.length === 0) return 0;
+  const hits = folioModel.positionBands.filter((band) =>
+    folios.some((folio) => {
+      const centerY = (folio.bbox[1] + folio.bbox[3]) / 2;
+      return centerY >= band.band[0] && centerY <= band.band[1];
+    })
+  ).length;
+  return clamp01(hits / folioModel.positionBands.length);
+};
+
+const computeTemplateSimilarity = (page: PageTemplateFeatures, template: TemplateBuilder): number => {
+  const weights = {
+    margin: 1,
+    columnCount: 0.8,
+    columnValleyRatio: 0.6,
+    headBandRatio: 0.5,
+    footerBandRatio: 0.5,
+    baselineSpacingRatio: 0.6,
+    baselineConsistency: 0.5,
+    textDensity: 0.6,
+    whitespaceRatio: 0.4,
+    gutterSignature: 0.4,
+    folioBandScore: 0.3,
+  };
+
+  let totalWeight = 0;
+  let distance = 0;
+
+  const addDistance = (value: number | undefined, mean: number | undefined, weight: number) => {
+    if (value === undefined || mean === undefined) return;
+    totalWeight += weight;
+    distance += weight * Math.min(1, Math.abs(value - mean));
+  };
+
+  const addScaledDistance = (
+    value: number | undefined,
+    mean: number | undefined,
+    weight: number,
+    scale: number
+  ) => {
+    if (value === undefined || mean === undefined) return;
+    totalWeight += weight;
+    distance += weight * Math.min(1, Math.abs(value - mean) / Math.max(0.001, scale));
+  };
+
+  addDistance(page.margins.top, template.mean.margins.top, weights.margin);
+  addDistance(page.margins.right, template.mean.margins.right, weights.margin);
+  addDistance(page.margins.bottom, template.mean.margins.bottom, weights.margin);
+  addDistance(page.margins.left, template.mean.margins.left, weights.margin);
+  addScaledDistance(page.columnCount, template.mean.columnCount, weights.columnCount, 2);
+  addDistance(page.columnValleyRatio, template.mean.columnValleyRatio, weights.columnValleyRatio);
+  addDistance(page.headBandRatio, template.mean.headBandRatio, weights.headBandRatio);
+  addDistance(page.footerBandRatio, template.mean.footerBandRatio, weights.footerBandRatio);
+  addDistance(
+    page.baselineSpacingRatio,
+    template.mean.baselineSpacingRatio,
+    weights.baselineSpacingRatio
+  );
+  addDistance(
+    page.baselineConsistency,
+    template.mean.baselineConsistency,
+    weights.baselineConsistency
+  );
+  addDistance(page.textDensity, template.mean.textDensity, weights.textDensity);
+  addDistance(page.whitespaceRatio, template.mean.whitespaceRatio, weights.whitespaceRatio);
+  addDistance(page.gutterSignature, template.mean.gutterSignature, weights.gutterSignature);
+  addDistance(page.folioBandScore, template.mean.folioBandScore, weights.folioBandScore);
+
+  if (page.ornamentHashes.length > 0) {
+    totalWeight += 0.2;
+    const matches = page.ornamentHashes.some((hash) => template.ornamentHashes.has(hash));
+    if (!matches) {
+      distance += 0.2;
+    }
+  }
+
+  if (totalWeight === 0) return 0;
+  return clamp01(1 - distance / totalWeight);
+};
+
+const updateTemplateMeans = (template: TemplateBuilder, page: PageTemplateFeatures): void => {
+  const count = template.count + 1;
+  const update = (key: keyof TemplateBuilder["mean"], value: number | undefined) => {
+    if (value === undefined) return;
+    const current = template.mean[key] as number | undefined;
+    template.mean[key] =
+      current === undefined ? value : (current * template.count + value) / count;
+  };
+
+  update("columnCount", page.columnCount);
+  update("columnValleyRatio", page.columnValleyRatio);
+  update("headBandRatio", page.headBandRatio);
+  update("footerBandRatio", page.footerBandRatio);
+  update("folioBandScore", page.folioBandScore);
+  update("textDensity", page.textDensity);
+  update("whitespaceRatio", page.whitespaceRatio);
+  update("baselineConsistency", page.baselineConsistency);
+  update("baselineSpacingPx", page.baselineSpacingPx);
+  update("baselineSpacingRatio", page.baselineSpacingRatio);
+  update("gutterSignature", page.gutterSignature);
+  template.mean.margins = {
+    top: (template.mean.margins.top * template.count + page.margins.top) / count,
+    right: (template.mean.margins.right * template.count + page.margins.right) / count,
+    bottom: (template.mean.margins.bottom * template.count + page.margins.bottom) / count,
+    left: (template.mean.margins.left * template.count + page.margins.left) / count,
+  };
+
+  page.ornamentHashes.forEach((hash) => template.ornamentHashes.add(hash));
+  template.pageIds.push(page.pageId);
+  template.count = count;
+};
+
+const buildInitialTemplate = (page: PageTemplateFeatures, index: number): TemplateBuilder => ({
+  id: `template-${String(index + 1).padStart(2, "0")}`,
+  pageType: page.pageType,
+  pageIds: [page.pageId],
+  count: 1,
+  mean: {
+    margins: page.margins,
+    columnCount: page.columnCount,
+    columnValleyRatio: page.columnValleyRatio,
+    headBandRatio: page.headBandRatio,
+    footerBandRatio: page.footerBandRatio,
+    folioBandScore: page.folioBandScore,
+    textDensity: page.textDensity,
+    whitespaceRatio: page.whitespaceRatio,
+    baselineConsistency: page.baselineConsistency,
+    baselineSpacingPx: page.baselineSpacingPx,
+    baselineSpacingRatio: page.baselineSpacingRatio,
+    gutterSignature: page.gutterSignature,
+  },
+  ornamentHashes: new Set(page.ornamentHashes),
+  confidenceSum: 1,
+});
+
+const clusterPageTemplates = (
+  pages: PageTemplateFeatures[],
+  config: PipelineConfig["templates"]["clustering"]
+): { templates: PageTemplate[]; assignments: PageTemplateAssignment[] } => {
+  const templates: TemplateBuilder[] = [];
+  const assignments: PageTemplateAssignment[] = [];
+  const { min_pages: minPages, min_similarity: minSimilarity, max_clusters: maxClusters } = config;
+
+  pages.forEach((page) => {
+    const candidates = templates.filter((template) => template.pageType === page.pageType);
+    let bestTemplate: TemplateBuilder | undefined;
+    let bestSimilarity = -1;
+    for (const template of candidates) {
+      const similarity = computeTemplateSimilarity(page, template);
+      if (similarity > bestSimilarity) {
+        bestSimilarity = similarity;
+        bestTemplate = template;
+      }
+    }
+
+    const canCreate = templates.length < maxClusters;
+    const shouldCreate = !bestTemplate || bestSimilarity < minSimilarity;
+
+    if (shouldCreate && canCreate) {
+      const newTemplate = buildInitialTemplate(page, templates.length);
+      templates.push(newTemplate);
+      assignments.push({
+        pageId: page.pageId,
+        templateId: newTemplate.id,
+        confidence: 1,
+      });
+      return;
+    }
+
+    if (!bestTemplate) {
+      const fallbackTemplate = buildInitialTemplate(page, templates.length);
+      templates.push(fallbackTemplate);
+      assignments.push({
+        pageId: page.pageId,
+        templateId: fallbackTemplate.id,
+        confidence: 1,
+      });
+      return;
+    }
+
+    updateTemplateMeans(bestTemplate, page);
+    bestTemplate.confidenceSum += Math.max(0, bestSimilarity);
+    assignments.push({
+      pageId: page.pageId,
+      templateId: bestTemplate.id,
+      confidence: clamp01(bestSimilarity),
+    });
+  });
+
+  const finalTemplates: PageTemplate[] = templates
+    .filter((template) => template.count >= minPages)
+    .map((template) => ({
+      id: template.id,
+      pageType: template.pageType,
+      pageIds: template.pageIds,
+      margins: template.mean.margins,
+      columns: { count: Math.max(1, Math.round(template.mean.columnCount)), valleyRatio: template.mean.columnValleyRatio },
+      headBand: { ratio: template.mean.headBandRatio },
+      footerBand: { ratio: template.mean.footerBandRatio },
+      baseline: {
+        spacingPx: template.mean.baselineSpacingPx,
+        consistency: template.mean.baselineConsistency,
+      },
+      gutter: { meanRatio: template.mean.gutterSignature },
+      ornamentHashes: Array.from(template.ornamentHashes),
+      textDensity: template.mean.textDensity,
+      whitespaceRatio: template.mean.whitespaceRatio,
+      confidence:
+        template.count > 0 ? clamp01(template.confidenceSum / template.count) : 0,
+    }));
+
+  const activeTemplateIds = new Set(finalTemplates.map((template) => template.id));
+  const adjustedAssignments = assignments.map((assignment) =>
+    assignment.templateId && activeTemplateIds.has(assignment.templateId)
+      ? assignment
+      : { pageId: assignment.pageId, templateId: undefined, confidence: 0 }
+  );
+
+  return { templates: finalTemplates, assignments: adjustedAssignments };
+};
 
 const median = (values: number[]): number => {
   if (values.length === 0) return 0;
@@ -1887,6 +2268,7 @@ const savePipelineOutputs = async (params: {
     params.runId,
     params.native,
     params.bookModel,
+    params.configSnapshot.resolved,
     params.gutterByPageId,
     params.spreadMetaByPageId,
     params.control
@@ -2646,6 +3028,7 @@ const writeSidecars = async (
   runId: string,
   native: PipelineCoreNative | null,
   bookModel?: BookModel,
+  pipelineConfig?: PipelineConfig,
   gutterByPageId?: Map<string, GutterRatio>,
   spreadMetaByPageId?: Map<string, SpreadMetadata>,
   control?: RunControl
@@ -2664,8 +3047,13 @@ const writeSidecars = async (
     { profile: LayoutProfile; confidence: number; elementCount: number; source: string }
   >();
 
-  await Promise.all(
-    config.pages.map(async (page, index) => {
+  const outputWidth = Math.max(1, Math.round(analysis.targetDimensionsPx.width));
+  const outputHeight = Math.max(1, Math.round(analysis.targetDimensionsPx.height));
+  const ornamentVarianceMin = 120;
+
+  const sidecarEntries = (
+    await Promise.all(
+      config.pages.map(async (page, index) => {
       await waitForControl(control);
       const estimate = estimatesById.get(page.id);
       const norm = normalization.get(page.id);
@@ -2676,8 +3064,6 @@ const writeSidecars = async (
       const assessment = inferLayoutProfile(page, index, norm, config.pages.length);
       const layoutConfidence = computeLayoutConfidence(assessment, norm);
       const deskewConfidence = Math.min(1, norm.stats.skewConfidence + 0.25);
-      const outputWidth = Math.max(1, Math.round(analysis.targetDimensionsPx.width));
-      const outputHeight = Math.max(1, Math.round(analysis.targetDimensionsPx.height));
       const maskBoxOut = mapBoxToOutput(norm.maskBox, norm.cropBox, outputWidth, outputHeight);
       const cropBoxOut: [number, number, number, number] = [
         0,
@@ -2740,64 +3126,154 @@ const writeSidecars = async (
         : undefined;
       const spread = resolveSpreadMetadata(page.id, spreadMetaByPageId, gutterByPageId);
 
+      const textFeatures = computeTextFeatures({
+        elements,
+        maskBox: maskBoxOut,
+        width: outputWidth,
+        height: outputHeight,
+      });
+      const folioBandScore = computeFolioBandScore(elements, bookModel?.folioModel, outputHeight);
+      const ornamentHash = norm.normalizedPath
+        ? await hashBand(norm.normalizedPath, ORNAMENT_BAND)
+        : null;
+      const ornamentHashes =
+        ornamentHash && ornamentHash.variance >= ornamentVarianceMin ? [ornamentHash.hash] : [];
+      const gutterSignature =
+        spread?.gutter && spread.gutter.startRatio !== undefined && spread.gutter.endRatio !== undefined
+          ? (spread.gutter.startRatio + spread.gutter.endRatio) / 2
+          : undefined;
+      const baselineSpacingRatio =
+        baselineSummary.medianSpacingPx !== undefined
+          ? baselineSummary.medianSpacingPx / Math.max(1, outputHeight)
+          : undefined;
+      const margins = {
+        top: clamp01(textFeatures.contentBox[1] / Math.max(1, outputHeight)),
+        right: clamp01((outputWidth - 1 - textFeatures.contentBox[2]) / Math.max(1, outputWidth)),
+        bottom: clamp01((outputHeight - 1 - textFeatures.contentBox[3]) / Math.max(1, outputHeight)),
+        left: clamp01(textFeatures.contentBox[0] / Math.max(1, outputWidth)),
+      };
+
+      const templateFeatures: PageTemplateFeatures = {
+        pageId: page.id,
+        pageType: assessment.profile,
+        margins,
+        columnCount: textFeatures.columnCount,
+        columnValleyRatio: textFeatures.columnValleyRatio,
+        headBandRatio: textFeatures.headBandRatio,
+        footerBandRatio: textFeatures.footerBandRatio,
+        folioBandScore,
+        ornamentHashes,
+        textDensity: textFeatures.textDensity,
+        whitespaceRatio: textFeatures.whitespaceRatio,
+        baselineConsistency: norm.stats.baselineConsistency,
+        baselineSpacingPx: baselineSummary.medianSpacingPx,
+        baselineSpacingRatio,
+        gutterSignature,
+      };
+
+      return {
+        page,
+        norm,
+        assessment,
+        layoutConfidence,
+        deskewConfidence,
+        outputWidth,
+        outputHeight,
+        maskBoxOut,
+        cropBoxOut,
+        scale,
+        bleedMm,
+        trimMm,
+        elements,
+        baselineSummary,
+        spread,
+        templateFeatures,
+      };
+    })
+    )
+  ).filter((entry): entry is NonNullable<typeof entry> => Boolean(entry));
+
+  const templateConfig = pipelineConfig?.templates?.clustering ?? {
+    min_pages: 6,
+    min_similarity: 0.7,
+    max_clusters: 12,
+  };
+  const templatesEnabled = pipelineConfig?.templates?.enabled ?? false;
+  const templateResult = templatesEnabled
+    ? clusterPageTemplates(sidecarEntries.map((entry) => entry.templateFeatures), templateConfig)
+    : { templates: [], assignments: [] };
+  const assignmentByPageId = new Map(
+    templateResult.assignments.map((assignment) => [assignment.pageId, assignment])
+  );
+  const enrichedBookModel =
+    templateResult.templates.length > 0
+      ? { ...(bookModel ?? {}), pageTemplates: templateResult.templates }
+      : bookModel;
+
+  await Promise.all(
+    sidecarEntries.map(async (entry) => {
+      const assignment = assignmentByPageId.get(entry.page.id);
       const sidecar = {
         version: "1.0.0",
-        pageId: page.id,
+        pageId: entry.page.id,
+        pageType: entry.assessment.profile,
+        templateId: assignment?.templateId,
+        templateConfidence: assignment?.confidence,
         source: {
-          path: page.originalPath,
-          checksum: page.checksum ?? "",
+          path: entry.page.originalPath,
+          checksum: entry.page.checksum ?? "",
         },
-        spread,
+        spread: entry.spread,
         dimensions: {
-          width: norm.dimensionsMm.width,
-          height: norm.dimensionsMm.height,
+          width: entry.norm.dimensionsMm.width,
+          height: entry.norm.dimensionsMm.height,
           unit: "mm",
         },
-        dpi: Math.round(norm.dpi),
+        dpi: Math.round(entry.norm.dpi),
         normalization: {
-          cropBox: cropBoxOut,
-          pageMask: maskBoxOut,
-          dpiSource: norm.dpiSource,
-          bleed: bleedMm,
-          trim: trimMm,
-          scale,
-          skewAngle: norm.skewAngle,
+          cropBox: entry.cropBoxOut,
+          pageMask: entry.maskBoxOut,
+          dpiSource: entry.norm.dpiSource,
+          bleed: entry.bleedMm,
+          trim: entry.trimMm,
+          scale: entry.scale,
+          skewAngle: entry.norm.skewAngle,
           warp: { method: "affine", residual: 0 },
-          shadow: norm.shadow,
-          shading: norm.shading
+          shadow: entry.norm.shadow,
+          shading: entry.norm.shading
             ? {
-                method: norm.shading.method,
-                backgroundModel: norm.shading.backgroundModel,
-                spineShadowModel: norm.shading.spineShadowModel,
-                params: norm.shading.params,
-                confidence: norm.shading.confidence,
+                method: entry.norm.shading.method,
+                backgroundModel: entry.norm.shading.backgroundModel,
+                spineShadowModel: entry.norm.shading.spineShadowModel,
+                params: entry.norm.shading.params,
+                confidence: entry.norm.shading.confidence,
               }
             : undefined,
           guides: baselineGridGuide ? { baselineGrid: baselineGridGuide } : undefined,
         },
-        elements,
+        elements: entry.elements,
         overrides: {},
         metrics: {
           processingMs: (analysis as unknown as { processingMs?: number }).processingMs ?? 0,
-          deskewConfidence,
-          shadowScore: norm.stats.shadowScore,
-          maskCoverage: norm.stats.maskCoverage,
-          backgroundStd: norm.stats.backgroundStd,
-          backgroundMean: norm.stats.backgroundMean,
-          illuminationResidual: norm.stats.illuminationResidual,
-          spineShadowScore: norm.stats.spineShadowScore,
-          layoutScore: layoutConfidence,
-          baseline: baselineSummary,
+          deskewConfidence: entry.deskewConfidence,
+          shadowScore: entry.norm.stats.shadowScore,
+          maskCoverage: entry.norm.stats.maskCoverage,
+          backgroundStd: entry.norm.stats.backgroundStd,
+          backgroundMean: entry.norm.stats.backgroundMean,
+          illuminationResidual: entry.norm.stats.illuminationResidual,
+          spineShadowScore: entry.norm.stats.spineShadowScore,
+          layoutScore: entry.layoutConfidence,
+          baseline: entry.baselineSummary,
         },
-        bookModel: bookModel,
+        bookModel: enrichedBookModel,
       };
 
-      const outPath = getRunSidecarPath(runDir, page.id);
+      const outPath = getRunSidecarPath(runDir, entry.page.id);
       try {
         await writeJsonAtomic(outPath, sidecar);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        console.warn(`[${runId}] Failed to write sidecar for ${page.id}: ${message}`);
+        console.warn(`[${runId}] Failed to write sidecar for ${entry.page.id}: ${message}`);
       }
     })
   );

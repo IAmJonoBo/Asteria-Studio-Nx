@@ -184,6 +184,18 @@ export const validatePageLayoutSidecar = (layout: PageLayoutSidecar): void => {
     throw new Error("Invalid page layout: pageId required");
   }
 
+  if (layout.pageType !== undefined && typeof layout.pageType !== "string") {
+    throw new Error("Invalid page layout: pageType must be a string");
+  }
+
+  if (layout.templateId !== undefined && !isNonEmptyString(layout.templateId)) {
+    throw new Error("Invalid page layout: templateId must be a string");
+  }
+
+  if (layout.templateConfidence !== undefined) {
+    assertOptionalRange(layout.templateConfidence, "templateConfidence", 0, 1);
+  }
+
   const { normalization, metrics } = layout;
   if (!isPlainObject(normalization) || !isPlainObject(metrics)) {
     throw new Error("Invalid page layout: normalization and metrics required");
