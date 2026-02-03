@@ -174,6 +174,23 @@ export interface PageLayoutElement {
   source?: string;
 }
 
+export interface GuideLine {
+  id: string;
+  axis: "x" | "y";
+  position: number;
+  kind: "major" | "minor";
+  label?: string;
+}
+
+export interface GuideLayerData {
+  id: string;
+  guides: GuideLine[];
+}
+
+export interface GuideLayout {
+  layers: GuideLayerData[];
+}
+
 export interface PageLayoutSidecar {
   pageId: string;
   source: { path: string; checksum: string; pageIndex?: number };
@@ -236,6 +253,7 @@ export interface PageLayoutSidecar {
     source?: "review";
   };
   overrides?: Record<string, unknown>;
+  guides?: GuideLayout;
   bookModel?: BookModel;
   version?: string;
 }

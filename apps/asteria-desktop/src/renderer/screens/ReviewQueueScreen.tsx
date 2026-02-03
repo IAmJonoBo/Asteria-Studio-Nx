@@ -1,6 +1,7 @@
 import type { JSX, KeyboardEvent, MouseEvent, WheelEvent, MutableRefObject, PointerEvent } from "react";
 import { useState, useEffect, useRef } from "react";
 import { useKeyboardShortcuts } from "../hooks/useKeyboardShortcut.js";
+import { renderGuideLayers } from "../guides/registry.js";
 import type { ReviewQueue, PageLayoutSidecar } from "../../ipc/contracts.js";
 
 type PreviewRef = {
@@ -692,6 +693,7 @@ type OverlayRenderParams = {
   overlayLayers: OverlayLayersState;
   overlayScaleX: number;
   overlayScaleY: number;
+  zoom: number;
   cropBox: Box | null;
   trimBox: Box | null;
   adjustmentMode: AdjustmentMode;
@@ -706,6 +708,7 @@ const buildOverlaySvg = ({
   overlayLayers,
   overlayScaleX,
   overlayScaleY,
+  zoom,
   cropBox,
   trimBox,
   adjustmentMode,
@@ -768,6 +771,12 @@ const buildOverlaySvg = ({
       style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }}
       viewBox={`0 0 ${normalizedPreview.width} ${normalizedPreview.height}`}
     >
+      {renderGuideLayers({
+        guideLayout: sidecar.guides,
+        zoom,
+        canvasWidth: normalizedPreview.width,
+        canvasHeight: normalizedPreview.height,
+      })}
       {overlayLayers.cropBox && cropBox && (
         <rect
           x={cropBox[0] * overlayScaleX}
@@ -1978,6 +1987,7 @@ export function ReviewQueueScreen({
     overlayLayers,
     overlayScaleX,
     overlayScaleY,
+    zoom,
     cropBox: activeCropBox,
     trimBox: activeTrimBox,
     adjustmentMode,
