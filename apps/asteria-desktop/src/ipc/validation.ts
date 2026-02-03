@@ -160,6 +160,8 @@ export const validatePipelineRunConfig = (config: PipelineRunConfig): void => {
   }
 };
 
+const ALLOWED_REVIEW_DECISIONS = new Set(["accept", "reject", "adjust"]);
+
 export const validateReviewDecisions = (decisions: unknown): void => {
   if (!Array.isArray(decisions) || decisions.length === 0) {
     throw new Error("Invalid review decisions: expected non-empty array");
@@ -174,8 +176,7 @@ export const validateReviewDecisions = (decisions: unknown): void => {
       throw new Error(`Invalid review decision ${index}: pageId required`);
     }
 
-    const allowedDecisions = new Set(["accept", "reject", "adjust"]);
-    if (!allowedDecisions.has(decision.decision as string)) {
+    if (!ALLOWED_REVIEW_DECISIONS.has(decision.decision as string)) {
       throw new Error(
         `Invalid review decision ${index}: decision must be "accept", "reject", or "adjust"`
       );

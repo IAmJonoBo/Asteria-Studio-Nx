@@ -688,10 +688,6 @@ export function registerIpcHandlers(): void {
 
       for (const decision of decisions) {
         const pageId = decision.pageId;
-        if (!pageId || typeof pageId !== "string" || pageId.trim().length === 0) {
-          console.warn(`Skipping review decision with invalid pageId:`, decision);
-          continue;
-        }
         const sidecarPath = getRunSidecarPath(runDir, pageId);
         const overridePath = path.join(runDir, "overrides", `${pageId}.json`);
 
