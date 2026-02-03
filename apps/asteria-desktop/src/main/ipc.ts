@@ -84,20 +84,6 @@ export function registerIpcHandlers(): void {
   const resolveOutputDir = (): string =>
     process.env.ASTERIA_OUTPUT_DIR ?? path.join(process.cwd(), "pipeline-results");
   const resolveRunDir = async (outputDir: string, runId: string): Promise<string> => {
-    const indexPath = path.join(outputDir, "run-index.json");
-    try {
-      const raw = await fs.readFile(indexPath, "utf-8");
-      const parsed = JSON.parse(raw) as {
-        runs?: Array<{ runId: string; reportPath?: string; reviewQueuePath?: string }>;
-      };
-      const entry = parsed.runs?.find((run) => run.runId === runId);
-      const hint = entry?.reportPath ?? entry?.reviewQueuePath;
-      if (hint) {
-        return path.dirname(hint);
-      }
-    } catch {
-      // fall through to deterministic run dir
-    }
     return getRunDir(outputDir, runId);
   };
 
@@ -354,18 +340,8 @@ export function registerIpcHandlers(): void {
     async (_event: IpcMainInvokeEvent, runId: string): Promise<RunConfigSnapshot | null> => {
       validateRunId(runId);
       const outputDir = resolveOutputDir();
-      const indexPath = path.join(outputDir, "run-index.json");
-      let reportPath = path.join(outputDir, "runs", runId, "report.json");
-      try {
-        const raw = await fs.readFile(indexPath, "utf-8");
-        const parsed = JSON.parse(raw) as { runs?: Array<{ runId: string; reportPath?: string }> };
-        const entry = parsed.runs?.find((run) => run.runId === runId);
-        if (entry?.reportPath) {
-          reportPath = entry.reportPath;
-        }
-      } catch {
-        // fallback to default report path
-      }
+      const runDir = getRunDir(outputDir, runId);
+      const reportPath = getRunReportPath(runDir);
 
       try {
         const raw = await fs.readFile(reportPath, "utf-8");
