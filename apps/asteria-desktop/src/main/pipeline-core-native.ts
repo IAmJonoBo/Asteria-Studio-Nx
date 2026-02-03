@@ -10,7 +10,17 @@ export type PipelineCoreNative = {
     data: Buffer,
     width: number,
     height: number
-  ) => { lineConsistency: number; textLineCount: number };
+  ) => {
+    lineConsistency: number;
+    textLineCount: number;
+    spacingNorm: number;
+    spacingMadNorm: number;
+    offsetNorm: number;
+    angleDeg: number;
+    confidence: number;
+    peakSharpness: number;
+    peaksY: number[];
+  };
   columnMetrics: (
     data: Buffer,
     width: number,

@@ -38,6 +38,7 @@ export interface BaselineSummary {
   spacingMAD?: number;
   lineStraightnessResidual?: number;
   confidence?: number;
+  peaksY?: number[];
 }
 
 export interface BoxDistribution {
@@ -74,6 +75,14 @@ export interface BaselineGridModel {
   dominantSpacingPx?: number;
   spacingMAD?: number;
   confidence?: number;
+}
+
+export interface BaselineGridGuide {
+  spacingPx?: number;
+  offsetPx?: number;
+  angleDeg?: number;
+  confidence?: number;
+  source?: "auto" | "user";
 }
 
 export interface BookModel {
@@ -218,6 +227,9 @@ export interface PageLayoutSidecar {
       darkness?: number;
     };
     shading?: NormalizationShading;
+    guides?: {
+      baselineGrid?: BaselineGridGuide;
+    };
   };
   elements: PageLayoutElement[];
   metrics: {

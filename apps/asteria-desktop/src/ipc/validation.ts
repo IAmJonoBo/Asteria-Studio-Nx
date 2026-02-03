@@ -197,6 +197,20 @@ export const validatePageLayoutSidecar = (layout: PageLayoutSidecar): void => {
     assertOptionalRange(shading.confidence, "shading.confidence", 0, 1);
   }
 
+  const guides = normalization.guides;
+  if (guides !== undefined && !isPlainObject(guides)) {
+    throw new Error("Invalid page layout: normalization.guides must be an object");
+  }
+  if (guides?.baselineGrid) {
+    const grid = guides.baselineGrid;
+    if (!isPlainObject(grid)) {
+      throw new Error("Invalid page layout: normalization.guides.baselineGrid must be an object");
+    }
+    assertOptionalRange(grid.spacingPx, "normalization.guides.baselineGrid.spacingPx", 0);
+    assertOptionalRange(grid.offsetPx, "normalization.guides.baselineGrid.offsetPx", 0);
+    assertOptionalRange(grid.confidence, "normalization.guides.baselineGrid.confidence", 0, 1);
+  }
+
   assertOptionalRange(metrics.deskewConfidence, "metrics.deskewConfidence", 0, 1);
   assertOptionalRange(metrics.maskCoverage, "metrics.maskCoverage", 0, 1);
   assertOptionalRange(metrics.shadowScore, "metrics.shadowScore", 0, 1);
@@ -216,5 +230,13 @@ export const validatePageLayoutSidecar = (layout: PageLayoutSidecar): void => {
       0
     );
     assertOptionalRange(baseline.confidence, "metrics.baseline.confidence", 0, 1);
+    if (baseline.peaksY !== undefined) {
+      if (!Array.isArray(baseline.peaksY)) {
+        throw new Error("Invalid page layout: metrics.baseline.peaksY must be an array");
+      }
+      baseline.peaksY.forEach((value, idx) => {
+        assertOptionalRange(value, `metrics.baseline.peaksY[${idx}]`, 0, 1);
+      });
+    }
   }
 };
