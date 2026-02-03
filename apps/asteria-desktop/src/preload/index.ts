@@ -8,6 +8,7 @@ import {
   validatePageId,
   validatePipelineRunConfig,
   validateRunId,
+  validateTemplateTrainingSignal,
 } from "../ipc/validation.js";
 
 /**
@@ -133,6 +134,14 @@ const api: IpcChannels = {
     validateRunId(runId);
     validateOverrides({ decisions });
     return safeInvoke("asteria:submit-review", runId, decisions);
+  },
+  "asteria:record-template-training": async (
+    runId: Parameters<IpcChannels["asteria:record-template-training"]>[0],
+    signal: Parameters<IpcChannels["asteria:record-template-training"]>[1]
+  ) => {
+    validateRunId(runId);
+    validateTemplateTrainingSignal(signal);
+    return safeInvoke("asteria:record-template-training", runId, signal);
   },
 };
 

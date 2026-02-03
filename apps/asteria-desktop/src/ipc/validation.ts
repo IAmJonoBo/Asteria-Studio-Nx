@@ -1,4 +1,4 @@
-import type { PageLayoutSidecar, PipelineRunConfig } from "./contracts.js";
+import type { PageLayoutSidecar, PipelineRunConfig, TemplateTrainingSignal } from "./contracts.js";
 
 const isNonEmptyString = (value: unknown): value is string =>
   typeof value === "string" && value.trim().length > 0;
@@ -93,6 +93,47 @@ export const validateOverrides = (overrides: Record<string, unknown>): void => {
     if (!isJsonSafe(value)) {
       throw new Error("Invalid overrides: values must be JSON-safe primitives, arrays, or objects");
     }
+  }
+};
+
+export const validateTemplateTrainingSignal = (signal: TemplateTrainingSignal): void => {
+  if (!isPlainObject(signal)) {
+    throw new Error("Invalid template training signal: expected object");
+  }
+
+  if (!isNonEmptyString(signal.templateId)) {
+    throw new Error("Invalid template training signal: templateId required");
+  }
+
+  if (signal.scope !== "template" && signal.scope !== "section") {
+    throw new Error("Invalid template training signal: scope must be template or section");
+  }
+
+  if (!isNonEmptyString(signal.appliedAt)) {
+    throw new Error("Invalid template training signal: appliedAt required");
+  }
+
+  if (!Array.isArray(signal.pages) || signal.pages.length === 0) {
+    throw new Error("Invalid template training signal: pages must be a non-empty array");
+  }
+
+  signal.pages.forEach((pageId, index) => {
+    if (!isNonEmptyString(pageId)) {
+      throw new Error(`Invalid template training signal: pages[${index}] must be a string`);
+    }
+  });
+
+  if (!isPlainObject(signal.overrides)) {
+    throw new Error("Invalid template training signal: overrides must be an object");
+  }
+  validateOverrides(signal.overrides);
+
+  if (signal.sourcePageId !== undefined && !isNonEmptyString(signal.sourcePageId)) {
+    throw new Error("Invalid template training signal: sourcePageId must be a string");
+  }
+
+  if (signal.layoutProfile !== undefined && !isNonEmptyString(signal.layoutProfile)) {
+    throw new Error("Invalid template training signal: layoutProfile must be a string");
   }
 };
 

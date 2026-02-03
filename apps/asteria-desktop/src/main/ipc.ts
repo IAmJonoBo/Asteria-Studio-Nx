@@ -24,6 +24,7 @@ import {
   validatePageId,
   validatePipelineRunConfig,
   validateRunId,
+  validateTemplateTrainingSignal,
 } from "../ipc/validation.js";
 import { analyzeCorpus } from "../ipc/corpusAnalysis.js";
 import { scanCorpus } from "../ipc/corpusScanner.js";
@@ -626,6 +627,46 @@ export function registerIpcHandlers(): void {
   );
 
   ipcMain.handle(
+    "asteria:record-template-training",
+    async (_event: IpcMainInvokeEvent, runId: string, signal: Record<string, unknown>) => {
+      validateRunId(runId);
+      validateTemplateTrainingSignal(signal as Parameters<typeof validateTemplateTrainingSignal>[0]);
+      const outputDir = resolveOutputDir();
+      const runDir = await resolveRunDir(outputDir, runId);
+      const trainingDir = getTrainingDir(runDir);
+      const templateDir = path.join(trainingDir, "template");
+      await fs.mkdir(templateDir, { recursive: true });
+      const safeTemplateId = String(signal.templateId ?? "unknown").replace(/[\\/]/g, "_");
+      const appliedAt =
+        typeof signal.appliedAt === "string" ? signal.appliedAt : new Date().toISOString();
+      const payload = {
+        runId,
+        ...signal,
+        appliedAt,
+      };
+      const filename = `${safeTemplateId}-${Date.now()}.json`;
+      await writeJsonAtomic(path.join(templateDir, filename), payload);
+
+      const manifestPath = path.join(trainingDir, "manifest.json");
+      try {
+        const raw = await fs.readFile(manifestPath, "utf-8");
+        const manifest = JSON.parse(raw) as Record<string, unknown>;
+        const existing = Array.isArray(manifest.templateSignals)
+          ? (manifest.templateSignals as Array<Record<string, unknown>>)
+          : [];
+        const updated = [...existing, payload];
+        await writeJsonAtomic(manifestPath, {
+          ...manifest,
+          templateSignals: updated,
+          templateCount: updated.length,
+        });
+      } catch {
+        // ignore missing manifest
+      }
+    }
+  );
+
+  ipcMain.handle(
     "asteria:submit-review",
     async (
       _event: IpcMainInvokeEvent,
@@ -704,11 +745,30 @@ export function registerIpcHandlers(): void {
         await writeJsonAtomic(path.join(trainingDir, `${safePageId}.json`), trainingSignal);
       }
 
+      const templateSignals: Array<Record<string, unknown>> = [];
+      const templateDir = path.join(trainingDir, "template");
+      try {
+        const templateFiles = await fs.readdir(templateDir);
+        for (const file of templateFiles) {
+          if (!file.endsWith(".json")) continue;
+          try {
+            const raw = await fs.readFile(path.join(templateDir, file), "utf-8");
+            templateSignals.push(JSON.parse(raw) as Record<string, unknown>);
+          } catch {
+            // ignore malformed template signal
+          }
+        }
+      } catch {
+        // ignore missing template training signals
+      }
+
       await writeJsonAtomic(path.join(trainingDir, "manifest.json"), {
         runId,
         submittedAt,
         count: trainingSignals.length,
         signals: trainingSignals,
+        templateCount: templateSignals.length,
+        templateSignals,
       });
     }
   );

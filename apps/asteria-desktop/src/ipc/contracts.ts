@@ -99,6 +99,16 @@ export interface ReviewDecision {
   overrides?: Record<string, unknown>;
 }
 
+export interface TemplateTrainingSignal {
+  templateId: string;
+  scope: "template" | "section";
+  appliedAt: string;
+  pages: string[];
+  overrides: Record<string, unknown>;
+  sourcePageId?: string;
+  layoutProfile?: LayoutProfile;
+}
+
 export interface ReviewItem {
   pageId: string;
   filename: string;
@@ -494,4 +504,8 @@ export interface IpcChannels {
   "asteria:get-run-config": (_runId: string) => Promise<RunConfigSnapshot | null>;
   "asteria:fetch-review-queue": (_runId: string) => Promise<ReviewQueue>;
   "asteria:submit-review": (_runId: string, _decisions: ReviewDecision[]) => Promise<void>;
+  "asteria:record-template-training": (
+    _runId: string,
+    _signal: TemplateTrainingSignal
+  ) => Promise<void>;
 }

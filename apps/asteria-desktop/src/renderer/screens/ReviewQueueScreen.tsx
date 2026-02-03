@@ -1,7 +1,7 @@
 import type { JSX, KeyboardEvent, MouseEvent, WheelEvent, MutableRefObject, PointerEvent } from "react";
 import { useState, useEffect, useRef } from "react";
 import { useKeyboardShortcuts } from "../hooks/useKeyboardShortcut.js";
-import type { ReviewQueue, PageLayoutSidecar } from "../../ipc/contracts.js";
+import type { LayoutProfile, ReviewQueue, PageLayoutSidecar } from "../../ipc/contracts.js";
 
 type PreviewRef = {
   path: string;
@@ -12,6 +12,7 @@ type PreviewRef = {
 interface ReviewPage {
   id: string;
   filename: string;
+  layoutProfile: LayoutProfile;
   reason: string;
   confidence: number;
   previews: {
@@ -21,6 +22,18 @@ interface ReviewPage {
   };
   issues: string[];
 }
+
+type TemplateScope = "page" | "section" | "template";
+
+type TemplateSummary = {
+  id: string;
+  label: string;
+  pages: ReviewPage[];
+  averageConfidence: number;
+  minConfidence: number;
+  issueSummary: Array<{ issue: string; count: number }>;
+  guideCoverage: number;
+};
 
 interface ReviewQueueScreenProps {
   runId?: string;
@@ -45,6 +58,7 @@ const mapReviewQueue = (queue: ReviewQueue): ReviewPage[] => {
     return {
       id: item.pageId,
       filename: item.filename,
+      layoutProfile: item.layoutProfile,
       reason,
       confidence: item.layoutConfidence,
       previews: {
@@ -61,6 +75,74 @@ const mapReviewQueue = (queue: ReviewQueue): ReviewPage[] => {
       issues,
     };
   });
+};
+
+const formatLayoutProfileLabel = (profile: LayoutProfile): string =>
+  profile
+    .split("-")
+    .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
+    .join(" ");
+
+const getTemplateKey = (page?: ReviewPage): LayoutProfile => page?.layoutProfile ?? "unknown";
+
+const buildTemplateSummaries = (pages: ReviewPage[]): TemplateSummary[] => {
+  const groups = new Map<LayoutProfile, ReviewPage[]>();
+  pages.forEach((page) => {
+    const key = getTemplateKey(page);
+    const group = groups.get(key);
+    if (group) {
+      group.push(page);
+    } else {
+      groups.set(key, [page]);
+    }
+  });
+
+  const summaries: TemplateSummary[] = [];
+  groups.forEach((groupPages, key) => {
+    const totalConfidence = groupPages.reduce((sum, page) => sum + page.confidence, 0);
+    const minConfidence = groupPages.reduce(
+      (min, page) => Math.min(min, page.confidence),
+      groupPages[0]?.confidence ?? 0
+    );
+    const issueCounts = new Map<string, number>();
+    groupPages.forEach((page) => {
+      page.issues.forEach((issue) => {
+        issueCounts.set(issue, (issueCounts.get(issue) ?? 0) + 1);
+      });
+    });
+    const issueSummary = Array.from(issueCounts.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 3)
+      .map(([issue, count]) => ({ issue, count }));
+    const guideCount = groupPages.filter((page) => Boolean(page.previews.overlay)).length;
+    summaries.push({
+      id: key,
+      label: formatLayoutProfileLabel(key),
+      pages: groupPages,
+      averageConfidence: groupPages.length > 0 ? totalConfidence / groupPages.length : 0,
+      minConfidence,
+      issueSummary,
+      guideCoverage: groupPages.length > 0 ? guideCount / groupPages.length : 0,
+    });
+  });
+  return summaries.sort((a, b) => b.pages.length - a.pages.length);
+};
+
+const getTemplatePages = (pages: ReviewPage[], templateKey: LayoutProfile): ReviewPage[] =>
+  pages.filter((page) => getTemplateKey(page) === templateKey);
+
+const getSectionPages = (pages: ReviewPage[], index: number): ReviewPage[] => {
+  if (!pages[index]) return [];
+  const templateKey = getTemplateKey(pages[index]);
+  let start = index;
+  let end = index;
+  while (start > 0 && getTemplateKey(pages[start - 1]) === templateKey) {
+    start -= 1;
+  }
+  while (end < pages.length - 1 && getTemplateKey(pages[end + 1]) === templateKey) {
+    end += 1;
+  }
+  return pages.slice(start, end + 1);
 };
 
 type ReasonInfo = {
@@ -881,6 +963,11 @@ type ReviewQueueLayoutProps = {
   isApplyingOverride: boolean;
   overrideError: string | null;
   lastOverrideAppliedAt: string | null;
+  applyScope: TemplateScope;
+  applyTargetCount: number;
+  templateSummary: TemplateSummary | null;
+  representativePages: ReviewPage[];
+  onApplyScopeChange: (scope: TemplateScope) => void;
   onSelectIndex: (index: number) => void;
   onScroll: (scrollTop: number) => void;
   onToggleSelected: (pageId: string) => void;
@@ -942,6 +1029,11 @@ const ReviewQueueLayout = ({
   isApplyingOverride,
   overrideError,
   lastOverrideAppliedAt,
+  applyScope,
+  applyTargetCount,
+  templateSummary,
+  representativePages,
+  onApplyScopeChange,
   onSelectIndex,
   onScroll,
   onToggleSelected,
@@ -1396,6 +1488,29 @@ const ReviewQueueLayout = ({
                     Reset crop/trim
                   </button>
                 </div>
+                <div style={{ display: "grid", gap: "6px" }}>
+                  <span style={{ fontSize: "12px", color: "var(--text-secondary)" }}>
+                    Apply override scope
+                  </span>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
+                    {(["page", "section", "template"] as TemplateScope[]).map((scope) => (
+                      <button
+                        key={scope}
+                        className={`btn btn-sm ${applyScope === scope ? "btn-primary" : "btn-secondary"}`}
+                        onClick={() => onApplyScopeChange(scope)}
+                      >
+                        {scope === "page" ? "This page" : scope === "section" ? "Section" : "Template"}
+                      </button>
+                    ))}
+                  </div>
+                  <span style={{ fontSize: "11px", color: "var(--text-tertiary)" }}>
+                    Targets: {applyTargetCount} page{applyTargetCount === 1 ? "" : "s"}
+                    {applyScope === "template" && templateSummary
+                      ? ` in ${templateSummary.label}`
+                      : ""}
+                    {applyScope === "section" ? " in contiguous block" : ""}
+                  </span>
+                </div>
                 <div style={{ display: "flex", flexWrap: "wrap", gap: "8px", alignItems: "center" }}>
                   <button
                     className="btn btn-primary btn-sm"
@@ -1420,6 +1535,90 @@ const ReviewQueueLayout = ({
                   when close.
                 </p>
               </div>
+            </div>
+
+            <div>
+              <strong style={{ fontSize: "13px" }}>Template inspector</strong>
+              {!templateSummary ? (
+                <p style={{ margin: "8px 0 0", fontSize: "12px", color: "var(--text-secondary)" }}>
+                  No template summary available for this page.
+                </p>
+              ) : (
+                <div style={{ marginTop: "8px", display: "grid", gap: "12px" }}>
+                  <div
+                    style={{
+                      border: "1px solid var(--border)",
+                      borderRadius: "8px",
+                      padding: "10px",
+                      background: "var(--bg-surface)",
+                    }}
+                  >
+                    <div style={{ fontWeight: 600, fontSize: "13px" }}>{templateSummary.label}</div>
+                    <div style={{ fontSize: "12px", color: "var(--text-secondary)", marginTop: "4px" }}>
+                      {templateSummary.pages.length} pages • Avg{" "}
+                      {(templateSummary.averageConfidence * 100).toFixed(0)}% confidence • Min{" "}
+                      {(templateSummary.minConfidence * 100).toFixed(0)}%
+                    </div>
+                    <div style={{ fontSize: "12px", color: "var(--text-secondary)", marginTop: "4px" }}>
+                      Guide coverage: {(templateSummary.guideCoverage * 100).toFixed(0)}%
+                    </div>
+                    <div style={{ marginTop: "6px", fontSize: "12px" }}>
+                      {templateSummary.issueSummary.length === 0 ? (
+                        <span style={{ color: "var(--text-secondary)" }}>No recurring issues.</span>
+                      ) : (
+                        <span>
+                          Common issues:{" "}
+                          {templateSummary.issueSummary
+                            .map((entry) => `${entry.issue} (${entry.count})`)
+                            .join(", ")}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: "12px", fontWeight: 600, marginBottom: "6px" }}>
+                      Representative pages (guides overlay)
+                    </div>
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: "8px" }}>
+                      {representativePages.map((page) => {
+                        const preview = page.previews.overlay ?? page.previews.normalized ?? page.previews.source;
+                        const previewSrc = resolvePreviewSrc(preview);
+                        return (
+                          <div
+                            key={page.id}
+                            style={{
+                              border: "1px solid var(--border)",
+                              borderRadius: "6px",
+                              padding: "6px",
+                              background: "var(--bg-primary)",
+                            }}
+                          >
+                            {previewSrc ? (
+                              <img
+                                src={previewSrc}
+                                alt={`Preview for ${page.filename}`}
+                                style={{ display: "block", width: "100%", height: "auto" }}
+                              />
+                            ) : (
+                              <div style={{ fontSize: "11px", color: "var(--text-secondary)" }}>
+                                No preview
+                              </div>
+                            )}
+                            <div style={{ fontSize: "10px", color: "var(--text-tertiary)", marginTop: "4px" }}>
+                              {page.filename}
+                            </div>
+                          </div>
+                        );
+                      })}
+                      {representativePages.length === 0 && (
+                        <div style={{ fontSize: "11px", color: "var(--text-secondary)" }}>
+                          No representative pages available.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 
@@ -1512,6 +1711,7 @@ export function ReviewQueueScreen({ runId }: Readonly<ReviewQueueScreenProps>): 
   const [isApplyingOverride, setIsApplyingOverride] = useState(false);
   const [overrideError, setOverrideError] = useState<string | null>(null);
   const [lastOverrideAppliedAt, setLastOverrideAppliedAt] = useState<string | null>(null);
+  const [applyScope, setApplyScope] = useState<TemplateScope>("page");
   const overlaySvgRef = useRef<globalThis.SVGSVGElement | null>(null);
   const dragHandleRef = useRef<{
     handle: OverlayHandle;
@@ -1536,6 +1736,26 @@ export function ReviewQueueScreen({ runId }: Readonly<ReviewQueueScreenProps>): 
     folios: true,
     ornaments: true,
   });
+
+  const templateSummaries = buildTemplateSummaries(queuePages);
+  const templateKey = getTemplateKey(currentPage);
+  const templateSummary = templateSummaries.find((summary) => summary.id === templateKey) ?? null;
+  const templatePages = currentPage ? getTemplatePages(queuePages, templateKey) : [];
+  const sectionPages = currentPage ? getSectionPages(queuePages, selectedIndex) : [];
+  const applyTargets =
+    applyScope === "page"
+      ? currentPage
+        ? [currentPage]
+        : []
+      : applyScope === "section"
+        ? sectionPages
+        : templatePages;
+  const applyTargetCount = applyTargets.length;
+  const representativePages = templateSummary
+    ? [...templateSummary.pages]
+        .sort((a, b) => b.confidence - a.confidence)
+        .slice(0, 3)
+    : [];
 
   const toggleSelected = createToggleSelected(setSelectedIds);
   const applyDecisionToSelection = createApplyDecisionToSelection(selectedIds, setDecisions);
@@ -1789,11 +2009,15 @@ export function ReviewQueueScreen({ runId }: Readonly<ReviewQueueScreenProps>): 
       setOverrideError("No changes to save — adjustments match current values");
       return;
     }
+    if (applyTargets.length === 0) {
+      setOverrideError("No pages available for the selected apply scope.");
+      return;
+    }
 
     const windowRef: typeof globalThis & {
       asteria?: {
         ipc?: {
-          [key: string]: (runId: string, pageId: string, overrides: Record<string, unknown>) => Promise<void>;
+          [key: string]: (...args: unknown[]) => Promise<unknown>;
         };
       };
     } = globalThis;
@@ -1803,14 +2027,50 @@ export function ReviewQueueScreen({ runId }: Readonly<ReviewQueueScreenProps>): 
     }
     setIsApplyingOverride(true);
     setOverrideError(null);
+    const appliedAt = new Date().toISOString();
     try {
-      await windowRef.asteria.ipc["asteria:apply-override"](runId, currentPage.id, overrides);
-      setLastOverrideAppliedAt(new Date().toISOString());
+      const failures: string[] = [];
+      for (const targetPage of applyTargets) {
+        try {
+          await windowRef.asteria.ipc["asteria:apply-override"](runId, targetPage.id, overrides);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "Failed to apply override";
+          failures.push(`${targetPage.filename}: ${message}`);
+        }
+      }
+      if (failures.length > 0) {
+        setOverrideError(`Applied with errors: ${failures[0]}`);
+      }
+      setLastOverrideAppliedAt(appliedAt);
       baselineBoxesRef.current = {
         crop: cropBox,
         trim: trimBox,
       };
       baselineRotationRef.current = rotationDeg;
+      if (applyScope !== "page") {
+        const recordTemplateTraining = windowRef.asteria?.ipc?.[
+          "asteria:record-template-training"
+        ] as
+          | ((runId: string, signal: Record<string, unknown>) => Promise<void>)
+          | undefined;
+        if (recordTemplateTraining) {
+          try {
+            await recordTemplateTraining(runId, {
+              templateId: templateKey,
+              scope: applyScope,
+              appliedAt,
+              pages: applyTargets.map((page) => page.id),
+              overrides,
+              sourcePageId: currentPage.id,
+              layoutProfile: currentPage.layoutProfile,
+            });
+          } catch (error) {
+            const message =
+              error instanceof Error ? error.message : "Failed to record template training signal";
+            setOverrideError(message);
+          }
+        }
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to apply override";
       setOverrideError(message);
@@ -2004,6 +2264,11 @@ export function ReviewQueueScreen({ runId }: Readonly<ReviewQueueScreenProps>): 
       isApplyingOverride={isApplyingOverride}
       overrideError={overrideError}
       lastOverrideAppliedAt={lastOverrideAppliedAt}
+      applyScope={applyScope}
+      applyTargetCount={applyTargetCount}
+      templateSummary={templateSummary}
+      representativePages={representativePages}
+      onApplyScopeChange={setApplyScope}
       onSelectIndex={setSelectedIndex}
       onScroll={setScrollTop}
       onToggleSelected={toggleSelected}
