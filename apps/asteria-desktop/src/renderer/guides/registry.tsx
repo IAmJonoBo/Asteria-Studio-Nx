@@ -63,9 +63,7 @@ const DEFAULT_GUIDE_LOD_THRESHOLDS: GuideLodThresholds = {
   labelsZoom: 1.6,
 };
 
-export const resolveGuideLodThresholds = (
-  config?: PipelineConfig
-): GuideLodThresholds => {
+export const resolveGuideLodThresholds = (config?: PipelineConfig): GuideLodThresholds => {
   const lodConfig = config?.guides?.lod;
   if (!lodConfig) return DEFAULT_GUIDE_LOD_THRESHOLDS;
   return {

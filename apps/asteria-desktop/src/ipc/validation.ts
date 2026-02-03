@@ -40,6 +40,73 @@ const isJsonSafe = (value: unknown, depth = 0): boolean => {
   return false;
 };
 
+const throwTypeError = (message: string): never => {
+  throw new TypeError(message);
+};
+
+const requirePlainObject = (value: unknown, message: string): void => {
+  if (!isPlainObject(value)) {
+    throwTypeError(message);
+  }
+};
+
+const requireNonEmptyString = (value: unknown, message: string): void => {
+  if (!isNonEmptyString(value)) {
+    throwTypeError(message);
+  }
+};
+
+const validateBaselineSummary = (baseline: unknown): void => {
+  if (baseline === undefined) return;
+  requirePlainObject(baseline, "Invalid page layout: baseline must be an object");
+  const baselineRecord = baseline as Record<string, unknown>;
+  assertOptionalRange(baselineRecord.medianSpacingPx, "metrics.baseline.medianSpacingPx", 0);
+  assertOptionalRange(baselineRecord.spacingMAD, "metrics.baseline.spacingMAD", 0);
+  assertOptionalRange(
+    baselineRecord.lineStraightnessResidual,
+    "metrics.baseline.lineStraightnessResidual",
+    0
+  );
+  assertOptionalRange(baselineRecord.confidence, "metrics.baseline.confidence", 0, 1);
+  const peaksY = baselineRecord.peaksY;
+  if (Array.isArray(peaksY)) {
+    peaksY.forEach((value: unknown, idx: number) => {
+      assertOptionalRange(value, `metrics.baseline.peaksY[${idx}]`, 0, 1);
+    });
+  } else if (peaksY !== undefined) {
+    throwTypeError("Invalid page layout: metrics.baseline.peaksY must be an array");
+  }
+};
+
+const validateNormalizationGuides = (guides: unknown): void => {
+  if (guides === undefined) return;
+  requirePlainObject(guides, "Invalid page layout: normalization.guides must be an object");
+  const guidesRecord = guides as Record<string, unknown>;
+  const baselineGrid = guidesRecord.baselineGrid;
+  if (baselineGrid !== undefined) {
+    requirePlainObject(
+      baselineGrid,
+      "Invalid page layout: normalization.guides.baselineGrid must be an object"
+    );
+    const gridRecord = baselineGrid as Record<string, unknown>;
+    assertOptionalRange(gridRecord.spacingPx, "normalization.guides.baselineGrid.spacingPx", 0);
+    assertOptionalRange(gridRecord.offsetPx, "normalization.guides.baselineGrid.offsetPx", 0);
+    assertOptionalRange(
+      gridRecord.confidence,
+      "normalization.guides.baselineGrid.confidence",
+      0,
+      1
+    );
+  }
+};
+
+const validateNormalizationShading = (shading: unknown): void => {
+  if (shading === undefined) return;
+  requirePlainObject(shading, "Invalid page layout: shading must be an object");
+  const shadingRecord = shading as Record<string, unknown>;
+  assertOptionalRange(shadingRecord.confidence, "shading.confidence", 0, 1);
+};
+
 export const validateRunId = (runId: string): void => {
   if (!isNonEmptyString(runId)) {
     throw new Error("Invalid run id: expected non-empty string");
@@ -112,13 +179,9 @@ export const validateOverrides = (overrides: Record<string, unknown>): void => {
 };
 
 export const validateTemplateTrainingSignal = (signal: TemplateTrainingSignal): void => {
-  if (!isPlainObject(signal)) {
-    throw new Error("Invalid template training signal: expected object");
-  }
+  requirePlainObject(signal, "Invalid template training signal: expected object");
 
-  if (!isNonEmptyString(signal.templateId)) {
-    throw new Error("Invalid template training signal: templateId required");
-  }
+  requireNonEmptyString(signal.templateId, "Invalid template training signal: templateId required");
 
   if (signal.scope !== "template" && signal.scope !== "section") {
     throw new Error("Invalid template training signal: scope must be template or section");
@@ -150,50 +213,48 @@ export const validateTemplateTrainingSignal = (signal: TemplateTrainingSignal): 
   }
   validateOverrides(signal.overrides);
 
-  if (signal.sourcePageId !== undefined && !isNonEmptyString(signal.sourcePageId)) {
-    throw new Error("Invalid template training signal: sourcePageId must be a string");
+  if (signal.sourcePageId !== undefined) {
+    requireNonEmptyString(
+      signal.sourcePageId,
+      "Invalid template training signal: sourcePageId must be a string"
+    );
   }
 
-  if (signal.layoutProfile !== undefined && !isNonEmptyString(signal.layoutProfile)) {
-    throw new Error("Invalid template training signal: layoutProfile must be a string");
+  if (signal.layoutProfile !== undefined) {
+    requireNonEmptyString(
+      signal.layoutProfile,
+      "Invalid template training signal: layoutProfile must be a string"
+    );
   }
 };
 
 export const validatePipelineRunConfig = (config: PipelineRunConfig): void => {
-  if (!isPlainObject(config)) {
-    throw new Error("Invalid pipeline config: expected object");
-  }
-
-  if (!isNonEmptyString(config.projectId)) {
-    throw new Error("Invalid pipeline config: projectId required");
-  }
-
+  requirePlainObject(config, "Invalid pipeline config: expected object");
+  requireNonEmptyString(config.projectId, "Invalid pipeline config: projectId required");
   if (!Array.isArray(config.pages)) {
-    throw new Error("Invalid pipeline config: pages must be an array");
+    throwTypeError("Invalid pipeline config: pages must be an array");
   }
 
   config.pages.forEach((page, index) => {
-    if (!isPlainObject(page)) {
-      throw new Error(`Invalid pipeline config: page ${index} must be an object`);
-    }
+    requirePlainObject(page, `Invalid pipeline config: page ${index} must be an object`);
 
     if (
       !isNonEmptyString(page.id) ||
       !isNonEmptyString(page.filename) ||
       !isNonEmptyString(page.originalPath)
     ) {
-      throw new Error(
+      throwTypeError(
         `Invalid pipeline config: page ${index} must include id, filename, and originalPath`
       );
     }
 
     if (!isPlainObject(page.confidenceScores)) {
-      throw new Error(`Invalid pipeline config: page ${index} confidenceScores must be an object`);
+      throwTypeError(`Invalid pipeline config: page ${index} confidenceScores must be an object`);
     }
 
     for (const value of Object.values(page.confidenceScores)) {
       if (typeof value !== "number" || Number.isNaN(value)) {
-        throw new Error(`Invalid pipeline config: page ${index} confidenceScores must be numeric`);
+        throwTypeError(`Invalid pipeline config: page ${index} confidenceScores must be numeric`);
       }
     }
   });
@@ -203,13 +264,14 @@ export const validatePipelineRunConfig = (config: PipelineRunConfig): void => {
     !Number.isFinite(config.targetDpi) ||
     config.targetDpi <= 0
   ) {
-    throw new Error("Invalid pipeline config: targetDpi must be a positive number");
+    throwTypeError("Invalid pipeline config: targetDpi must be a positive number");
   }
 
   const { targetDimensionsMm } = config;
-  if (!isPlainObject(targetDimensionsMm)) {
-    throw new Error("Invalid pipeline config: targetDimensionsMm must be an object");
-  }
+  requirePlainObject(
+    targetDimensionsMm,
+    "Invalid pipeline config: targetDimensionsMm must be an object"
+  );
 
   if (
     typeof targetDimensionsMm.width !== "number" ||
@@ -217,7 +279,7 @@ export const validatePipelineRunConfig = (config: PipelineRunConfig): void => {
     targetDimensionsMm.width <= 0 ||
     targetDimensionsMm.height <= 0
   ) {
-    throw new Error(
+    throwTypeError(
       "Invalid pipeline config: targetDimensionsMm.width/height must be positive numbers"
     );
   }
@@ -227,54 +289,45 @@ const ALLOWED_REVIEW_DECISIONS = new Set(["accept", "reject", "adjust"]);
 
 export const validateReviewDecisions = (decisions: unknown): void => {
   if (!Array.isArray(decisions) || decisions.length === 0) {
-    throw new Error("Invalid review decisions: expected non-empty array");
+    throwTypeError("Invalid review decisions: expected non-empty array");
   }
+  const decisionList = decisions as Array<Record<string, unknown>>;
+  decisionList.forEach((decision, index) => {
+    requirePlainObject(decision, `Invalid review decision ${index}: expected object`);
 
-  decisions.forEach((decision, index) => {
-    if (!isPlainObject(decision)) {
-      throw new Error(`Invalid review decision ${index}: expected object`);
-    }
-
-    if (!isNonEmptyString(decision.pageId)) {
-      throw new Error(`Invalid review decision ${index}: pageId required`);
-    }
+    requireNonEmptyString(decision.pageId, `Invalid review decision ${index}: pageId required`);
 
     if (!ALLOWED_REVIEW_DECISIONS.has(decision.decision as string)) {
-      throw new Error(
+      throwTypeError(
         `Invalid review decision ${index}: decision must be "accept", "reject", or "adjust"`
       );
     }
 
     if (decision.notes !== undefined && typeof decision.notes !== "string") {
-      throw new Error(`Invalid review decision ${index}: notes must be a string`);
+      throwTypeError(`Invalid review decision ${index}: notes must be a string`);
     }
 
     if (decision.overrides !== undefined) {
       if (!isPlainObject(decision.overrides)) {
-        throw new Error(`Invalid review decision ${index}: overrides must be an object`);
+        throwTypeError(`Invalid review decision ${index}: overrides must be an object`);
       }
       if (!isJsonSafe(decision.overrides)) {
-        throw new Error(`Invalid review decision ${index}: overrides must be JSON-safe`);
+        throwTypeError(`Invalid review decision ${index}: overrides must be JSON-safe`);
       }
     }
   });
 };
 
 export const validatePageLayoutSidecar = (layout: PageLayoutSidecar): void => {
-  if (!isPlainObject(layout)) {
-    throw new Error("Invalid page layout: expected object");
-  }
-
-  if (!isNonEmptyString(layout.pageId)) {
-    throw new Error("Invalid page layout: pageId required");
-  }
+  requirePlainObject(layout, "Invalid page layout: expected object");
+  requireNonEmptyString(layout.pageId, "Invalid page layout: pageId required");
 
   if (layout.pageType !== undefined && typeof layout.pageType !== "string") {
-    throw new Error("Invalid page layout: pageType must be a string");
+    throwTypeError("Invalid page layout: pageType must be a string");
   }
 
-  if (layout.templateId !== undefined && !isNonEmptyString(layout.templateId)) {
-    throw new Error("Invalid page layout: templateId must be a string");
+  if (layout.templateId !== undefined) {
+    requireNonEmptyString(layout.templateId, "Invalid page layout: templateId must be a string");
   }
 
   if (layout.templateConfidence !== undefined) {
@@ -282,31 +335,11 @@ export const validatePageLayoutSidecar = (layout: PageLayoutSidecar): void => {
   }
 
   const { normalization, metrics } = layout;
-  if (!isPlainObject(normalization) || !isPlainObject(metrics)) {
-    throw new Error("Invalid page layout: normalization and metrics required");
-  }
+  requirePlainObject(normalization, "Invalid page layout: normalization and metrics required");
+  requirePlainObject(metrics, "Invalid page layout: normalization and metrics required");
 
-  const shading = normalization.shading;
-  if (shading !== undefined && !isPlainObject(shading)) {
-    throw new Error("Invalid page layout: shading must be an object");
-  }
-  if (shading) {
-    assertOptionalRange(shading.confidence, "shading.confidence", 0, 1);
-  }
-
-  const guides = normalization.guides;
-  if (guides !== undefined && !isPlainObject(guides)) {
-    throw new Error("Invalid page layout: normalization.guides must be an object");
-  }
-  if (guides?.baselineGrid) {
-    const grid = guides.baselineGrid;
-    if (!isPlainObject(grid)) {
-      throw new Error("Invalid page layout: normalization.guides.baselineGrid must be an object");
-    }
-    assertOptionalRange(grid.spacingPx, "normalization.guides.baselineGrid.spacingPx", 0);
-    assertOptionalRange(grid.offsetPx, "normalization.guides.baselineGrid.offsetPx", 0);
-    assertOptionalRange(grid.confidence, "normalization.guides.baselineGrid.confidence", 0, 1);
-  }
+  validateNormalizationShading(normalization.shading);
+  validateNormalizationGuides(normalization.guides);
 
   assertOptionalRange(metrics.deskewConfidence, "metrics.deskewConfidence", 0, 1);
   assertOptionalRange(metrics.maskCoverage, "metrics.maskCoverage", 0, 1);
@@ -314,26 +347,5 @@ export const validatePageLayoutSidecar = (layout: PageLayoutSidecar): void => {
   assertOptionalRange(metrics.illuminationResidual, "metrics.illuminationResidual", 0);
   assertOptionalRange(metrics.spineShadowScore, "metrics.spineShadowScore", 0, 1);
 
-  const baseline = metrics.baseline;
-  if (baseline !== undefined && !isPlainObject(baseline)) {
-    throw new Error("Invalid page layout: baseline must be an object");
-  }
-  if (baseline) {
-    assertOptionalRange(baseline.medianSpacingPx, "metrics.baseline.medianSpacingPx", 0);
-    assertOptionalRange(baseline.spacingMAD, "metrics.baseline.spacingMAD", 0);
-    assertOptionalRange(
-      baseline.lineStraightnessResidual,
-      "metrics.baseline.lineStraightnessResidual",
-      0
-    );
-    assertOptionalRange(baseline.confidence, "metrics.baseline.confidence", 0, 1);
-    if (baseline.peaksY !== undefined) {
-      if (!Array.isArray(baseline.peaksY)) {
-        throw new Error("Invalid page layout: metrics.baseline.peaksY must be an array");
-      }
-      baseline.peaksY.forEach((value, idx) => {
-        assertOptionalRange(value, `metrics.baseline.peaksY[${idx}]`, 0, 1);
-      });
-    }
-  }
+  validateBaselineSummary(metrics.baseline);
 };

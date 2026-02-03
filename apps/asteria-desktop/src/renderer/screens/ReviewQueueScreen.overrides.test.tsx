@@ -6,7 +6,9 @@ import { ReviewQueueScreen } from "./ReviewQueueScreen.js";
 describe("ReviewQueueScreen overrides", () => {
   it("reflects applied overrides in the UI", async () => {
     const user = userEvent.setup();
-    const windowRef = globalThis as typeof globalThis & { asteria?: { ipc?: Record<string, unknown> } };
+    const windowRef = globalThis as typeof globalThis & {
+      asteria?: { ipc?: Record<string, unknown> };
+    };
     const previousAsteria = windowRef.asteria;
     const applyOverride = vi.fn().mockResolvedValue(undefined);
 

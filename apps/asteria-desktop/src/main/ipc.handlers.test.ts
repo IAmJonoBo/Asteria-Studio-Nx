@@ -1099,10 +1099,7 @@ describe("IPC handler registration", () => {
     const outputDir = path.join(process.cwd(), "pipeline-results");
     const runDir = getRunDir(outputDir, "run-training");
     const trainingDir = path.join(runDir, "training");
-    expect(rename).toHaveBeenCalledWith(
-      expect.any(String),
-      path.join(trainingDir, "page-7.json")
-    );
+    expect(rename).toHaveBeenCalledWith(expect.any(String), path.join(trainingDir, "page-7.json"));
     expect(rename).toHaveBeenCalledWith(
       expect.any(String),
       path.join(trainingDir, "manifest.json")
@@ -1330,7 +1327,7 @@ describe("IPC handler registration", () => {
     expect(mkdir).toHaveBeenCalledWith(templateDir, { recursive: true });
     expect(writeFile).toHaveBeenCalledWith(
       expect.stringMatching(
-        new RegExp(path.join(templateDir.replace(/\\/g, "\\\\"), "\\.body-.*\\.json.*\\.tmp$"))
+        new RegExp(path.join(templateDir.replaceAll("\\", "\\\\"), "\\.body-.*\\.json.*\\.tmp$"))
       ),
       expect.stringMatching(/"runId"\s*:\s*"run-6"/)
     );

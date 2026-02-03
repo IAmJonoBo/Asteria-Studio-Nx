@@ -6,7 +6,9 @@ const { calculateOverlayScale, mapClientPointToOutput, snapBoxToPrior } = __test
 describe("ReviewQueueScreen geometry helpers", () => {
   it("calculates overlay scale from crop box bounds", () => {
     const scale = calculateOverlayScale(
-      { normalization: { cropBox: [0, 0, 99, 199] } } as Parameters<typeof calculateOverlayScale>[0],
+      { normalization: { cropBox: [0, 0, 99, 199] } } as Parameters<
+        typeof calculateOverlayScale
+      >[0],
       { width: 200, height: 400, path: "preview" }
     );
 

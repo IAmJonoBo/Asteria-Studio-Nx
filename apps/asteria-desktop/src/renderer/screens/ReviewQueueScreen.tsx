@@ -1,19 +1,7 @@
-import type {
-  JSX,
-  KeyboardEvent,
-  MouseEvent,
-  WheelEvent,
-  MutableRefObject,
-  PointerEvent,
-} from "react";
-import { useState, useEffect, useRef, useMemo } from "react";
+import type { JSX, KeyboardEvent, MouseEvent, WheelEvent, RefObject, PointerEvent } from "react";
+import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { useKeyboardShortcuts } from "../hooks/useKeyboardShortcut.js";
-import type {
-  LayoutProfile,
-  ReviewQueue,
-  PageLayoutSidecar,
-  RunConfigSnapshot,
-} from "../../ipc/contracts.js";
+import type { LayoutProfile, ReviewQueue, PageLayoutSidecar } from "../../ipc/contracts.js";
 import { renderGuideLayers } from "../guides/registry.js";
 import { snapBoxWithSources, getBoxSnapCandidates } from "../utils/snapping.js";
 import type { SnapEdge } from "../utils/snapping.js";
@@ -39,6 +27,12 @@ interface ReviewPage {
 }
 
 type TemplateScope = "page" | "section" | "template";
+
+const APPLY_SCOPE_LABELS: Record<TemplateScope, string> = {
+  page: "This page",
+  section: "Section",
+  template: "Template",
+};
 
 type TemplateSummary = {
   id: string;
@@ -129,7 +123,8 @@ const getTemplateKey = (page?: ReviewPage): LayoutProfile => {
   if (!page.layoutProfile) {
     // Group pages without a layout profile by their reason to avoid
     // collapsing all such pages into a single "unknown" bucket.
-    const normalizedReason = page.reason?.trim().toLowerCase().replace(/\s+/g, "-") || "no-reason";
+    const normalizedReason =
+      page.reason?.trim().toLowerCase().replaceAll(/\s+/g, "-") || "no-reason";
     return `unknown-${normalizedReason}` as LayoutProfile;
   }
 
@@ -177,6 +172,21 @@ const buildTemplateSummaries = (pages: ReviewPage[]): TemplateSummary[] => {
     });
   });
   return summaries.sort((a, b) => b.pages.length - a.pages.length);
+};
+
+const getRepresentativePages = (summary: TemplateSummary): ReviewPage[] => {
+  const pages = [...summary.pages].sort((a, b) => a.confidence - b.confidence);
+  const count = pages.length;
+
+  if (count <= 3) {
+    return pages;
+  }
+
+  const lowIndex = 0;
+  const highIndex = count - 1;
+  const medianIndex = Math.floor((count - 1) / 2);
+
+  return [pages[lowIndex], pages[medianIndex], pages[highIndex]];
 };
 
 const getTemplatePages = (pages: ReviewPage[], templateKey: LayoutProfile): ReviewPage[] =>
@@ -436,8 +446,8 @@ const clampBox = (box: Box, bounds: Box, minSize = 12): Box => {
   y0 = Math.max(minY, Math.min(y0, maxY));
   y1 = Math.max(minY, Math.min(y1, maxY));
 
-  let width = x1 - x0;
-  let height = y1 - y0;
+  const width = x1 - x0;
+  const height = y1 - y0;
 
   // Enforce minimum width without re-centering, preferring to grow to the right
   if (width < minSize) {
@@ -451,7 +461,6 @@ const clampBox = (box: Box, bounds: Box, minSize = 12): Box => {
       x0 = minX;
       x1 = maxX;
     }
-    width = x1 - x0;
   }
 
   // Enforce minimum height without re-centering, preferring to grow downward
@@ -466,7 +475,6 @@ const clampBox = (box: Box, bounds: Box, minSize = 12): Box => {
       y0 = minY;
       y1 = maxY;
     }
-    height = y1 - y0;
   }
 
   return [Math.round(x0), Math.round(y0), Math.round(x1), Math.round(y1)];
@@ -507,7 +515,19 @@ const mapClientPointToOutput = (params: {
   return { x: rawX / scaleX, y: rawY / scaleY };
 };
 
-const applyHandleDrag = (box: Box, handle: OverlayHandleEdge, deltaX: number, deltaY: number): Box => {
+const snapBoxToPrior = (prior: Box, box: Box, threshold: number): Box => {
+  const [priorLeft, priorTop, priorRight, priorBottom] = prior;
+  const [left, top, right, bottom] = box;
+  if (Math.abs(left - priorLeft) > threshold || Math.abs(top - priorTop) > threshold) {
+    return prior;
+  }
+
+  const snappedRight = Math.abs(right - priorRight) <= threshold ? right : priorRight;
+  const snappedBottom = Math.abs(bottom - priorBottom) <= threshold ? bottom : priorBottom;
+
+  return [left, top, snappedRight, snappedBottom];
+};
+
 const applyHandleDrag = (
   box: Box,
   handle: OverlayHandleEdge,
@@ -818,7 +838,7 @@ const useReviewQueuePages = (runId?: string, runDir?: string): ReviewPage[] => {
       }
     };
     loadQueue();
-    return () => {
+    return (): void => {
       cancelled = true;
     };
   }, [runDir, runId]);
@@ -852,7 +872,7 @@ const useQueueWorker = (pages: ReviewPage[]): ReviewPage[] => {
       reviewWorker.onmessage?.(event);
     };
     workerRef.current = reviewWorker;
-    return () => {
+    return (): void => {
       reviewWorker.terminate();
       workerRef.current = null;
     };
@@ -879,7 +899,7 @@ const useQueueSelection = (
 const useQueueViewport = (
   selectedIndex: number
 ): {
-  listRef: MutableRefObject<globalThis.HTMLDivElement | null>;
+  listRef: RefObject<globalThis.HTMLDivElement | null>;
   scrollTop: number;
   setScrollTop: SetState<number>;
   viewportHeight: number;
@@ -968,7 +988,7 @@ const useSidecarData = (
       }
     };
     void loadSidecar();
-    return () => {
+    return (): void => {
       cancelled = true;
     };
   }, [currentPage, runDir, runId]);
@@ -990,7 +1010,7 @@ type OverlayRenderParams = {
   snapGuides: SnapGuideLine[];
   showSnapGuides: boolean;
   snapTooltip: string | null;
-  overlaySvgRef: MutableRefObject<globalThis.SVGSVGElement | null>;
+  overlaySvgRef: RefObject<globalThis.SVGSVGElement | null>;
   onHandlePointerDown: (
     event: PointerEvent<globalThis.SVGCircleElement>,
     handle: OverlayHandle
@@ -1046,8 +1066,12 @@ const buildOverlaySvg = ({
   const pageMask = sidecar.normalization?.pageMask;
   const handleSize = 6;
   const handles: Array<{ key: string; x: number; y: number; edge: OverlayHandleEdge }> = [];
-  const activeBox =
-    adjustmentMode === "crop" ? cropBox : adjustmentMode === "trim" ? trimBox : null;
+  let activeBox: Box | null = null;
+  if (adjustmentMode === "crop") {
+    activeBox = cropBox;
+  } else if (adjustmentMode === "trim") {
+    activeBox = trimBox;
+  }
   if (activeBox) {
     const [x0, y0, x1, y1] = activeBox;
     const midX = (x0 + x1) / 2;
@@ -1132,7 +1156,6 @@ const buildOverlaySvg = ({
         zoom,
         canvasWidth: normalizedPreview.width,
         canvasHeight: normalizedPreview.height,
-        config: runConfig?.resolvedConfig,
       })}
       {overlayLayers.cropBox && cropBox && (
         <rect
@@ -1236,7 +1259,7 @@ type ReviewQueueLayoutProps = {
   rotationDeg: number;
   overlayLayers: OverlayLayersState;
   selectedIds: Set<string>;
-  listRef: { current: globalThis.HTMLDivElement | null };
+  listRef: RefObject<globalThis.HTMLDivElement | null>;
   scrollTop: number;
   viewportHeight: number;
   pan: { x: number; y: number };
@@ -1421,9 +1444,7 @@ const ReviewQueueLayout = ({
         </div>
 
         <div
-          ref={(node) => {
-            listRef.current = node ?? null;
-          }}
+          ref={listRef}
           style={{ flex: 1, overflow: "auto", position: "relative" }}
           onScroll={(event) => onScroll(event.currentTarget.scrollTop)}
         >
@@ -1799,43 +1820,28 @@ const ReviewQueueLayout = ({
                     Reset crop/trim
                   </button>
                 </div>
-                <div style={{ display: "grid", gap: "6px" }}>
-                  <span style={{ fontSize: "12px", color: "var(--text-secondary)" }}>
+                <fieldset
+                  style={{ display: "grid", gap: "6px", border: "none", margin: 0, padding: 0 }}
+                >
+                  <legend style={{ fontSize: "12px", color: "var(--text-secondary)" }}>
                     Apply override scope
-                  </span>
-                  <div
-                    role="radiogroup"
-                    aria-label="Apply override scope"
-                    style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}
-                    onKeyDown={(e: KeyboardEvent) => {
-                      const scopes: TemplateScope[] = ["page", "section", "template"];
-                      const currentIndex = scopes.indexOf(applyScope);
-                      if (e.key === "ArrowRight" || e.key === "ArrowDown") {
-                        e.preventDefault();
-                        const nextIndex = (currentIndex + 1) % scopes.length;
-                        onApplyScopeChange(scopes[nextIndex]);
-                      } else if (e.key === "ArrowLeft" || e.key === "ArrowUp") {
-                        e.preventDefault();
-                        const prevIndex = (currentIndex - 1 + scopes.length) % scopes.length;
-                        onApplyScopeChange(scopes[prevIndex]);
-                      }
-                    }}
-                  >
+                  </legend>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
                     {(["page", "section", "template"] as TemplateScope[]).map((scope) => (
-                      <button
+                      <label
                         key={scope}
-                        role="radio"
-                        aria-checked={applyScope === scope}
                         className={`btn btn-sm ${applyScope === scope ? "btn-primary" : "btn-secondary"}`}
-                        onClick={() => onApplyScopeChange(scope)}
-                        tabIndex={applyScope === scope ? 0 : -1}
+                        style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}
                       >
-                        {scope === "page"
-                          ? "This page"
-                          : scope === "section"
-                            ? "Section"
-                            : "Template"}
-                      </button>
+                        <input
+                          type="radio"
+                          name="apply-scope"
+                          value={scope}
+                          checked={applyScope === scope}
+                          onChange={() => onApplyScopeChange(scope)}
+                        />
+                        {APPLY_SCOPE_LABELS[scope]}
+                      </label>
                     ))}
                   </div>
                   <span style={{ fontSize: "11px", color: "var(--text-tertiary)" }}>
@@ -1845,7 +1851,7 @@ const ReviewQueueLayout = ({
                       : ""}
                     {applyScope === "section" ? " in contiguous block" : ""}
                   </span>
-                </div>
+                </fieldset>
                 <div
                   style={{ display: "flex", flexWrap: "wrap", gap: "8px", alignItems: "center" }}
                 >
@@ -1876,11 +1882,7 @@ const ReviewQueueLayout = ({
 
             <div>
               <strong style={{ fontSize: "13px" }}>Template inspector</strong>
-              {!templateSummary ? (
-                <p style={{ margin: "8px 0 0", fontSize: "12px", color: "var(--text-secondary)" }}>
-                  No template summary available for this page.
-                </p>
-              ) : (
+              {templateSummary ? (
                 <div style={{ marginTop: "8px", display: "grid", gap: "12px" }}>
                   <div
                     style={{
@@ -1972,6 +1974,10 @@ const ReviewQueueLayout = ({
                     </div>
                   </div>
                 </div>
+              ) : (
+                <p style={{ margin: "8px 0 0", fontSize: "12px", color: "var(--text-secondary)" }}>
+                  No template summary available for this page.
+                </p>
               )}
               <strong style={{ fontSize: "13px" }}>Baseline grid</strong>
               <div style={{ marginTop: "8px", display: "grid", gap: "8px" }}>
@@ -1983,7 +1989,7 @@ const ReviewQueueLayout = ({
                   }}
                 >
                   <label style={{ display: "grid", gap: "4px", fontSize: "11px" }}>
-                    Spacing (px)
+                    <span>Spacing (px)</span>
                     <input
                       type="number"
                       step="0.1"
@@ -1998,7 +2004,7 @@ const ReviewQueueLayout = ({
                     />
                   </label>
                   <label style={{ display: "grid", gap: "4px", fontSize: "11px" }}>
-                    Offset (px)
+                    <span>Offset (px)</span>
                     <input
                       type="number"
                       step="0.1"
@@ -2013,7 +2019,7 @@ const ReviewQueueLayout = ({
                     />
                   </label>
                   <label style={{ display: "grid", gap: "4px", fontSize: "11px" }}>
-                    Angle (°)
+                    <span>Angle (°)</span>
                     <input
                       type="number"
                       step="0.1"
@@ -2179,7 +2185,6 @@ export function ReviewQueueScreen({
     active: false,
     tooltip: null,
   });
-  const [runConfig, setRunConfig] = useState<RunConfigSnapshot | null>(null);
   const [isDraggingHandle, setIsDraggingHandle] = useState(false);
   const [snapTemporarilyDisabled, setSnapTemporarilyDisabled] = useState(false);
   const dragHandleRef = useRef<{
@@ -2207,7 +2212,6 @@ export function ReviewQueueScreen({
     ornaments: true,
   });
   const snapSources = useMemo(() => {
-    const sources = [];
     const templateCandidates = [
       ...(sidecar?.bookModel?.runningHeadTemplates?.flatMap((template) =>
         getBoxSnapCandidates(
@@ -2226,15 +2230,6 @@ export function ReviewQueueScreen({
         )
       ) ?? []),
     ];
-    sources.push({
-      id: "templates",
-      priority: 4,
-      minConfidence: 0.4,
-      weight: 1.2,
-      radius: 10,
-      label: "Templates",
-      candidates: templateCandidates,
-    });
 
     const detectedCandidates =
       sidecar?.elements?.flatMap((element) =>
@@ -2245,15 +2240,6 @@ export function ReviewQueueScreen({
           "detected"
         )
       ) ?? [];
-    sources.push({
-      id: "detected",
-      priority: 3,
-      minConfidence: 0.5,
-      weight: 1,
-      radius: 8,
-      label: "Detected elements",
-      candidates: detectedCandidates,
-    });
 
     const baselineCandidates = [
       ...(baselineBoxesRef.current.crop
@@ -2263,27 +2249,45 @@ export function ReviewQueueScreen({
         ? getBoxSnapCandidates(baselineBoxesRef.current.trim, 1, "Baseline: trim", "baseline")
         : []),
     ];
-    sources.push({
-      id: "baseline",
-      priority: 2,
-      minConfidence: 0.1,
-      weight: 0.9,
-      radius: 12,
-      label: "Baseline",
-      candidates: baselineCandidates,
-    });
 
-    sources.push({
-      id: "user-guides",
-      priority: 5,
-      minConfidence: 0,
-      weight: 1.5,
-      radius: 14,
-      label: "User guides",
-      candidates: [],
-    });
-
-    return sources;
+    return [
+      {
+        id: "templates",
+        priority: 4,
+        minConfidence: 0.4,
+        weight: 1.2,
+        radius: 10,
+        label: "Templates",
+        candidates: templateCandidates,
+      },
+      {
+        id: "detected",
+        priority: 3,
+        minConfidence: 0.5,
+        weight: 1,
+        radius: 8,
+        label: "Detected elements",
+        candidates: detectedCandidates,
+      },
+      {
+        id: "baseline",
+        priority: 2,
+        minConfidence: 0.1,
+        weight: 0.9,
+        radius: 12,
+        label: "Baseline",
+        candidates: baselineCandidates,
+      },
+      {
+        id: "user-guides",
+        priority: 5,
+        minConfidence: 0,
+        weight: 1.5,
+        radius: 14,
+        label: "User guides",
+        candidates: [],
+      },
+    ];
   }, [sidecar]);
 
   const templateSummaries = useMemo(() => buildTemplateSummaries(queuePages), [queuePages]);
@@ -2291,31 +2295,16 @@ export function ReviewQueueScreen({
   const templateSummary = templateSummaries.find((summary) => summary.id === templateKey) ?? null;
   const templatePages = currentPage ? getTemplatePages(queuePages, templateKey) : [];
   const sectionPages = currentPage ? getSectionPages(queuePages, selectedIndex) : [];
-  const applyTargets =
-    applyScope === "page"
-      ? currentPage
-        ? [currentPage]
-        : []
-      : applyScope === "section"
-        ? sectionPages
-        : templatePages;
+  let applyTargets: ReviewPage[] = [];
+  if (applyScope === "page") {
+    applyTargets = currentPage ? [currentPage] : [];
+  } else if (applyScope === "section") {
+    applyTargets = sectionPages;
+  } else {
+    applyTargets = templatePages;
+  }
   const applyTargetCount = applyTargets.length;
-  const representativePages = templateSummary
-    ? (() => {
-        const pages = [...templateSummary.pages].sort((a, b) => a.confidence - b.confidence);
-        const count = pages.length;
-
-        if (count <= 3) {
-          return pages;
-        }
-
-        const lowIndex = 0;
-        const highIndex = count - 1;
-        const medianIndex = Math.floor((count - 1) / 2);
-
-        return [pages[lowIndex], pages[medianIndex], pages[highIndex]];
-      })()
-    : [];
+  const representativePages = templateSummary ? getRepresentativePages(templateSummary) : [];
 
   const toggleSelected = createToggleSelected(setSelectedIds);
   const applyDecisionToSelection = createApplyDecisionToSelection(selectedIds, setDecisions);
@@ -2360,39 +2349,6 @@ export function ReviewQueueScreen({
     setAdjustmentMode(null);
   };
 
-  useEffect((): void | (() => void) => {
-    let cancelled = false;
-    const loadRunConfig = async (): Promise<void> => {
-      if (!runId || !runDir) {
-        setRunConfig(null);
-        return;
-      }
-      const windowRef: typeof globalThis & { asteria?: { ipc?: Record<string, unknown> } } =
-        globalThis;
-      if (!windowRef.asteria?.ipc) {
-        setRunConfig(null);
-        return;
-      }
-      try {
-        const getRunConfig = windowRef.asteria.ipc["asteria:get-run-config"] as
-          | ((id: string, dir: string) => Promise<RunConfigSnapshot | null>)
-          | undefined;
-        const snapshot = getRunConfig ? await getRunConfig(runId, runDir) : null;
-        if (!cancelled) {
-          setRunConfig(snapshot);
-        }
-      } catch {
-        if (!cancelled) {
-          setRunConfig(null);
-        }
-      }
-    };
-    void loadRunConfig();
-    return () => {
-      cancelled = true;
-    };
-  }, [runDir, runId]);
-
   useEffect(() => {
     const handleKeyChange = (event: globalThis.KeyboardEvent): void => {
       if (event.key === "Control" || event.key === "Meta") {
@@ -2401,7 +2357,7 @@ export function ReviewQueueScreen({
     };
     globalThis.addEventListener?.("keydown", handleKeyChange);
     globalThis.addEventListener?.("keyup", handleKeyChange);
-    return () => {
+    return (): void => {
       globalThis.removeEventListener?.("keydown", handleKeyChange);
       globalThis.removeEventListener?.("keyup", handleKeyChange);
     };
@@ -2468,32 +2424,35 @@ export function ReviewQueueScreen({
     setLastOverrideAppliedAt(null);
   }, [currentPage?.id, sidecar]);
 
-  const getOverlayScale = (): { x: number; y: number } | null => {
+  const getOverlayScale = useCallback((): { x: number; y: number } | null => {
     return calculateOverlayScale(sidecar, normalizedPreview);
-  };
+  }, [sidecar, normalizedPreview]);
 
-  const getSvgPoint = (
-    event: globalThis.PointerEvent | PointerEvent<globalThis.SVGCircleElement>
-  ): { x: number; y: number } | null => {
-    // Note: The SVG overlay is nested inside the rotated container (the div with the rotate
-    // transform), so it rotates with the image. getBoundingClientRect() accounts for all CSS
-    // transforms (rotation, zoom, pan), so pointer coordinates are correctly mapped even when rotated.
-    const svg = overlaySvgRef.current;
-    if (!svg || !normalizedPreview) return null;
-    const rect = svg.getBoundingClientRect();
-    if (!rect.width || !rect.height) return null;
-    const scale = getOverlayScale();
-    if (!scale) return null;
-    return mapClientPointToOutput({
-      clientX: event.clientX,
-      clientY: event.clientY,
-      rect,
-      normalizedWidth: normalizedPreview.width,
-      normalizedHeight: normalizedPreview.height,
-      scaleX: scale.x,
-      scaleY: scale.y,
-    });
-  };
+  const getSvgPoint = useCallback(
+    (
+      event: globalThis.PointerEvent | PointerEvent<globalThis.SVGCircleElement>
+    ): { x: number; y: number } | null => {
+      // Note: The SVG overlay is nested inside the rotated container (the div with the rotate
+      // transform), so it rotates with the image. getBoundingClientRect() accounts for all CSS
+      // transforms (rotation, zoom, pan), so pointer coordinates are correctly mapped even when rotated.
+      const svg = overlaySvgRef.current;
+      if (!svg || !normalizedPreview) return null;
+      const rect = svg.getBoundingClientRect();
+      if (!rect.width || !rect.height) return null;
+      const scale = getOverlayScale();
+      if (!scale) return null;
+      return mapClientPointToOutput({
+        clientX: event.clientX,
+        clientY: event.clientY,
+        rect,
+        normalizedWidth: normalizedPreview.width,
+        normalizedHeight: normalizedPreview.height,
+        scaleX: scale.x,
+        scaleY: scale.y,
+      });
+    },
+    [getOverlayScale, normalizedPreview]
+  );
 
   const handleHandlePointerDown = (
     event: PointerEvent<globalThis.SVGCircleElement>,
@@ -2565,11 +2524,17 @@ export function ReviewQueueScreen({
 
     globalThis.addEventListener?.("pointermove", handlePointerMove);
     globalThis.addEventListener?.("pointerup", handlePointerUp);
-    return () => {
+    return (): void => {
       globalThis.removeEventListener?.("pointermove", handlePointerMove);
       globalThis.removeEventListener?.("pointerup", handlePointerUp);
     };
-  }, [normalizedPreview, sidecar?.normalization?.cropBox, snapSources, snapTemporarilyDisabled]);
+  }, [
+    getSvgPoint,
+    normalizedPreview,
+    sidecar?.normalization?.cropBox,
+    snapSources,
+    snapTemporarilyDisabled,
+  ]);
 
   const handleSubmitReview = async (): Promise<void> => {
     const windowRef: typeof globalThis & {
@@ -2658,12 +2623,13 @@ export function ReviewQueueScreen({
         }
       }
       if (failures.length > 0) {
+        const remainingCount = failures.length - 1;
+        const suffix = remainingCount === 1 ? "" : "s";
         const failureSummary =
           failures.length === 1
             ? failures[0]
-            : `${failures[0]} (and ${failures.length - 1} other error${failures.length - 1 === 1 ? "" : "s"})`;
+            : `${failures[0]} (and ${remainingCount} other error${suffix})`;
         // Log all failures so the full list is visible for debugging.
-        // eslint-disable-next-line no-console
         console.error("Failed to apply overrides for some pages:", failures);
         setOverrideError(
           `Applied with ${failures.length} error${failures.length === 1 ? "" : "s"}: ${failureSummary}`

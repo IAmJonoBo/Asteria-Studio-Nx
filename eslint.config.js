@@ -2,6 +2,10 @@ import js from "@eslint/js";
 import tseslint from "typescript-eslint";
 import react from "eslint-plugin-react";
 import reactHooks from "eslint-plugin-react-hooks";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 export default tseslint.config(
   {
@@ -19,14 +23,17 @@ export default tseslint.config(
       parserOptions: {
         ecmaVersion: "latest",
         sourceType: "module",
+        tsconfigRootDir: __dirname,
       },
       globals: {
         Buffer: "readonly",
         __dirname: "readonly",
+        AbortController: "readonly",
         console: "readonly",
         document: "readonly",
         process: "readonly",
         setTimeout: "readonly",
+        window: "readonly",
       },
     },
     plugins: {
@@ -62,6 +69,7 @@ export default tseslint.config(
       parserOptions: {
         ecmaVersion: "latest",
         sourceType: "module",
+        tsconfigRootDir: __dirname,
       },
     },
     plugins: {

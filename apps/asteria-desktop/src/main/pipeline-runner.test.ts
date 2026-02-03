@@ -16,7 +16,11 @@ import os from "node:os";
 import path from "node:path";
 import sharp from "sharp";
 
-const createSpreadImage = async (dir: string, name: string, options?: { gutter?: boolean }) => {
+const createSpreadImage = async (
+  dir: string,
+  name: string,
+  options?: { gutter?: boolean }
+): Promise<string> => {
   const width = 220;
   const height = 120;
   const buffer = Buffer.alloc(width * height * 3, 255);
@@ -344,7 +348,7 @@ describe("Pipeline Runner", () => {
 
   it("cancels mid-run and writes parseable report + manifest", async () => {
     const outputDir = await fs.mkdtemp(path.join(os.tmpdir(), "asteria-cancel-"));
-    const controller = new AbortController();
+    const controller = new globalThis.AbortController();
     let waitCalls = 0;
     let releasePause: (() => void) | undefined;
     const waitIfPaused = (): Promise<void> => {

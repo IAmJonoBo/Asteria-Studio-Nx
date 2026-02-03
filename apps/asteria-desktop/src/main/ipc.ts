@@ -107,7 +107,7 @@ const exportNormalizedByFormat = async (params: {
   );
 };
 
-const sanitizeTrainingId = (value: string): string => value.replace(/[\\/]/g, "_");
+const sanitizeTrainingId = (value: string): string => value.replaceAll(/[\\/]/g, "_");
 
 const loadRunDeterminism = async (
   runDir: string
@@ -303,8 +303,8 @@ const mergeBaselineGridGuides = (
     spacingPx: override?.spacingPx === undefined ? auto?.spacingPx : override.spacingPx,
     offsetPx: override?.offsetPx === undefined ? auto?.offsetPx : override.offsetPx,
     angleDeg: override?.angleDeg === undefined ? auto?.angleDeg : override.angleDeg,
-    snapToPeaks: override?.snapToPeaks === undefined ? auto?.snapToPeaks : override.snapToPeaks,
-    markCorrect: override?.markCorrect === undefined ? auto?.markCorrect : override.markCorrect,
+    snapToPeaks: override?.snapToPeaks ?? auto?.snapToPeaks,
+    markCorrect: override?.markCorrect ?? auto?.markCorrect,
   };
 };
 
@@ -608,7 +608,7 @@ export function registerIpcHandlers(): void {
       validateRunId(runId);
       validateRunDir(runDir, runId);
       validateExportFormats(formats);
-      const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+      const timestamp = new Date().toISOString().replaceAll(/[:.]/g, "-");
       const exportDir = path.join(runDir, "exports", timestamp);
       await fs.mkdir(exportDir, { recursive: true });
 
@@ -840,7 +840,8 @@ export function registerIpcHandlers(): void {
       const trainingDir = getTrainingDir(runDir);
       const templateDir = path.join(trainingDir, "template");
       await fs.mkdir(templateDir, { recursive: true });
-      const safeTemplateId = String(signal.templateId ?? "unknown").replace(/[\\/:*?"<>|]/g, "_");
+      const templateId = typeof signal.templateId === "string" ? signal.templateId : "unknown";
+      const safeTemplateId = templateId.replaceAll(/[\\/:*?"<>|]/g, "_");
       const payload = {
         runId,
         ...signal,

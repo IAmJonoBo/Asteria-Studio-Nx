@@ -438,7 +438,7 @@ describe("App", () => {
 
     render(<App />);
 
-    fireEvent.keyDown(window, { key: "k", ctrlKey: true });
+    fireEvent.keyDown(globalThis.window, { key: "k", ctrlKey: true });
     await user.click(screen.getByRole("button", { name: /Start New Run/i }));
 
     expect(alertMock).toHaveBeenCalledWith("Select a project to start a run.");
@@ -460,7 +460,7 @@ describe("App", () => {
 
     render(<App />);
 
-    fireEvent.keyDown(window, { key: "2", ctrlKey: true });
+    fireEvent.keyDown(globalThis.window, { key: "2", ctrlKey: true });
 
     expect(await screen.findByText(/No runs yet/i)).toBeInTheDocument();
 
@@ -490,35 +490,35 @@ describe("App", () => {
 
     render(<App />);
 
-    fireEvent.keyDown(window, { key: "k", ctrlKey: true });
+    fireEvent.keyDown(globalThis.window, { key: "k", ctrlKey: true });
     await user.click(screen.getByRole("button", { name: /Go to Run History/i }));
     expect(await screen.findByText(/No runs yet/i)).toBeInTheDocument();
 
-    fireEvent.keyDown(window, { key: "k", ctrlKey: true });
+    fireEvent.keyDown(globalThis.window, { key: "k", ctrlKey: true });
     await user.click(screen.getByRole("button", { name: /Go to Live Monitor/i }));
     expect(await screen.findByText(/Live Run Monitor/i)).toBeInTheDocument();
 
-    fireEvent.keyDown(window, { key: "k", ctrlKey: true });
+    fireEvent.keyDown(globalThis.window, { key: "k", ctrlKey: true });
     await user.click(screen.getByRole("button", { name: /Go to Exports/i }));
     expect(await screen.findByText(/Run a pipeline to generate exports/i)).toBeInTheDocument();
 
-    fireEvent.keyDown(window, { key: "k", ctrlKey: true });
+    fireEvent.keyDown(globalThis.window, { key: "k", ctrlKey: true });
     await user.click(screen.getByRole("button", { name: /Go to Settings/i }));
     expect(await screen.findByText(/Config not loaded/i)).toBeInTheDocument();
 
-    fireEvent.keyDown(window, { key: "k", ctrlKey: true });
+    fireEvent.keyDown(globalThis.window, { key: "k", ctrlKey: true });
     await user.click(screen.getByRole("button", { name: /Go to Projects/i }));
     expect(await screen.findByText(/No projects yet/i)).toBeInTheDocument();
 
-    fireEvent.keyDown(window, { key: "k", ctrlKey: true });
+    fireEvent.keyDown(globalThis.window, { key: "k", ctrlKey: true });
     await user.click(screen.getByRole("button", { name: /Go to Review Queue/i }));
     expect(await screen.findByText(/Choose a run from Run History/i)).toBeInTheDocument();
 
-    fireEvent.keyDown(window, { key: "k", ctrlKey: true });
+    fireEvent.keyDown(globalThis.window, { key: "k", ctrlKey: true });
     await user.click(screen.getByRole("button", { name: /Toggle Theme/i }));
     expect(screen.getByLabelText(/Switch to light theme/i)).toBeInTheDocument();
 
-    fireEvent.keyDown(window, { key: "k", ctrlKey: true });
+    fireEvent.keyDown(globalThis.window, { key: "k", ctrlKey: true });
     await user.click(screen.getByRole("button", { name: /Import Corpus/i }));
 
     if (storedTheme === null) {

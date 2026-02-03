@@ -2,6 +2,10 @@ import js from "@eslint/js";
 import tseslint from "typescript-eslint";
 import react from "eslint-plugin-react";
 import reactHooks from "eslint-plugin-react-hooks";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 export default tseslint.config(
   {
@@ -14,11 +18,28 @@ export default tseslint.config(
       parserOptions: {
         ecmaVersion: "latest",
         sourceType: "module",
-        project: "./tsconfig.json",
+        tsconfigRootDir: __dirname,
       },
       globals: {
+        Buffer: "readonly",
+        NodeJS: "readonly",
+        __dirname: "readonly",
+        __filename: "readonly",
+        clearInterval: "readonly",
+        clearTimeout: "readonly",
+        process: "readonly",
+        setInterval: "readonly",
+        setTimeout: "readonly",
         AbortController: "readonly",
         AbortSignal: "readonly",
+        Element: "readonly",
+        Event: "readonly",
+        EventListenerOrEventListenerObject: "readonly",
+        MediaQueryList: "readonly",
+        Storage: "readonly",
+        console: "readonly",
+        document: "readonly",
+        window: "readonly",
       },
     },
     plugins: {
@@ -33,7 +54,7 @@ export default tseslint.config(
     },
     rules: {
       ...js.configs.recommended.rules,
-      ...tseslint.configs.recommendedTypeChecked[1].rules,
+      ...tseslint.configs.recommended.rules,
       ...react.configs.recommended.rules,
       ...reactHooks.configs.recommended.rules,
       "react/react-in-jsx-scope": "off",

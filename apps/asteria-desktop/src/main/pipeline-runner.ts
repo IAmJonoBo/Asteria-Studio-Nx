@@ -3088,7 +3088,12 @@ const writeSidecars = async (
           ? null
           : await loadNativeLayoutElements(page.id, norm.normalizedPath, native);
         const elements = remoteElements ?? nativeElements ?? localElements;
-        const layoutSource = remoteElements ? "remote" : nativeElements ? "native" : "local";
+        let layoutSource: "remote" | "native" | "local" = "local";
+        if (remoteElements) {
+          layoutSource = "remote";
+        } else if (nativeElements) {
+          layoutSource = "native";
+        }
         layoutSummaries.set(page.id, {
           profile: assessment.profile,
           confidence: layoutConfidence,
@@ -3138,9 +3143,7 @@ const writeSidecars = async (
         const ornamentHashes =
           ornamentHash && ornamentHash.variance >= ornamentVarianceMin ? [ornamentHash.hash] : [];
         const gutterSignature =
-          spread?.gutter &&
-          spread.gutter.startRatio !== undefined &&
-          spread.gutter.endRatio !== undefined
+          spread?.gutter?.startRatio !== undefined && spread?.gutter?.endRatio !== undefined
             ? (spread.gutter.startRatio + spread.gutter.endRatio) / 2
             : undefined;
         const baselineSpacingRatio =

@@ -81,11 +81,12 @@ export function SettingsScreen({ projectId }: Readonly<SettingsScreenProps>): JS
           | undefined;
         const data = listRuns ? await listRuns() : [];
         const scopedRuns = projectId ? data.filter((run) => run.projectId === projectId) : data;
-        const latestRun = scopedRuns.sort((a, b) => {
+        const sortedRuns = [...scopedRuns].sort((a, b) => {
           const aTime = a.generatedAt ? new Date(a.generatedAt).getTime() : 0;
           const bTime = b.generatedAt ? new Date(b.generatedAt).getTime() : 0;
           return bTime - aTime;
-        })[0];
+        });
+        const latestRun = sortedRuns[0];
         if (!cancelled) {
           setLatestInference(latestRun ?? null);
         }
