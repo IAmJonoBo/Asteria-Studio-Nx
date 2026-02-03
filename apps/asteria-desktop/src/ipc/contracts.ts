@@ -98,6 +98,8 @@ export interface BaselineGridGuide {
   offsetPx?: number;
   angleDeg?: number;
   confidence?: number;
+  snapToPeaks?: boolean;
+  markCorrect?: boolean;
   source?: "auto" | "user";
 }
 

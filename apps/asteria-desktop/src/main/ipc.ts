@@ -330,6 +330,12 @@ const buildBaselineGridDelta = (
   if (spacingDelta !== undefined) result.spacingPx = spacingDelta;
   if (offsetDelta !== undefined) result.offsetPx = offsetDelta;
   if (angleDelta !== undefined) result.angleDeg = angleDelta;
+  if (typeof final.snapToPeaks === "boolean" && final.snapToPeaks !== auto.snapToPeaks) {
+    result.snapToPeaks = final.snapToPeaks;
+  }
+  if (typeof final.markCorrect === "boolean" && final.markCorrect !== auto.markCorrect) {
+    result.markCorrect = final.markCorrect;
+  }
 
   return Object.keys(result).length > 0 ? result : null;
 };

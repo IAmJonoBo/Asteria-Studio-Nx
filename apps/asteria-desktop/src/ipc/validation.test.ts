@@ -101,6 +101,27 @@ describe("IPC validation", () => {
     invalid.normalization.shading = { confidence: 2 };
     expect(() => validatePageLayoutSidecar(invalid)).toThrow(/shading.confidence/);
   });
+
+  it("accepts baseline grid guide flags and round-trips them", () => {
+    const sidecar = buildValidSidecar();
+    sidecar.normalization.guides = {
+      baselineGrid: {
+        spacingPx: 14,
+        offsetPx: 2,
+        angleDeg: -0.3,
+        confidence: 0.9,
+        snapToPeaks: true,
+        markCorrect: false,
+        source: "user",
+      },
+    };
+
+    const roundTripped = JSON.parse(JSON.stringify(sidecar)) as PageLayoutSidecar;
+
+    expect(() => validatePageLayoutSidecar(roundTripped)).not.toThrow();
+    expect(roundTripped.normalization.guides?.baselineGrid?.snapToPeaks).toBe(true);
+    expect(roundTripped.normalization.guides?.baselineGrid?.markCorrect).toBe(false);
+  });
 });
 
 describe("validateTemplateTrainingSignal", () => {
