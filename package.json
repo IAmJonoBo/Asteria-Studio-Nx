@@ -20,6 +20,7 @@
     "build:verify": "pnpm -C apps/asteria-desktop build:verify",
     "package": "pnpm -C apps/asteria-desktop package",
     "package:verify": "pnpm -C apps/asteria-desktop package:verify",
+    "package:full": "pnpm package && pnpm package:verify",
     "pipeline:run": "pnpm -C apps/asteria-desktop pipeline:run",
     "pipeline:export": "pnpm -C apps/asteria-desktop pipeline:export",
     "golden:generate": "pnpm -C apps/asteria-desktop golden:generate",

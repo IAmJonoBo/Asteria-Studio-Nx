@@ -136,6 +136,9 @@ pnpm package
 
 # Verify packaged artefacts (checks for native modules like sharp)
 pnpm package:verify
+
+# Package + verify in one go
+pnpm package:full
 ```
 
 ### Pipeline Evaluation
