@@ -467,6 +467,42 @@ const clampBox = (box: Box, bounds: Box, minSize = 12): Box => {
   return [Math.round(x0), Math.round(y0), Math.round(x1), Math.round(y1)];
 };
 
+const calculateOverlayScale = (
+  currentSidecar: PageLayoutSidecar | null | undefined,
+  currentNormalizedPreview: PreviewRef | null | undefined
+): { x: number; y: number } | null => {
+  if (!currentNormalizedPreview) return null;
+
+  const outputWidth = currentSidecar?.normalization?.cropBox
+    ? currentSidecar.normalization.cropBox[2] + 1
+    : currentNormalizedPreview.width;
+  const outputHeight = currentSidecar?.normalization?.cropBox
+    ? currentSidecar.normalization.cropBox[3] + 1
+    : currentNormalizedPreview.height;
+
+  return {
+    x: outputWidth > 0 ? currentNormalizedPreview.width / outputWidth : 1,
+    y: outputHeight > 0 ? currentNormalizedPreview.height / outputHeight : 1,
+  };
+};
+
+const mapClientPointToOutput = (params: {
+  clientX: number;
+  clientY: number;
+  rect: { left: number; top: number; width: number; height: number };
+  normalizedWidth: number;
+  normalizedHeight: number;
+  scaleX: number;
+  scaleY: number;
+}): { x: number; y: number } | null => {
+  const { clientX, clientY, rect, normalizedWidth, normalizedHeight, scaleX, scaleY } = params;
+  if (!rect.width || !rect.height || !scaleX || !scaleY) return null;
+  const rawX = ((clientX - rect.left) / rect.width) * normalizedWidth;
+  const rawY = ((clientY - rect.top) / rect.height) * normalizedHeight;
+  return { x: rawX / scaleX, y: rawY / scaleY };
+};
+
+const applyHandleDrag = (box: Box, handle: OverlayHandleEdge, deltaX: number, deltaY: number): Box => {
 const applyHandleDrag = (
   box: Box,
   handle: OverlayHandleEdge,
@@ -510,6 +546,14 @@ type SnapGuidesState = {
 const isSameBox = (a: Box | null, b: Box | null): boolean => {
   if (!a || !b) return a === b;
   return a[0] === b[0] && a[1] === b[1] && a[2] === b[2] && a[3] === b[3];
+};
+
+export const __testables = {
+  applyHandleDrag,
+  calculateOverlayScale,
+  clampBox,
+  mapClientPointToOutput,
+  snapBoxToPrior,
 };
 
 const buildTrimBoxFromCrop = (cropBox: Box | null, trimMm?: number, dpi?: number): Box | null => {
@@ -2384,25 +2428,6 @@ export function ReviewQueueScreen({
     setLastOverrideAppliedAt(null);
   }, [currentPage?.id, sidecar]);
 
-  const calculateOverlayScale = (
-    currentSidecar: PageLayoutSidecar | null | undefined,
-    currentNormalizedPreview: PreviewRef | null | undefined
-  ): { x: number; y: number } | null => {
-    if (!currentNormalizedPreview) return null;
-
-    const outputWidth = currentSidecar?.normalization?.cropBox
-      ? currentSidecar.normalization.cropBox[2] + 1
-      : currentNormalizedPreview.width;
-    const outputHeight = currentSidecar?.normalization?.cropBox
-      ? currentSidecar.normalization.cropBox[3] + 1
-      : currentNormalizedPreview.height;
-
-    return {
-      x: outputWidth > 0 ? currentNormalizedPreview.width / outputWidth : 1,
-      y: outputHeight > 0 ? currentNormalizedPreview.height / outputHeight : 1,
-    };
-  };
-
   const getOverlayScale = (): { x: number; y: number } | null => {
     return calculateOverlayScale(sidecar, normalizedPreview);
   };
@@ -2417,11 +2442,17 @@ export function ReviewQueueScreen({
     if (!svg || !normalizedPreview) return null;
     const rect = svg.getBoundingClientRect();
     if (!rect.width || !rect.height) return null;
-    const rawX = ((event.clientX - rect.left) / rect.width) * normalizedPreview.width;
-    const rawY = ((event.clientY - rect.top) / rect.height) * normalizedPreview.height;
     const scale = getOverlayScale();
     if (!scale) return null;
-    return { x: rawX / scale.x, y: rawY / scale.y };
+    return mapClientPointToOutput({
+      clientX: event.clientX,
+      clientY: event.clientY,
+      rect,
+      normalizedWidth: normalizedPreview.width,
+      normalizedHeight: normalizedPreview.height,
+      scaleX: scale.x,
+      scaleY: scale.y,
+    });
   };
 
   const handleHandlePointerDown = (

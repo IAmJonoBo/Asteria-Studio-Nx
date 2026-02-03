@@ -915,6 +915,11 @@ const estimateBaselineMetrics = (preview: PreviewImage, residualAngle: number): 
   };
 };
 
+export const __testables = {
+  computeRowSums,
+  estimateBaselineMetrics,
+};
+
 const estimateColumnMetrics = (preview: PreviewImage): ColumnMetrics => {
   const native = getNativeCore();
   if (native) {

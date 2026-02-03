@@ -376,6 +376,21 @@ describe("IPC handler registration", () => {
     expect(readFile).toHaveBeenCalledWith(getRunSidecarPath(runDir, "p1"), "utf-8");
   });
 
+  it("fetch-sidecar reads run-scoped sidecar data", async () => {
+    registerIpcHandlers();
+    const handler = handlers.get("asteria:fetch-sidecar");
+    expect(handler).toBeDefined();
+    readFile.mockResolvedValueOnce(JSON.stringify({ pageId: "p9" }));
+
+    const result = await (
+      handler as (event: unknown, runId: string, pageId: string) => Promise<unknown>
+    )({}, "run-9", "p9");
+
+    expect(result).toMatchObject({ pageId: "p9" });
+    const runDir = getRunDir(path.join(process.cwd(), "pipeline-results"), "run-9");
+    expect(readFile).toHaveBeenCalledWith(getRunSidecarPath(runDir, "p9"), "utf-8");
+  });
+
   it("fetch-page uses pageId when source path missing", async () => {
     registerIpcHandlers();
     const handler = handlers.get("asteria:fetch-page");
@@ -1061,6 +1076,37 @@ describe("IPC handler registration", () => {
     expect(template2.confirmed).toBe(false);
     expect(template2.pages).toEqual(["page3"]);
     expect(template2.confirmedPages).toEqual([]);
+  });
+
+  it("submit-review writes a training bundle manifest", async () => {
+    registerIpcHandlers();
+    const handler = handlers.get("asteria:submit-review");
+    expect(handler).toBeDefined();
+    readFile.mockRejectedValueOnce(new Error("missing-sidecar"));
+
+    await (handler as (event: unknown, runId: string, decisions: unknown[]) => Promise<void>)(
+      {},
+      "run-training",
+      [
+        {
+          pageId: "page-7",
+          decision: "accept",
+          overrides: { normalization: { rotationDeg: 0.5 } },
+        },
+      ]
+    );
+
+    const outputDir = path.join(process.cwd(), "pipeline-results");
+    const runDir = getRunDir(outputDir, "run-training");
+    const trainingDir = path.join(runDir, "training");
+    expect(rename).toHaveBeenCalledWith(
+      expect.any(String),
+      path.join(trainingDir, "page-7.json")
+    );
+    expect(rename).toHaveBeenCalledWith(
+      expect.any(String),
+      path.join(trainingDir, "manifest.json")
+    );
   });
 
   it("list-runs returns run index entries", async () => {

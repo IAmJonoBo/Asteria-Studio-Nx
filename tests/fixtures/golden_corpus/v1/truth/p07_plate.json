@@ -16,7 +16,9 @@
     "side": "none",
     "widthPx": 0
   },
-  "baselineGrid": {},
+  "baselineGrid": {
+    "medianSpacingPx": 0
+  },
   "ornaments": [],
   "shouldSplit": false,
   "expectedReviewReasons": [

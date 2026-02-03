@@ -107,4 +107,98 @@ test.describe("Asteria Desktop App", () => {
       return Boolean(globalRef.__submitted?.decisions?.length);
     });
   });
+
+  test("review queue toggles overlays and applies baseline edits", async ({ page }) => {
+    await page.addInitScript(() => {
+      const globalRef = globalThis as typeof globalThis & {
+        asteria?: {
+          ipc?: Record<string, unknown>;
+          onRunProgress?: () => () => void;
+          ping?: () => string;
+        };
+        __overrideApplied?: { runId: string; pageId: string; overrides: unknown };
+      };
+      const noop = () => undefined;
+      globalRef.__overrideApplied = undefined;
+      globalRef.asteria = {
+        ipc: {
+          "asteria:list-projects": async () => [],
+          "asteria:list-runs": async () => [
+            {
+              runId: "run-1",
+              projectId: "project-1",
+              generatedAt: "2026-02-02",
+              reviewCount: 1,
+            },
+          ],
+          "asteria:fetch-review-queue": async () => ({
+            runId: "run-1",
+            projectId: "project-1",
+            generatedAt: "2026-02-02",
+            items: [
+              {
+                pageId: "page-1",
+                filename: "page-1.png",
+                layoutProfile: "body",
+                layoutConfidence: 0.72,
+                qualityGate: { accepted: false, reasons: ["low-mask-coverage"] },
+                reason: "quality-gate",
+                previews: [
+                  {
+                    kind: "normalized",
+                    path:
+                      "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMB/6fYdS0AAAAASUVORK5CYII=",
+                    width: 100,
+                    height: 100,
+                  },
+                ],
+                suggestedAction: "adjust",
+              },
+            ],
+          }),
+          "asteria:fetch-sidecar": async () => ({
+            pageId: "page-1",
+            dpi: 300,
+            normalization: {
+              cropBox: [0, 0, 99, 99],
+              pageMask: [0, 0, 99, 99],
+              trim: 0,
+            },
+            elements: [],
+          }),
+          "asteria:apply-override": async (_runId: string, _pageId: string, overrides: unknown) => {
+            globalRef.__overrideApplied = { runId: "run-1", pageId: "page-1", overrides };
+          },
+        },
+        onRunProgress: () => noop,
+        ping: () => "pong",
+      };
+    });
+
+    await page.goto("/", { waitUntil: "networkidle" });
+
+    await page
+      .getByRole("button", { name: /run history/i })
+      .first()
+      .click();
+    await page
+      .getByRole("button", { name: /open review queue/i })
+      .first()
+      .click();
+
+    const overlaysButton = page.getByRole("button", { name: /overlays/i });
+    await expect(overlaysButton).toBeVisible();
+    await overlaysButton.click();
+    await expect(overlaysButton).toHaveText(/Show Overlays|Hide Overlays/);
+
+    await page.getByRole("button", { name: /⟳/ }).click();
+    await page.getByRole("button", { name: /apply override/i }).click();
+
+    await page.waitForFunction(() => {
+      const globalRef = globalThis as typeof globalThis & {
+        __overrideApplied?: { overrides?: unknown };
+      };
+      return Boolean(globalRef.__overrideApplied?.overrides);
+    });
+  });
 });
