@@ -78,7 +78,8 @@ const mapReviewQueue = (queue: ReviewQueue): ReviewPage[] => {
 };
 
 const LAYOUT_PROFILE_LABEL_OVERRIDES: Partial<Record<LayoutProfile, string>> = {
-  // Add overrides for profiles that need special formatting
+  // Example: override for profiles that need special title casing
+  // "front-matter": "Front Matter",
 };
 
 const formatLayoutProfileLabel = (profile: LayoutProfile): string => {
@@ -92,6 +93,15 @@ const formatLayoutProfileLabel = (profile: LayoutProfile): string => {
     .filter((segment) => segment.length > 0)
     .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
     .join(" ");
+};
+
+/**
+ * Helper to append a new error message to an existing error string.
+ */
+const appendError = (existing: string | null, newMessage: string): string => {
+  const currentError = existing ?? "";
+  const separator = currentError ? "; " : "";
+  return `${currentError}${separator}${newMessage}`;
 };
 
 const getTemplateKey = (page?: ReviewPage): LayoutProfile => {
@@ -2157,17 +2167,13 @@ export function ReviewQueueScreen({ runId }: Readonly<ReviewQueueScreenProps>): 
           } catch (error) {
             const message =
               error instanceof Error ? error.message : "Failed to record template training signal";
-            const currentError = overrideError ?? "";
-            const separator = currentError ? "; " : "";
-            setOverrideError(`${currentError}${separator}Training signal error: ${message}`);
+            setOverrideError(appendError(overrideError, `Training signal error: ${message}`));
           }
         }
       }
       if (applyScope !== "page" && failures.length === 0) {
-        const currentError = overrideError ?? "";
-        const separator = currentError ? "; " : "";
         setOverrideError(
-          `${currentError}${separator}Overrides applied to multiple pages. Other pages in this ${applyScope} may show stale data until you refresh the review queue.`,
+          appendError(overrideError, `Overrides applied to multiple pages. Other pages in this ${applyScope} may show stale data until you refresh the review queue.`)
         );
       }
     } catch (error) {

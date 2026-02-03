@@ -13,6 +13,7 @@ import type {
   RunManifestSummary,
   ProjectSummary,
   ImportCorpusRequest,
+  TemplateTrainingSignal,
 } from "../ipc/contracts.js";
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -650,7 +651,7 @@ export function registerIpcHandlers(): void {
     "asteria:record-template-training",
     async (_event: IpcMainInvokeEvent, runId: string, signal: Record<string, unknown>) => {
       validateRunId(runId);
-      validateTemplateTrainingSignal(signal as unknown as Parameters<typeof validateTemplateTrainingSignal>[0]);
+      validateTemplateTrainingSignal(signal as unknown as TemplateTrainingSignal);
       const outputDir = resolveOutputDir();
       const runDir = await resolveRunDir(outputDir, runId);
       const trainingDir = getTrainingDir(runDir);
