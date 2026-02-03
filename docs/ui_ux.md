@@ -132,6 +132,7 @@ graph TD
 - Confidence label per page (sidebar)
 - Overlay layers toggled via checkboxes (when sidecar data is available)
 - Crop/trim handles appear on-canvas when adjustment mode is active
+- Rotation tools show live degree offsets and snap-to-zero hinting
 
 **Implementation note**:
 
@@ -232,8 +233,8 @@ graph TD
 
 **Adjustment UX**:
 
-- Toolbar provides rotation, micro-rotation, and reset controls.
-- Crop/trim buttons enable draggable handles on the preview.
+- Toolbar provides rotation, micro-rotation, and reset controls (with live angle readout).
+- Crop/trim buttons enable draggable handles on the preview for overlay editing.
 - Apply override persists adjustments to the run’s override folder and metadata files.
 
 ### Bulk Operations (Planned)
@@ -249,6 +250,7 @@ graph TD
 
 - Apply crop offset
 - Adjust margin rules
+- Apply rotation delta
 - Accept/reject all flagged
 - Bulk export
 
@@ -285,8 +287,8 @@ graph TD
 | `R`       | Reject current page (red badge)   |
 | `U`       | Undo last decision                |
 | `Space`   | Toggle overlay visibility         |
-| `Z`       | Zoom in/out (planned)             |
-| `[` / `]` | Rotate page (planned)             |
+| `Z`       | Zoom in/out                       |
+| `[` / `]` | Rotate page                       |
 | `Ctrl+B`  | Bulk apply to range (planned)     |
 
 ### General

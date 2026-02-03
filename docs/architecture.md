@@ -122,6 +122,44 @@ sequenceDiagram
 
 - Emit schema-compliant JSON sidecars per run in `pipeline-results/runs/{runId}/sidecars/`
 
+### Wired Pipeline Stages (End-to-End)
+
+The following stages are wired end-to-end in the pipeline runner today, meaning they are scheduled,
+tracked in progress events, and persisted to the run manifest:
+
+1. **Ingest** → **Analysis** → **Spread Split** (optional)
+2. **Book Priors** (optional)
+3. **Normalization**
+4. **Export** (manifests, overlays, previews, sidecars)
+
+Other stages (deskew, dewarp, shading, layout detection) are scaffolded with metrics and manifest
+slots but gated or no-ops until their CV backends are wired.
+
+### Per-Stage Metrics (Emitted Today)
+
+Each stage emits counters and timing data into `report.json` and the run manifest:
+
+- **Ingest**: `page_count`, `duplicate_count`, `checksum_time_ms`
+- **Analysis**: `target_width_px`, `target_height_px`, `aspect_ratio_delta`
+- **Spread Split**: `split_candidates`, `split_applied`, `avg_confidence`
+- **Book Priors**: `sampled_pages`, `trim_box_median`, `content_box_median`
+- **Normalization**: `avg_sharpness`, `avg_contrast`, `avg_file_size_bytes`, `throughput_pps`
+- **Export**: `normalized_count`, `preview_count`, `overlay_count`, `sidecar_count`
+
+Stages that are gated still emit a stub metric block with `skipped: true` for auditability.
+
+### Run Manifest Fields (Core)
+
+The run manifest captures configuration, artifacts, and stage metrics needed for replay:
+
+- `run_id`, `project_id`, `created_at`, `status`
+- `config_snapshot` (pipeline config + user overrides)
+- `input` (source path, page count, checksum summary)
+- `stages[]` (name, status, started_at, finished_at, metrics)
+- `artifacts` (normalized/previews/overlays/sidecars paths + counts)
+- `priors` (book model summary when available)
+- `quality` (aggregate metrics + thresholds used)
+
 ### Planned Stages (Future)
 
 1. **Dewarp (CV)**: Page contour detection + UNet-based surface estimation; full warp correction

@@ -33,6 +33,7 @@ graph TD
 - ✅ **Quality metrics**: Sharpness (Laplacian), contrast (stddev), basic implementation
 - ✅ **Native utilities**: Projection profiles, Sobel magnitude, dHash via N-API for performance
 - ✅ **Native layout heuristics**: Layout element detection from grayscale signals
+- ✅ **Pipeline wiring**: Ingest → analysis → spread split → book priors → normalization → export
 
 ### In Progress (🚧)
 
@@ -279,6 +280,20 @@ iterations. When a review is submitted, the system writes:
 These signals become the labeled deltas for supervised training (e.g., deskew/rotation correction,
 crop refinement, and element bounding box updates). They can be aggregated to build curated
 datasets and to score model drift over time.
+
+### Training Feedback Loop (Implemented Path)
+
+The pipeline already records review-derived signals so we can close the loop once training is
+online:
+
+1. **Review**: User edits overlays (crop/trim/rotation) and submits decisions.
+2. **Signal Capture**: Sidecar `adjustments` + per-page training files written to the run’s
+   `training/` folder.
+3. **Dataset Curate**: Aggregate adjustments into labeled deltas (deskew angles, crop offsets,
+   element corrections).
+4. **Fine-Tune**: Train or fine-tune deskew/layout models on curated deltas.
+5. **Eval + Gate**: Compare against held-out review signals and block promotion if metrics drop.
+6. **Deploy**: Record model version in manifests for reproducibility.
 
 ## Spread Split (Implemented)
 

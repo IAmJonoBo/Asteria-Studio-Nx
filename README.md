@@ -154,6 +154,15 @@ pnpm ci:e2e
 pnpm ci:desktop
 ```
 
+### Runbook: Quality & Test Gates
+
+Use this checklist before merging changes:
+
+1. **Quality gate**: `pnpm ci:quality` (format check, lint, typecheck, build, coverage).
+2. **E2E smoke** (when UI changes land): `pnpm ci:e2e`.
+3. **Desktop packaging** (release candidates): `pnpm ci:desktop`.
+4. **Regression spot-checks**: Open Review Queue and verify overlays + shortcuts.
+
 ### Pipeline Evaluation
 
 ```bash
