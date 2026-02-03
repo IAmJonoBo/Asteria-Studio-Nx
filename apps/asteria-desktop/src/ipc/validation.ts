@@ -1,3 +1,4 @@
+import path from "node:path";
 import type { PageLayoutSidecar, PipelineRunConfig } from "./contracts.js";
 
 const isNonEmptyString = (value: unknown): value is string =>
@@ -42,6 +43,20 @@ const isJsonSafe = (value: unknown, depth = 0): boolean => {
 export const validateRunId = (runId: string): void => {
   if (!isNonEmptyString(runId)) {
     throw new Error("Invalid run id: expected non-empty string");
+  }
+};
+
+export const validateRunDir = (runDir: string, runId?: string): void => {
+  if (!isNonEmptyString(runDir)) {
+    throw new Error("Invalid run directory: expected non-empty string");
+  }
+  const normalized = path.resolve(runDir);
+  const parts = normalized.split(path.sep).filter(Boolean);
+  if (parts.length < 2 || parts[parts.length - 2] !== "runs") {
+    throw new Error("Invalid run directory: expected path ending in /runs/<runId>");
+  }
+  if (runId && path.basename(normalized) !== runId) {
+    throw new Error("Invalid run directory: runId mismatch");
   }
 };
 

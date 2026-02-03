@@ -24,6 +24,7 @@ interface ReviewPage {
 
 interface ReviewQueueScreenProps {
   runId?: string;
+  runDir?: string;
 }
 
 type DecisionValue = "accept" | "flag" | "reject";
@@ -504,21 +505,21 @@ const getReasonInfo = (code: string): ReasonInfo => {
 const ITEM_HEIGHT = 86;
 const OVERSCAN = 6;
 
-const useReviewQueuePages = (runId?: string): ReviewPage[] => {
+const useReviewQueuePages = (runId?: string, runDir?: string): ReviewPage[] => {
   const [pages, setPages] = useState<ReviewPage[]>([]);
 
   useEffect((): void | (() => void) => {
     let cancelled = false;
     const loadQueue = async (): Promise<void> => {
       const windowRef: typeof globalThis & {
-        asteria?: { ipc?: { [key: string]: (runId: string) => Promise<ReviewQueue> } };
+        asteria?: { ipc?: { [key: string]: (runId: string, runDir: string) => Promise<ReviewQueue> } };
       } = globalThis;
-      if (!runId || !windowRef.asteria?.ipc) {
+      if (!runId || !runDir || !windowRef.asteria?.ipc) {
         if (!cancelled) setPages([]);
         return;
       }
       try {
-        const queue = await windowRef.asteria.ipc["asteria:fetch-review-queue"](runId);
+        const queue = await windowRef.asteria.ipc["asteria:fetch-review-queue"](runId, runDir);
         if (cancelled) return;
         setPages(mapReviewQueue(queue));
       } catch {
@@ -529,7 +530,7 @@ const useReviewQueuePages = (runId?: string): ReviewPage[] => {
     return () => {
       cancelled = true;
     };
-  }, [runId]);
+  }, [runDir, runId]);
 
   return pages;
 };
@@ -629,6 +630,7 @@ const useQueueViewport = (
 
 const useSidecarData = (
   runId: string | undefined,
+  runDir: string | undefined,
   currentPage: ReviewPage | undefined
 ): { sidecar: PageLayoutSidecar | null; sidecarError: string | null } => {
   const [sidecar, setSidecar] = useState<PageLayoutSidecar | null>(null);
@@ -645,11 +647,15 @@ const useSidecarData = (
       const windowRef: typeof globalThis & {
         asteria?: {
           ipc?: {
-            [key: string]: (runId: string, pageId: string) => Promise<PageLayoutSidecar | null>;
+            [key: string]: (
+              runId: string,
+              runDir: string,
+              pageId: string
+            ) => Promise<PageLayoutSidecar | null>;
           };
         };
       } = globalThis;
-      if (!runId || !windowRef.asteria?.ipc) {
+      if (!runId || !runDir || !windowRef.asteria?.ipc) {
         setSidecar(null);
         setSidecarError(null);
         return;
@@ -657,6 +663,7 @@ const useSidecarData = (
       try {
         const sidecarData = await windowRef.asteria.ipc["asteria:fetch-sidecar"](
           runId,
+          runDir,
           currentPage.id
         );
         if (cancelled) return;
@@ -673,7 +680,7 @@ const useSidecarData = (
     return () => {
       cancelled = true;
     };
-  }, [currentPage, runId]);
+  }, [currentPage, runDir, runId]);
 
   return { sidecar, sidecarError };
 };
@@ -1486,8 +1493,11 @@ const ReviewQueueLayout = ({
   );
 };
 
-export function ReviewQueueScreen({ runId }: Readonly<ReviewQueueScreenProps>): JSX.Element {
-  const pages = useReviewQueuePages(runId);
+export function ReviewQueueScreen({
+  runId,
+  runDir,
+}: Readonly<ReviewQueueScreenProps>): JSX.Element {
+  const pages = useReviewQueuePages(runId, runDir);
   const queuePages = useQueueWorker(pages);
   const { selectedIndex, setSelectedIndex } = useQueueSelection(queuePages);
   const { listRef, scrollTop, setScrollTop, viewportHeight } = useQueueViewport(selectedIndex);
@@ -1503,7 +1513,7 @@ export function ReviewQueueScreen({ runId }: Readonly<ReviewQueueScreenProps>): 
   const panOriginRef = useRef<{ x: number; y: number } | null>(null);
   const [isPanning, setIsPanning] = useState(false);
   const currentPage = queuePages[selectedIndex];
-  const { sidecar, sidecarError } = useSidecarData(runId, currentPage);
+  const { sidecar, sidecarError } = useSidecarData(runId, runDir, currentPage);
   const normalizedPreview = currentPage?.previews.normalized;
   const sourcePreview = currentPage?.previews.source;
   const [adjustmentMode, setAdjustmentMode] = useState<AdjustmentMode>(null);
@@ -1745,9 +1755,11 @@ export function ReviewQueueScreen({ runId }: Readonly<ReviewQueueScreenProps>): 
 
   const handleSubmitReview = async (): Promise<void> => {
     const windowRef: typeof globalThis & {
-      asteria?: { ipc?: { [key: string]: (runId: string, payload: unknown) => Promise<unknown> } };
+      asteria?: {
+        ipc?: { [key: string]: (runId: string, runDir: string, payload: unknown) => Promise<unknown> };
+      };
     } = globalThis;
-    if (!runId || !windowRef.asteria?.ipc || decisions.size === 0) return;
+    if (!runId || !runDir || !windowRef.asteria?.ipc || decisions.size === 0) return;
     setIsSubmitting(true);
     setSubmitError(null);
     try {
@@ -1755,7 +1767,7 @@ export function ReviewQueueScreen({ runId }: Readonly<ReviewQueueScreenProps>): 
         pageId,
         decision: decisionValue === "flag" ? "adjust" : decisionValue,
       }));
-      await windowRef.asteria.ipc["asteria:submit-review"](runId, payload);
+      await windowRef.asteria.ipc["asteria:submit-review"](runId, runDir, payload);
       setDecisions(new Map());
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to submit review";
@@ -1766,7 +1778,7 @@ export function ReviewQueueScreen({ runId }: Readonly<ReviewQueueScreenProps>): 
   };
 
   const handleApplyOverride = async (): Promise<void> => {
-    if (!runId || !currentPage) return;
+    if (!runId || !runDir || !currentPage) return;
     const overrides: Record<string, unknown> = {};
     const normalization: Record<string, unknown> = {};
     if (rotationDeg !== baselineRotationRef.current) {
@@ -1804,7 +1816,7 @@ export function ReviewQueueScreen({ runId }: Readonly<ReviewQueueScreenProps>): 
     setIsApplyingOverride(true);
     setOverrideError(null);
     try {
-      await windowRef.asteria.ipc["asteria:apply-override"](runId, currentPage.id, overrides);
+      await windowRef.asteria.ipc["asteria:apply-override"](runId, runDir, currentPage.id, overrides);
       setLastOverrideAppliedAt(new Date().toISOString());
       baselineBoxesRef.current = {
         crop: cropBox,
@@ -1935,7 +1947,7 @@ export function ReviewQueueScreen({ runId }: Readonly<ReviewQueueScreenProps>): 
     },
   ]);
 
-  if (!runId) {
+  if (!runId || !runDir) {
     return (
       <div className="empty-state">
         <div className="empty-state-icon" aria-hidden="true">

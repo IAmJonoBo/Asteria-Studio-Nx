@@ -4,12 +4,14 @@ import type { RunConfigSnapshot, RunSummary } from "../../ipc/contracts.js";
 
 interface RunsScreenProps {
   selectedRunId?: string;
-  onSelectRun: (runId: string) => void;
+  selectedRunDir?: string;
+  onSelectRun: (runId: string, runDir: string) => void;
   onOpenReviewQueue: () => void;
 }
 
 export function RunsScreen({
   selectedRunId,
+  selectedRunDir,
   onSelectRun,
   onOpenReviewQueue,
 }: Readonly<RunsScreenProps>): JSX.Element {
@@ -58,7 +60,7 @@ export function RunsScreen({
   useEffect((): void | (() => void) => {
     let cancelled = false;
     const loadRunConfig = async (): Promise<void> => {
-      if (!selectedRunId) {
+      if (!selectedRunId || !selectedRunDir) {
         setRunConfig(null);
         setRunConfigError(null);
         return;
@@ -72,9 +74,9 @@ export function RunsScreen({
       }
       try {
         const getRunConfig = windowRef.asteria.ipc["asteria:get-run-config"] as
-          | ((runId: string) => Promise<RunConfigSnapshot | null>)
+          | ((runId: string, runDir: string) => Promise<RunConfigSnapshot | null>)
           | undefined;
-        const snapshot = getRunConfig ? await getRunConfig(selectedRunId) : null;
+        const snapshot = getRunConfig ? await getRunConfig(selectedRunId, selectedRunDir) : null;
         if (!cancelled) {
           setRunConfig(snapshot);
           setRunConfigError(null);
@@ -90,7 +92,7 @@ export function RunsScreen({
     return () => {
       cancelled = true;
     };
-  }, [selectedRunId]);
+  }, [selectedRunDir, selectedRunId]);
 
   if (isLoading) {
     return (
@@ -205,7 +207,7 @@ export function RunsScreen({
               <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
                 <button
                   className="btn btn-secondary btn-sm"
-                  onClick={() => onSelectRun(run.runId)}
+                  onClick={() => onSelectRun(run.runId, run.runDir)}
                   aria-pressed={run.runId === selectedRunId}
                 >
                   {run.runId === selectedRunId ? "Selected" : "Select"}
@@ -213,7 +215,7 @@ export function RunsScreen({
                 <button
                   className="btn btn-primary btn-sm"
                   onClick={() => {
-                    onSelectRun(run.runId);
+                    onSelectRun(run.runId, run.runDir);
                     onOpenReviewQueue();
                   }}
                 >
