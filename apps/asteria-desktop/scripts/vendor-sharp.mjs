@@ -14,9 +14,20 @@ const platformKey = `${platform}-${arch}`;
 const sharpPkg = `sharp-${platformKey}`;
 const libvipsPkg = `sharp-libvips-${platformKey}`;
 
+const resolveDir = async (target) => {
+  try {
+    const real = await fs.realpath(target);
+    return real;
+  } catch {
+    return target;
+  }
+};
+
 const copyDir = async (src, dest) => {
+  await fs.rm(dest, { recursive: true, force: true });
   await fs.mkdir(dest, { recursive: true });
-  await fs.cp(src, dest, { recursive: true });
+  const resolved = await resolveDir(src);
+  await fs.cp(resolved, dest, { recursive: true });
 };
 
 const exists = async (target) => {
