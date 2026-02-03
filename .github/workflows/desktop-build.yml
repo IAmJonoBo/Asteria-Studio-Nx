@@ -37,6 +37,9 @@ jobs:
         env:
           NODE_ENV: production
 
+      - name: Verify build artefacts
+        run: pnpm -C apps/asteria-desktop run build:verify
+
       - name: Package desktop app
         run: pnpm -C apps/asteria-desktop run package
         env:
