@@ -1112,25 +1112,45 @@ const buildOverlaySvg = ({
                 </filter>
               </defs>
               {isVertical ? (
-                <line
-                  x1={scaledValue}
-                  x2={scaledValue}
-                  y1={0}
-                  y2={normalizedPreview.height}
-                  stroke="rgba(250, 204, 21, 0.9)"
-                  strokeWidth={2}
-                  filter={`url(#${glowId})`}
-                />
+                <>
+                  <line
+                    x1={scaledValue}
+                    x2={scaledValue}
+                    y1={0}
+                    y2={normalizedPreview.height}
+                    stroke="var(--snap-glow)"
+                    strokeWidth={6}
+                    filter={`url(#${glowId})`}
+                  />
+                  <line
+                    x1={scaledValue}
+                    x2={scaledValue}
+                    y1={0}
+                    y2={normalizedPreview.height}
+                    stroke="var(--snap-line)"
+                    strokeWidth={2}
+                  />
+                </>
               ) : (
-                <line
-                  x1={0}
-                  x2={normalizedPreview.width}
-                  y1={scaledValue}
-                  y2={scaledValue}
-                  stroke="rgba(250, 204, 21, 0.9)"
-                  strokeWidth={2}
-                  filter={`url(#${glowId})`}
-                />
+                <>
+                  <line
+                    x1={0}
+                    x2={normalizedPreview.width}
+                    y1={scaledValue}
+                    y2={scaledValue}
+                    stroke="var(--snap-glow)"
+                    strokeWidth={6}
+                    filter={`url(#${glowId})`}
+                  />
+                  <line
+                    x1={0}
+                    x2={normalizedPreview.width}
+                    y1={scaledValue}
+                    y2={scaledValue}
+                    stroke="var(--snap-line)"
+                    strokeWidth={2}
+                  />
+                </>
               )}
             </g>
           );

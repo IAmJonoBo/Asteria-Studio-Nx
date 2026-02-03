@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { PipelineConfig } from "../../ipc/contracts.js";
-import { getGuideLod } from "./registry.js";
+import { getGuideLod, guidePaletteByGroup } from "./registry.js";
 
 describe("guide registry LOD thresholds", () => {
   it("responds to guide LOD config changes", () => {
@@ -19,6 +19,16 @@ describe("guide registry LOD thresholds", () => {
     expect(getGuideLod(zoom, strictConfig)).toEqual({
       showMinorGuides: false,
       labelVisibility: "none",
+    });
+  });
+});
+
+describe("guide registry tokens", () => {
+  it("maps guide categories to the spec-defined palette tokens", () => {
+    expect(guidePaletteByGroup).toEqual({
+      structural: "var(--guide-passive)",
+      detected: "var(--guide-major)",
+      diagnostic: "var(--guide-hover)",
     });
   });
 });
