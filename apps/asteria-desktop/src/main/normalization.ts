@@ -3,7 +3,7 @@ import path from "node:path";
 import sharp from "sharp";
 import type { BookModel, CorpusSummary, PageBoundsEstimate, PageData } from "../ipc/contracts.js";
 import { getPipelineCoreNative, type PipelineCoreNative } from "./pipeline-core-native.js";
-import { getNormalizedDir, getPreviewDir } from "./run-paths.js";
+import { getRunNormalizedPath, getRunPreviewPath } from "./run-paths.js";
 
 const MAX_PREVIEW_DIM = 1600;
 const DEFAULT_PADDING_PX = 12;
@@ -1175,7 +1175,7 @@ export async function normalizePage(
   page: PageData,
   estimate: PageBoundsEstimate,
   analysis: CorpusSummary,
-  outputDir: string,
+  runDir: string,
   options?: NormalizationOptions
 ): Promise<NormalizationResult> {
   const priors: NormalizationPriors = options?.priors ?? {
@@ -1374,9 +1374,8 @@ export async function normalizePage(
   const cropWidth = expanded[2] - expanded[0] + 1;
   const cropHeight = expanded[3] - expanded[1] + 1;
 
-  const normalizedDir = getNormalizedDir(outputDir);
-  await fs.mkdir(normalizedDir, { recursive: true });
-  const normalizedPath = path.join(normalizedDir, `${page.id}.png`);
+  const normalizedPath = getRunNormalizedPath(runDir, page.id);
+  await fs.mkdir(path.dirname(normalizedPath), { recursive: true });
 
   const morphologyPlan = buildMorphologyPlan(
     { backgroundStd: borderStats.std, maskCoverage: intensityMask.coverage },
@@ -1400,10 +1399,9 @@ export async function normalizePage(
 
   const previews: NormalizationResult["previews"] = {};
   if (options?.generatePreviews) {
-    const previewDir = getPreviewDir(outputDir);
-    await fs.mkdir(previewDir, { recursive: true });
-    const sourcePreviewPath = path.join(previewDir, `${page.id}-source.png`);
-    const normalizedPreviewPath = path.join(previewDir, `${page.id}-normalized.png`);
+    const sourcePreviewPath = getRunPreviewPath(runDir, page.id, "source");
+    const normalizedPreviewPath = getRunPreviewPath(runDir, page.id, "normalized");
+    await fs.mkdir(path.dirname(sourcePreviewPath), { recursive: true });
     const sourcePreview = await writePreview(sharp(page.originalPath), sourcePreviewPath);
     const normalizedPreview = await writePreview(sharp(normalizedPath), normalizedPreviewPath);
     previews.source = sourcePreview;
@@ -1460,7 +1458,7 @@ export async function normalizePage(
 export async function normalizePages(
   pages: PageData[],
   analysis: CorpusSummary,
-  outputDir: string,
+  runDir: string,
   options?: NormalizationOptions
 ): Promise<Map<string, NormalizationResult>> {
   const estimateById = new Map(analysis.estimates.map((e) => [e.pageId, e]));
@@ -1470,7 +1468,7 @@ export async function normalizePages(
     pages.map(async (page) => {
       const estimate = estimateById.get(page.id);
       if (!estimate) return;
-      const normalized = await normalizePage(page, estimate, analysis, outputDir, options);
+      const normalized = await normalizePage(page, estimate, analysis, runDir, options);
       results.set(page.id, normalized);
     })
   );

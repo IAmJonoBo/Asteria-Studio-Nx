@@ -4,6 +4,7 @@ import os from "node:os";
 import fs from "node:fs/promises";
 import type { CorpusSummary, PageBoundsEstimate, PageData } from "../ipc/contracts.js";
 import { normalizePage, normalizePages } from "./normalization.js";
+import { getRunDir } from "./run-paths.js";
 
 type MockMode = "center" | "shadow-left" | "low-coverage" | "noisy" | "high-coverage" | "shaded";
 
@@ -190,6 +191,14 @@ const buildPage = (): PageData => ({
   confidenceScores: {},
 });
 
+const makeRunDir = async (
+  prefix: string,
+  runId = "run-1"
+): Promise<{ outputDir: string; runDir: string }> => {
+  const outputDir = await fs.mkdtemp(path.join(os.tmpdir(), prefix));
+  return { outputDir, runDir: getRunDir(outputDir, runId) };
+};
+
 describe("normalization", () => {
   it("normalizes a page with previews and corrections", async () => {
     mockState.width = 64;
@@ -206,20 +215,22 @@ describe("normalization", () => {
       contentBounds: [4, 4, 60, 60],
     };
     const analysis = buildAnalysis(estimate);
-    const outputDir = await fs.mkdtemp(path.join(os.tmpdir(), "asteria-normalize-"));
+    const { outputDir, runDir } = await makeRunDir("asteria-normalize-", "run-normalize");
 
-    const result = await normalizePage(buildPage(), estimate, analysis, outputDir, {
+    const result = await normalizePage(buildPage(), estimate, analysis, runDir, {
       generatePreviews: true,
     });
 
-    expect(result.normalizedPath).toContain("normalized");
-    expect(result.previews?.source?.path).toContain("previews");
-    expect(result.previews?.normalized?.path).toContain("previews");
+    expect(result.normalizedPath).toContain(path.join(runDir, "normalized"));
+    expect(result.previews?.source?.path).toContain(path.join(runDir, "previews"));
+    expect(result.previews?.normalized?.path).toContain(path.join(runDir, "previews"));
     expect(result.corrections?.alignment?.applied).toBe(true);
     expect(result.corrections?.morphology?.reason.length).toBeGreaterThan(0);
     expect(result.corrections?.baseline?.lineConsistency).toBeGreaterThan(0);
     expect(result.corrections?.columns?.columnCount).toBeGreaterThan(0);
     expect(result.stats.maskCoverage).toBeGreaterThan(0);
+    await expect(fs.stat(path.join(outputDir, "normalized"))).rejects.toThrow();
+    await expect(fs.stat(path.join(outputDir, "previews"))).rejects.toThrow();
   });
 
   it("uses metadata density when available", async () => {
@@ -237,9 +248,9 @@ describe("normalization", () => {
       contentBounds: [4, 4, 206, 293],
     };
     const analysis = buildAnalysis(estimate);
-    const outputDir = await fs.mkdtemp(path.join(os.tmpdir(), "asteria-meta-"));
+    const { runDir } = await makeRunDir("asteria-meta-", "run-meta");
 
-    const result = await normalizePage(buildPage(), estimate, analysis, outputDir, {
+    const result = await normalizePage(buildPage(), estimate, analysis, runDir, {
       generatePreviews: false,
     });
 
@@ -261,9 +272,9 @@ describe("normalization", () => {
       contentBounds: [4, 4, 60, 60],
     };
     const analysis = buildAnalysis(estimate);
-    const outputDir = await fs.mkdtemp(path.join(os.tmpdir(), "asteria-meta-drift-"));
+    const { runDir } = await makeRunDir("asteria-meta-drift-", "run-meta-drift");
 
-    const result = await normalizePage(buildPage(), estimate, analysis, outputDir, {
+    const result = await normalizePage(buildPage(), estimate, analysis, runDir, {
       generatePreviews: false,
     });
 
@@ -285,9 +296,9 @@ describe("normalization", () => {
       contentBounds: [6, 6, 90, 90],
     };
     const analysis = buildAnalysis(estimate);
-    const outputDir = await fs.mkdtemp(path.join(os.tmpdir(), "asteria-shaded-"));
+    const { runDir } = await makeRunDir("asteria-shaded-", "run-shaded");
 
-    const result = await normalizePage(buildPage(), estimate, analysis, outputDir, {
+    const result = await normalizePage(buildPage(), estimate, analysis, runDir, {
       shading: { enabled: true },
     });
 
@@ -310,9 +321,9 @@ describe("normalization", () => {
       contentBounds: [4, 4, 76, 76],
     };
     const analysis = buildAnalysis(estimate);
-    const outputDir = await fs.mkdtemp(path.join(os.tmpdir(), "asteria-shadow-"));
+    const { runDir } = await makeRunDir("asteria-shadow-", "run-shadow");
 
-    const result = await normalizePage(buildPage(), estimate, analysis, outputDir, {
+    const result = await normalizePage(buildPage(), estimate, analysis, runDir, {
       shading: { enabled: true },
     });
 
@@ -334,13 +345,13 @@ describe("normalization", () => {
       contentBounds: [4, 4, 60, 60],
     };
     const analysis = buildAnalysis(estimate);
-    const outputDirA = await fs.mkdtemp(path.join(os.tmpdir(), "asteria-stable-a-"));
-    const outputDirB = await fs.mkdtemp(path.join(os.tmpdir(), "asteria-stable-b-"));
+    const { runDir: runDirA } = await makeRunDir("asteria-stable-a-", "run-stable-a");
+    const { runDir: runDirB } = await makeRunDir("asteria-stable-b-", "run-stable-b");
 
-    const enabled = await normalizePage(buildPage(), estimate, analysis, outputDirA, {
+    const enabled = await normalizePage(buildPage(), estimate, analysis, runDirA, {
       shading: { enabled: true },
     });
-    const disabled = await normalizePage(buildPage(), estimate, analysis, outputDirB, {
+    const disabled = await normalizePage(buildPage(), estimate, analysis, runDirB, {
       shading: { enabled: false },
     });
 
@@ -363,9 +374,9 @@ describe("normalization", () => {
       contentBounds: [4, 4, 60, 60],
     };
     const analysis = buildAnalysis(estimate);
-    const outputDir = await fs.mkdtemp(path.join(os.tmpdir(), "asteria-book-"));
+    const { runDir } = await makeRunDir("asteria-book-", "run-book");
 
-    const result = await normalizePage(buildPage(), estimate, analysis, outputDir, {
+    const result = await normalizePage(buildPage(), estimate, analysis, runDir, {
       bookPriors: {
         model: {
           trimBoxPx: { median: [2, 2, 62, 62], dispersion: [1, 1, 1, 1] },
@@ -393,9 +404,9 @@ describe("normalization", () => {
     };
     const analysis = buildAnalysis(estimate);
     analysis.targetDimensionsPx = { width: 210, height: 297 };
-    const outputDir = await fs.mkdtemp(path.join(os.tmpdir(), "asteria-infer-"));
+    const { runDir } = await makeRunDir("asteria-infer-", "run-infer");
 
-    const result = await normalizePage(buildPage(), estimate, analysis, outputDir, {
+    const result = await normalizePage(buildPage(), estimate, analysis, runDir, {
       generatePreviews: false,
     });
 
@@ -417,9 +428,9 @@ describe("normalization", () => {
       contentBounds: [4, 4, 60, 60],
     };
     const analysis = buildAnalysis(estimate);
-    const outputDir = await fs.mkdtemp(path.join(os.tmpdir(), "asteria-fallback-"));
+    const { runDir } = await makeRunDir("asteria-fallback-", "run-fallback");
 
-    const result = await normalizePage(buildPage(), estimate, analysis, outputDir, {
+    const result = await normalizePage(buildPage(), estimate, analysis, runDir, {
       generatePreviews: false,
     });
 
@@ -444,9 +455,9 @@ describe("normalization", () => {
       contentBounds: [4, 4, 60, 60],
     };
     const analysis = buildAnalysis(estimate);
-    const outputDir = await fs.mkdtemp(path.join(os.tmpdir(), "asteria-align-"));
+    const { runDir } = await makeRunDir("asteria-align-", "run-align");
 
-    const result = await normalizePage(buildPage(), estimate, analysis, outputDir, {
+    const result = await normalizePage(buildPage(), estimate, analysis, runDir, {
       priors: {
         targetAspectRatio: 2,
         medianBleedPx: 6,
@@ -478,9 +489,9 @@ describe("normalization", () => {
       contentBounds: [4, 4, 60, 60],
     };
     const analysis = buildAnalysis(estimate);
-    const outputDir = await fs.mkdtemp(path.join(os.tmpdir(), "asteria-wide-"));
+    const { runDir } = await makeRunDir("asteria-wide-", "run-wide");
 
-    const result = await normalizePage(buildPage(), estimate, analysis, outputDir, {
+    const result = await normalizePage(buildPage(), estimate, analysis, runDir, {
       priors: {
         targetAspectRatio: 1.4,
         medianBleedPx: 6,
@@ -512,9 +523,9 @@ describe("normalization", () => {
       contentBounds: [4, 4, 60, 60],
     };
     const analysis = buildAnalysis(estimate);
-    const outputDir = await fs.mkdtemp(path.join(os.tmpdir(), "asteria-tall-"));
+    const { runDir } = await makeRunDir("asteria-tall-", "run-tall");
 
-    const result = await normalizePage(buildPage(), estimate, analysis, outputDir, {
+    const result = await normalizePage(buildPage(), estimate, analysis, runDir, {
       priors: {
         targetAspectRatio: 0.6,
         medianBleedPx: 6,
@@ -546,9 +557,9 @@ describe("normalization", () => {
       contentBounds: [4, 4, 60, 60],
     };
     const analysis = buildAnalysis(estimate);
-    const outputDir = await fs.mkdtemp(path.join(os.tmpdir(), "asteria-shadow-"));
+    const { runDir } = await makeRunDir("asteria-shadow-", "run-shadow-extra");
 
-    const result = await normalizePage(buildPage(), estimate, analysis, outputDir, {
+    const result = await normalizePage(buildPage(), estimate, analysis, runDir, {
       generatePreviews: false,
     });
 
@@ -571,9 +582,9 @@ describe("normalization", () => {
       contentBounds: [4, 4, 60, 60],
     };
     const analysis = buildAnalysis(estimate);
-    const outputDir = await fs.mkdtemp(path.join(os.tmpdir(), "asteria-refine-"));
+    const { runDir } = await makeRunDir("asteria-refine-", "run-refine");
 
-    const result = await normalizePage(buildPage(), estimate, analysis, outputDir, {
+    const result = await normalizePage(buildPage(), estimate, analysis, runDir, {
       generatePreviews: false,
       skewRefinement: "forced",
     });
@@ -592,10 +603,10 @@ describe("normalization", () => {
       contentBounds: [4, 4, 60, 60],
     };
     const analysis = buildAnalysis(estimate);
-    const outputDir = await fs.mkdtemp(path.join(os.tmpdir(), "asteria-normalize-many-"));
+    const { runDir } = await makeRunDir("asteria-normalize-many-", "run-many");
 
     const pages = [buildPage()];
-    const results = await normalizePages(pages, analysis, outputDir, { generatePreviews: false });
+    const results = await normalizePages(pages, analysis, runDir, { generatePreviews: false });
 
     expect(results.size).toBe(1);
     expect(results.get("page-1")).toBeDefined();

@@ -1086,7 +1086,7 @@ const deriveBookModel = async (
 type NormalizeConcurrentParams = {
   pages: PageData[];
   analysis: CorpusSummary;
-  outputDir: string;
+  runDir: string;
   options: NormalizationOptions;
   concurrency: number;
   onError: (pageId: string, message: string) => void;
@@ -1098,7 +1098,7 @@ type NormalizeConcurrentParams = {
 const normalizePagesConcurrent = async (
   params: NormalizeConcurrentParams
 ): Promise<Map<string, NormalizationResult>> => {
-  const { pages, analysis, outputDir, options, concurrency, onError, control, onProgress } = params;
+  const { pages, analysis, runDir, options, concurrency, onError, control, onProgress } = params;
   const results = new Map<string, NormalizationResult>();
   const estimateById = new Map(analysis.estimates.map((e) => [e.pageId, e]));
   const queue = pages.slice();
@@ -1117,7 +1117,7 @@ const normalizePagesConcurrent = async (
       const estimate = estimateById.get(page.id);
       if (!estimate) continue;
       try {
-        const normalized = await normalizePage(page, estimate, analysis, outputDir, options);
+        const normalized = await normalizePage(page, estimate, analysis, runDir, options);
         if (!normalized) {
           onError(page.id, "Normalization returned no result");
           continue;
@@ -2123,7 +2123,7 @@ const buildBookModelIfEnabled = async (params: {
     const sampleResults = await normalizePagesConcurrent({
       pages: samplePages,
       analysis: params.analysisSummary,
-      outputDir: sampleDir,
+      runDir: sampleDir,
       options: {
         priors: params.priors,
         generatePreviews: false,
@@ -2539,7 +2539,7 @@ const applySecondPassCorrections = async (params: {
   const secondPassResults = await normalizePagesConcurrent({
     pages: params.secondPassCandidates,
     analysis: params.analysisSummary,
-    outputDir: params.runDir,
+    runDir: params.runDir,
     options: secondPassOptions,
     concurrency: Math.max(1, Math.floor(params.concurrency / 2)),
     onError: (pageId, message) => {
@@ -2763,7 +2763,7 @@ export async function runPipeline(options: PipelineRunnerOptions): Promise<Pipel
     normalizationResults = await normalizePagesConcurrent({
       pages: configToProcess.pages,
       analysis: analysisSummary,
-      outputDir: runDir,
+      runDir,
       options: normalizationOptions,
       concurrency,
       onError: (pageId, message) => {

@@ -4,6 +4,7 @@ import type { PipelineRunnerResult } from "./pipeline-runner.js";
 import type { NormalizationResult } from "./normalization.js";
 import type { PageData } from "../ipc/contracts.js";
 import { runPipeline, evaluateResults } from "./pipeline-runner.js";
+import { normalizePage } from "./normalization.js";
 import { getRunDir, getRunManifestPath } from "./run-paths.js";
 import fs from "node:fs/promises";
 import os from "node:os";
@@ -222,6 +223,8 @@ describe("Pipeline Runner", () => {
 
   it("runPipeline writes reports and sidecars when outputDir is set", async () => {
     const outputDir = await fs.mkdtemp(path.join(os.tmpdir(), "asteria-output-"));
+    const normalizeMock = vi.mocked(normalizePage);
+    const callCountBefore = normalizeMock.mock.calls.length;
     const result = await runPipeline({
       projectRoot,
       projectId: "test-output",
@@ -231,6 +234,11 @@ describe("Pipeline Runner", () => {
 
     expect(result.success).toBe(true);
     const runDir = getRunDir(outputDir, result.runId);
+    const normalizeCalls = normalizeMock.mock.calls.slice(callCountBefore).map((call) => call[3]);
+    expect(normalizeCalls.length).toBeGreaterThan(0);
+    normalizeCalls.forEach((callRunDir) => {
+      expect(callRunDir.startsWith(runDir)).toBe(true);
+    });
     const files = await fs.readdir(runDir);
     expect(files).toContain("report.json");
     expect(files).toContain("review-queue.json");
@@ -241,6 +249,34 @@ describe("Pipeline Runner", () => {
     const sidecarDir = path.join(runDir, "sidecars");
     const sidecars = await fs.readdir(sidecarDir);
     expect(sidecars.length).toBeGreaterThan(0);
+    await expect(fs.stat(path.join(outputDir, "normalized"))).rejects.toThrow();
+    await expect(fs.stat(path.join(outputDir, "previews"))).rejects.toThrow();
+  }, 20000);
+
+  it("runPipeline keeps artifacts run-scoped across multiple runs", async () => {
+    const outputDir = await fs.mkdtemp(path.join(os.tmpdir(), "asteria-multi-run-"));
+    const resultA = await runPipeline({
+      projectRoot,
+      projectId: "multi-run-a",
+      sampleCount: 2,
+      outputDir,
+    });
+    const resultB = await runPipeline({
+      projectRoot,
+      projectId: "multi-run-b",
+      sampleCount: 2,
+      outputDir,
+    });
+
+    expect(resultA.success).toBe(true);
+    expect(resultB.success).toBe(true);
+    const runDirA = getRunDir(outputDir, resultA.runId);
+    const runDirB = getRunDir(outputDir, resultB.runId);
+    expect(runDirA).not.toEqual(runDirB);
+    await expect(fs.stat(path.join(outputDir, "normalized"))).rejects.toThrow();
+    await expect(fs.stat(path.join(outputDir, "previews"))).rejects.toThrow();
+    await expect(fs.stat(path.join(runDirA, "manifest.json"))).resolves.toBeTruthy();
+    await expect(fs.stat(path.join(runDirB, "manifest.json"))).resolves.toBeTruthy();
   }, 20000);
 
   it("cancels mid-run and writes parseable report + manifest", async () => {
