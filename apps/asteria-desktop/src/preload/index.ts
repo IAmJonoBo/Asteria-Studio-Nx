@@ -58,6 +58,12 @@ const api: IpcChannels = {
     return safeInvoke("asteria:import-corpus", request);
   },
   "asteria:list-runs": async () => safeInvoke("asteria:list-runs"),
+  "asteria:get-run-manifest": async (
+    runId: Parameters<IpcChannels["asteria:get-run-manifest"]>[0]
+  ) => {
+    validateRunId(runId);
+    return safeInvoke("asteria:get-run-manifest", runId);
+  },
   "asteria:get-pipeline-config": async (
     projectId?: Parameters<IpcChannels["asteria:get-pipeline-config"]>[0]
   ) => safeInvoke("asteria:get-pipeline-config", projectId),

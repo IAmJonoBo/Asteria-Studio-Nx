@@ -10,6 +10,7 @@ import type {
   PipelineConfigOverrides,
   PipelineConfigSnapshot,
   RunConfigSnapshot,
+  RunManifestSummary,
   ProjectSummary,
   ImportCorpusRequest,
 } from "../ipc/contracts.js";
@@ -351,6 +352,29 @@ export function registerIpcHandlers(): void {
         const raw = await fs.readFile(reportPath, "utf-8");
         const report = JSON.parse(raw) as { configSnapshot?: RunConfigSnapshot };
         return report.configSnapshot ?? null;
+      } catch {
+        return null;
+      }
+    }
+  );
+
+  ipcMain.handle(
+    "asteria:get-run-manifest",
+    async (_event: IpcMainInvokeEvent, runId: string): Promise<RunManifestSummary | null> => {
+      validateRunId(runId);
+      const outputDir = resolveOutputDir();
+      const runDir = await resolveRunDir(outputDir, runId);
+      const manifestPath = getRunManifestPath(runDir);
+      try {
+        const raw = await fs.readFile(manifestPath, "utf-8");
+        const manifest = JSON.parse(raw) as RunManifestSummary;
+        return {
+          runId: manifest.runId ?? runId,
+          status: manifest.status ?? "unknown",
+          exportedAt: manifest.exportedAt ?? "",
+          sourceRoot: manifest.sourceRoot ?? "",
+          count: typeof manifest.count === "number" ? manifest.count : 0,
+        };
       } catch {
         return null;
       }

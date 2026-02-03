@@ -381,6 +381,14 @@ export interface RunConfigSnapshot {
   sources: PipelineConfigSources;
 }
 
+export interface RunManifestSummary {
+  runId: string;
+  status: string;
+  exportedAt: string;
+  sourceRoot: string;
+  count: number;
+}
+
 export interface IpcChannels {
   "asteria:start-run": (_config: PipelineRunConfig) => Promise<PipelineRunResult>;
   "asteria:cancel-run": (_runId: string) => Promise<void>;
@@ -405,6 +413,7 @@ export interface IpcChannels {
   "asteria:list-projects": () => Promise<ProjectSummary[]>;
   "asteria:import-corpus": (_request: ImportCorpusRequest) => Promise<ProjectSummary>;
   "asteria:list-runs": () => Promise<RunSummary[]>;
+  "asteria:get-run-manifest": (_runId: string) => Promise<RunManifestSummary | null>;
   "asteria:get-pipeline-config": (_projectId?: string) => Promise<PipelineConfigSnapshot>;
   "asteria:save-project-config": (
     _projectId: string,
