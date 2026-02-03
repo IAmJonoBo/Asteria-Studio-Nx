@@ -94,9 +94,29 @@ const guideDashTokensByLayer: Record<string, { major: string; minor: string }> =
     major: "var(--guide-dash-solid)",
     minor: "var(--guide-dash-solid)",
   },
+  rulers: {
+    major: "var(--guide-dash-solid)",
+    minor: "var(--guide-dash-solid)",
+  },
   "margin-guides": {
     major: "var(--guide-dash-dashed)",
     minor: "var(--guide-dash-dashed)",
+  },
+  "column-guides": {
+    major: "var(--guide-dash-dashed)",
+    minor: "var(--guide-dash-dashed)",
+  },
+  "gutter-bands": {
+    major: "var(--guide-dash-gutter)",
+    minor: "var(--guide-dash-gutter)",
+  },
+  "header-footer-bands": {
+    major: "var(--guide-dash-dashed)",
+    minor: "var(--guide-dash-dotted)",
+  },
+  "ornament-anchors": {
+    major: "var(--guide-dash-dotted)",
+    minor: "var(--guide-dash-dotted)",
   },
   "detected-guides": {
     major: "var(--guide-dash-dashed)",
@@ -227,8 +247,48 @@ export const guideLayerRegistry: GuideLayerDefinition[] = [
     editableFn: defaultEditable,
   },
   {
+    id: "rulers",
+    group: "structural",
+    defaultVisible: true,
+    renderFn: renderLinearGuideLayer,
+    hitTestFn: defaultHitTest,
+    editableFn: defaultEditable,
+  },
+  {
     id: "margin-guides",
     group: "structural",
+    defaultVisible: true,
+    renderFn: renderLinearGuideLayer,
+    hitTestFn: defaultHitTest,
+    editableFn: defaultEditable,
+  },
+  {
+    id: "column-guides",
+    group: "structural",
+    defaultVisible: true,
+    renderFn: renderLinearGuideLayer,
+    hitTestFn: defaultHitTest,
+    editableFn: defaultEditable,
+  },
+  {
+    id: "gutter-bands",
+    group: "detected",
+    defaultVisible: true,
+    renderFn: renderLinearGuideLayer,
+    hitTestFn: defaultHitTest,
+    editableFn: defaultEditable,
+  },
+  {
+    id: "header-footer-bands",
+    group: "detected",
+    defaultVisible: true,
+    renderFn: renderLinearGuideLayer,
+    hitTestFn: defaultHitTest,
+    editableFn: defaultEditable,
+  },
+  {
+    id: "ornament-anchors",
+    group: "detected",
     defaultVisible: true,
     renderFn: renderLinearGuideLayer,
     hitTestFn: defaultHitTest,

@@ -2,7 +2,7 @@ import type { JSX, KeyboardEvent, MouseEvent, WheelEvent, RefObject, PointerEven
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { useKeyboardShortcuts } from "../hooks/useKeyboardShortcut.js";
 import type { LayoutProfile, ReviewQueue, PageLayoutSidecar } from "../../ipc/contracts.js";
-import { renderGuideLayers } from "../guides/registry.js";
+import { getDefaultGuideLayerVisibility, renderGuideLayers } from "../guides/registry.js";
 import { snapBoxWithSources, getBoxSnapCandidates } from "../utils/snapping.js";
 import type { SnapEdge } from "../utils/snapping.js";
 
@@ -1176,6 +1176,7 @@ const buildOverlaySvg = ({
         zoom,
         canvasWidth: normalizedPreview.width,
         canvasHeight: normalizedPreview.height,
+        visibleLayers: guideLayerVisibility,
       })}
       {overlayLayers.cropBox && cropBox && (
         <rect
@@ -2231,6 +2232,7 @@ export function ReviewQueueScreen({
     folios: true,
     ornaments: true,
   });
+  const guideLayerVisibility = useMemo(() => getDefaultGuideLayerVisibility(), []);
   const snapSources = useMemo(() => {
     const templateCandidates = [
       ...(sidecar?.bookModel?.runningHeadTemplates?.flatMap((template) =>
