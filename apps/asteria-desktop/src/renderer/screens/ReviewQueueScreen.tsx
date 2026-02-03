@@ -8,7 +8,12 @@ import type {
 } from "react";
 import { useState, useEffect, useRef, useMemo } from "react";
 import { useKeyboardShortcuts } from "../hooks/useKeyboardShortcut.js";
-import type { LayoutProfile, ReviewQueue, PageLayoutSidecar } from "../../ipc/contracts.js";
+import type {
+  LayoutProfile,
+  ReviewQueue,
+  PageLayoutSidecar,
+  RunConfigSnapshot,
+} from "../../ipc/contracts.js";
 import { renderGuideLayers } from "../guides/registry.js";
 import { snapBoxWithSources, getBoxSnapCandidates } from "../utils/snapping.js";
 import type { SnapEdge } from "../utils/snapping.js";
@@ -1127,6 +1132,7 @@ const buildOverlaySvg = ({
         zoom,
         canvasWidth: normalizedPreview.width,
         canvasHeight: normalizedPreview.height,
+        config: runConfig?.resolvedConfig,
       })}
       {overlayLayers.cropBox && cropBox && (
         <rect
@@ -2173,6 +2179,7 @@ export function ReviewQueueScreen({
     active: false,
     tooltip: null,
   });
+  const [runConfig, setRunConfig] = useState<RunConfigSnapshot | null>(null);
   const [isDraggingHandle, setIsDraggingHandle] = useState(false);
   const [snapTemporarilyDisabled, setSnapTemporarilyDisabled] = useState(false);
   const dragHandleRef = useRef<{
@@ -2352,6 +2359,39 @@ export function ReviewQueueScreen({
     setRotationDeg(baselineRotationRef.current);
     setAdjustmentMode(null);
   };
+
+  useEffect((): void | (() => void) => {
+    let cancelled = false;
+    const loadRunConfig = async (): Promise<void> => {
+      if (!runId || !runDir) {
+        setRunConfig(null);
+        return;
+      }
+      const windowRef: typeof globalThis & { asteria?: { ipc?: Record<string, unknown> } } =
+        globalThis;
+      if (!windowRef.asteria?.ipc) {
+        setRunConfig(null);
+        return;
+      }
+      try {
+        const getRunConfig = windowRef.asteria.ipc["asteria:get-run-config"] as
+          | ((id: string, dir: string) => Promise<RunConfigSnapshot | null>)
+          | undefined;
+        const snapshot = getRunConfig ? await getRunConfig(runId, runDir) : null;
+        if (!cancelled) {
+          setRunConfig(snapshot);
+        }
+      } catch {
+        if (!cancelled) {
+          setRunConfig(null);
+        }
+      }
+    };
+    void loadRunConfig();
+    return () => {
+      cancelled = true;
+    };
+  }, [runDir, runId]);
 
   useEffect(() => {
     const handleKeyChange = (event: globalThis.KeyboardEvent): void => {

@@ -1,5 +1,10 @@
 import type { ReactElement } from "react";
-import type { GuideLayout, GuideLayerData, GuideLine } from "../../ipc/contracts.js";
+import type {
+  GuideLayout,
+  GuideLayerData,
+  GuideLine,
+  PipelineConfig,
+} from "../../ipc/contracts.js";
 
 export type GuideGroup = "structural" | "detected" | "diagnostic";
 
@@ -48,16 +53,33 @@ export type GuideEditContext = {
   layerData?: GuideLayerData;
 };
 
-export const GUIDE_LOD_THRESHOLDS = {
+type GuideLodThresholds = {
+  minorGuidesZoom: number;
+  labelsZoom: number;
+};
+
+const DEFAULT_GUIDE_LOD_THRESHOLDS: GuideLodThresholds = {
   minorGuidesZoom: 0.8,
   labelsZoom: 1.6,
 };
 
-export const getGuideLod = (zoom: number): GuideLod => {
-  if (zoom < GUIDE_LOD_THRESHOLDS.minorGuidesZoom) {
+export const resolveGuideLodThresholds = (
+  config?: PipelineConfig
+): GuideLodThresholds => {
+  const lodConfig = config?.guides?.lod;
+  if (!lodConfig) return DEFAULT_GUIDE_LOD_THRESHOLDS;
+  return {
+    minorGuidesZoom: lodConfig.major_only_zoom,
+    labelsZoom: lodConfig.labels_zoom,
+  };
+};
+
+export const getGuideLod = (zoom: number, config?: PipelineConfig): GuideLod => {
+  const thresholds = resolveGuideLodThresholds(config);
+  if (zoom < thresholds.minorGuidesZoom) {
     return { showMinorGuides: false, labelVisibility: "none" };
   }
-  if (zoom < GUIDE_LOD_THRESHOLDS.labelsZoom) {
+  if (zoom < thresholds.labelsZoom) {
     return { showMinorGuides: true, labelVisibility: "hover" };
   }
   return { showMinorGuides: true, labelVisibility: "all" };
@@ -205,6 +227,7 @@ export const renderGuideLayers = ({
   hoveredGuideId,
   activeGuideId,
   visibleLayers,
+  config,
 }: {
   guideLayout?: GuideLayout;
   zoom: number;
@@ -213,8 +236,9 @@ export const renderGuideLayers = ({
   hoveredGuideId?: string;
   activeGuideId?: string;
   visibleLayers?: Record<string, boolean>;
+  config?: PipelineConfig;
 }): ReactElement[] => {
-  const lod = getGuideLod(zoom);
+  const lod = getGuideLod(zoom, config);
   const layerDataMap = new Map<string, GuideLayerData>();
   guideLayout?.layers?.forEach((layer) => {
     layerDataMap.set(layer.id, layer);
