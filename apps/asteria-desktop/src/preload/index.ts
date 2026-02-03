@@ -7,6 +7,7 @@ import {
   validateOverrides,
   validatePageId,
   validatePipelineRunConfig,
+  validateRunDir,
   validateRunId,
 } from "../ipc/validation.js";
 
@@ -60,10 +61,12 @@ const api: IpcChannels = {
   },
   "asteria:list-runs": async () => safeInvoke("asteria:list-runs"),
   "asteria:get-run-manifest": async (
-    runId: Parameters<IpcChannels["asteria:get-run-manifest"]>[0]
+    runId: Parameters<IpcChannels["asteria:get-run-manifest"]>[0],
+    runDir: Parameters<IpcChannels["asteria:get-run-manifest"]>[1]
   ) => {
     validateRunId(runId);
-    return safeInvoke("asteria:get-run-manifest", runId);
+    validateRunDir(runDir, runId);
+    return safeInvoke("asteria:get-run-manifest", runId, runDir);
   },
   "asteria:get-pipeline-config": async (
     projectId?: Parameters<IpcChannels["asteria:get-pipeline-config"]>[0]
@@ -72,8 +75,14 @@ const api: IpcChannels = {
     projectId: Parameters<IpcChannels["asteria:save-project-config"]>[0],
     overrides: Parameters<IpcChannels["asteria:save-project-config"]>[1]
   ) => safeInvoke("asteria:save-project-config", projectId, overrides),
-  "asteria:get-run-config": async (runId: Parameters<IpcChannels["asteria:get-run-config"]>[0]) =>
-    safeInvoke("asteria:get-run-config", runId),
+  "asteria:get-run-config": async (
+    runId: Parameters<IpcChannels["asteria:get-run-config"]>[0],
+    runDir: Parameters<IpcChannels["asteria:get-run-config"]>[1]
+  ) => {
+    validateRunId(runId);
+    validateRunDir(runDir, runId);
+    return safeInvoke("asteria:get-run-config", runId, runDir);
+  },
   "asteria:cancel-run": async (runId: Parameters<IpcChannels["asteria:cancel-run"]>[0]) => {
     validateRunId(runId);
     return safeInvoke("asteria:cancel-run", runId);
@@ -88,51 +97,63 @@ const api: IpcChannels = {
   },
   "asteria:fetch-page": async (
     runId: Parameters<IpcChannels["asteria:fetch-page"]>[0],
-    pageId: Parameters<IpcChannels["asteria:fetch-page"]>[1]
+    runDir: Parameters<IpcChannels["asteria:fetch-page"]>[1],
+    pageId: Parameters<IpcChannels["asteria:fetch-page"]>[2]
   ) => {
     validateRunId(runId);
+    validateRunDir(runDir, runId);
     validatePageId(pageId);
-    return safeInvoke("asteria:fetch-page", runId, pageId);
+    return safeInvoke("asteria:fetch-page", runId, runDir, pageId);
   },
   "asteria:fetch-sidecar": async (
     runId: Parameters<IpcChannels["asteria:fetch-sidecar"]>[0],
-    pageId: Parameters<IpcChannels["asteria:fetch-sidecar"]>[1]
+    runDir: Parameters<IpcChannels["asteria:fetch-sidecar"]>[1],
+    pageId: Parameters<IpcChannels["asteria:fetch-sidecar"]>[2]
   ) => {
     validateRunId(runId);
+    validateRunDir(runDir, runId);
     validatePageId(pageId);
-    return safeInvoke("asteria:fetch-sidecar", runId, pageId);
+    return safeInvoke("asteria:fetch-sidecar", runId, runDir, pageId);
   },
   "asteria:apply-override": async (
     runId: Parameters<IpcChannels["asteria:apply-override"]>[0],
-    pageId: Parameters<IpcChannels["asteria:apply-override"]>[1],
-    overrides: Parameters<IpcChannels["asteria:apply-override"]>[2]
+    runDir: Parameters<IpcChannels["asteria:apply-override"]>[1],
+    pageId: Parameters<IpcChannels["asteria:apply-override"]>[2],
+    overrides: Parameters<IpcChannels["asteria:apply-override"]>[3]
   ) => {
     validateRunId(runId);
+    validateRunDir(runDir, runId);
     validatePageId(pageId);
     validateOverrides(overrides);
-    return safeInvoke("asteria:apply-override", runId, pageId, overrides);
+    return safeInvoke("asteria:apply-override", runId, runDir, pageId, overrides);
   },
   "asteria:export-run": async (
     runId: Parameters<IpcChannels["asteria:export-run"]>[0],
-    formats: Parameters<IpcChannels["asteria:export-run"]>[1]
+    runDir: Parameters<IpcChannels["asteria:export-run"]>[1],
+    formats: Parameters<IpcChannels["asteria:export-run"]>[2]
   ) => {
     validateRunId(runId);
+    validateRunDir(runDir, runId);
     validateExportFormats(formats);
-    return safeInvoke("asteria:export-run", runId, formats);
+    return safeInvoke("asteria:export-run", runId, runDir, formats);
   },
   "asteria:fetch-review-queue": async (
-    runId: Parameters<IpcChannels["asteria:fetch-review-queue"]>[0]
+    runId: Parameters<IpcChannels["asteria:fetch-review-queue"]>[0],
+    runDir: Parameters<IpcChannels["asteria:fetch-review-queue"]>[1]
   ) => {
     validateRunId(runId);
-    return safeInvoke("asteria:fetch-review-queue", runId);
+    validateRunDir(runDir, runId);
+    return safeInvoke("asteria:fetch-review-queue", runId, runDir);
   },
   "asteria:submit-review": async (
     runId: Parameters<IpcChannels["asteria:submit-review"]>[0],
-    decisions: Parameters<IpcChannels["asteria:submit-review"]>[1]
+    runDir: Parameters<IpcChannels["asteria:submit-review"]>[1],
+    decisions: Parameters<IpcChannels["asteria:submit-review"]>[2]
   ) => {
     validateRunId(runId);
+    validateRunDir(runDir, runId);
     validateOverrides({ decisions });
-    return safeInvoke("asteria:submit-review", runId, decisions);
+    return safeInvoke("asteria:submit-review", runId, runDir, decisions);
   },
 };
 

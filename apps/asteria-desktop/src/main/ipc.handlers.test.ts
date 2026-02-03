@@ -276,12 +276,16 @@ describe("IPC handler registration", () => {
     const handler = handlers.get("asteria:export-run");
     expect(handler).toBeDefined();
 
-    const result = await (
-      handler as (event: unknown, runId: string, formats: Array<"png">) => Promise<unknown>
-    )({}, "run-1", ["png"]);
-
     const outputDir = path.join(process.cwd(), "pipeline-results");
     const runDir = getRunDir(outputDir, "run-1");
+    const result = await (
+      handler as (
+        event: unknown,
+        runId: string,
+        runDir: string,
+        formats: Array<"png">
+      ) => Promise<unknown>
+    )({}, "run-1", runDir, ["png"]);
     expect(String(result)).toContain(path.join(runDir, "exports"));
   });
 
@@ -292,6 +296,8 @@ describe("IPC handler registration", () => {
     const handler = handlers.get("asteria:export-run");
     expect(handler).toBeDefined();
 
+    const outputDir = path.join(process.cwd(), "pipeline-results");
+    const runDir = getRunDir(outputDir, "run-2");
     readdir
       .mockResolvedValueOnce(["page-1.json"])
       .mockResolvedValueOnce(["signal-1.json"])
@@ -301,12 +307,10 @@ describe("IPC handler registration", () => {
       handler as (
         event: unknown,
         runId: string,
+        runDir: string,
         formats: Array<"png" | "tiff" | "pdf">
       ) => Promise<unknown>
-    )({}, "run-2", ["png", "tiff", "pdf"]);
-
-    const outputDir = path.join(process.cwd(), "pipeline-results");
-    const runDir = getRunDir(outputDir, "run-2");
+    )({}, "run-2", runDir, ["png", "tiff", "pdf"]);
     const exportDir = path.join(runDir, "exports", "2024-01-01T00-00-00-000Z");
     const normalizedDir = path.join(runDir, "normalized");
     const sidecarDir = path.join(runDir, "sidecars");
@@ -348,9 +352,15 @@ describe("IPC handler registration", () => {
     const handler = handlers.get("asteria:fetch-page");
     expect(handler).toBeDefined();
 
+    const runDir = getRunDir(path.join(process.cwd(), "pipeline-results"), "run-1");
     const result = await (
-      handler as (event: unknown, runId: string, pageId: string) => Promise<unknown>
-    )({}, "run-1", "p99");
+      handler as (
+        event: unknown,
+        runId: string,
+        runDir: string,
+        pageId: string
+      ) => Promise<unknown>
+    )({}, "run-1", runDir, "p99");
 
     expect(result).toMatchObject({ id: "p99", filename: "page-p99.png" });
   });
@@ -361,12 +371,17 @@ describe("IPC handler registration", () => {
     expect(handler).toBeDefined();
     readFile.mockResolvedValueOnce(JSON.stringify({ source: { path: "/tmp/source/page.png" } }));
 
+    const runDir = getRunDir(path.join(process.cwd(), "pipeline-results"), "run-1");
     const result = await (
-      handler as (event: unknown, runId: string, pageId: string) => Promise<unknown>
-    )({}, "run-1", "p1");
+      handler as (
+        event: unknown,
+        runId: string,
+        runDir: string,
+        pageId: string
+      ) => Promise<unknown>
+    )({}, "run-1", runDir, "p1");
 
     expect(result).toMatchObject({ id: "p1", filename: "page.png" });
-    const runDir = getRunDir(path.join(process.cwd(), "pipeline-results"), "run-1");
     expect(readFile).toHaveBeenCalledWith(getRunSidecarPath(runDir, "p1"), "utf-8");
   });
 
@@ -376,9 +391,15 @@ describe("IPC handler registration", () => {
     expect(handler).toBeDefined();
     readFile.mockResolvedValueOnce(JSON.stringify({ source: {} }));
 
+    const runDir = getRunDir(path.join(process.cwd(), "pipeline-results"), "run-1");
     const result = await (
-      handler as (event: unknown, runId: string, pageId: string) => Promise<unknown>
-    )({}, "run-1", "p1");
+      handler as (
+        event: unknown,
+        runId: string,
+        runDir: string,
+        pageId: string
+      ) => Promise<unknown>
+    )({}, "run-1", runDir, "p1");
 
     expect(result).toMatchObject({ id: "p1", filename: "p1" });
   });
@@ -391,12 +412,17 @@ describe("IPC handler registration", () => {
       JSON.stringify({ pageId: "p1", normalization: { cropBox: [0, 0, 10, 10] } })
     );
 
+    const runDir = getRunDir(path.join(process.cwd(), "pipeline-results"), "run-9");
     const result = await (
-      handler as (event: unknown, runId: string, pageId: string) => Promise<unknown>
-    )({}, "run-9", "p1");
+      handler as (
+        event: unknown,
+        runId: string,
+        runDir: string,
+        pageId: string
+      ) => Promise<unknown>
+    )({}, "run-9", runDir, "p1");
 
     expect(result).toMatchObject({ pageId: "p1" });
-    const runDir = getRunDir(path.join(process.cwd(), "pipeline-results"), "run-9");
     expect(readFile).toHaveBeenCalledWith(getRunSidecarPath(runDir, "p1"), "utf-8");
   });
 
@@ -406,15 +432,38 @@ describe("IPC handler registration", () => {
     expect(handler).toBeDefined();
     readFile.mockRejectedValueOnce(new Error("missing"));
 
-    const result = await (
-      handler as (event: unknown, runId: string, pageId: string) => Promise<unknown>
-    )({}, "run-miss", "p3");
-
-    expect(result).toBeNull();
     const outputDir = path.join(process.cwd(), "pipeline-results");
     const runDir = getRunDir(outputDir, "run-miss");
+    const result = await (
+      handler as (
+        event: unknown,
+        runId: string,
+        runDir: string,
+        pageId: string
+      ) => Promise<unknown>
+    )({}, "run-miss", runDir, "p3");
+
+    expect(result).toBeNull();
     expect(readFile).toHaveBeenCalledWith(getRunSidecarPath(runDir, "p3"), "utf-8");
     expect(readFile).not.toHaveBeenCalledWith(path.join(outputDir, "sidecars", "p3.json"), "utf-8");
+  });
+
+  it("fetch-sidecar rejects global output paths", async () => {
+    registerIpcHandlers();
+    const handler = handlers.get("asteria:fetch-sidecar");
+    expect(handler).toBeDefined();
+
+    const outputDir = path.join(process.cwd(), "pipeline-results");
+    await expect(
+      (
+        handler as (
+          event: unknown,
+          runId: string,
+          runDir: string,
+          pageId: string
+        ) => Promise<unknown>
+      )({}, "run-1", outputDir, "p1")
+    ).rejects.toThrow("Invalid run directory");
   });
 
   it("apply-override accepts overrides", async () => {
@@ -422,17 +471,17 @@ describe("IPC handler registration", () => {
     const handler = handlers.get("asteria:apply-override");
     expect(handler).toBeDefined();
 
+    const outputDir = path.join(process.cwd(), "pipeline-results");
+    const runDir = getRunDir(outputDir, "run-1");
     await (
       handler as (
         event: unknown,
         runId: string,
+        runDir: string,
         pageId: string,
         overrides: Record<string, unknown>
       ) => Promise<void>
-    )({}, "run-1", "p42", { crop: { x: 1 } });
-
-    const outputDir = path.join(process.cwd(), "pipeline-results");
-    const runDir = getRunDir(outputDir, "run-1");
+    )({}, "run-1", runDir, "p42", { crop: { x: 1 } });
     expect(writeFile).toHaveBeenCalled();
     expect(rename).toHaveBeenCalledWith(
       expect.any(String),
@@ -452,14 +501,19 @@ describe("IPC handler registration", () => {
     });
     readFile.mockResolvedValueOnce(mockSidecar);
 
+    const outputDir = path.join(process.cwd(), "pipeline-results");
+    const runDir = getRunDir(outputDir, "run-1");
     await (
       handler as (
         event: unknown,
         runId: string,
+        runDir: string,
         pageId: string,
         overrides: Record<string, unknown>
       ) => Promise<void>
-    )({}, "run-1", "p42", { normalization: { rotationDeg: 1.5, cropBox: [0, 0, 150, 150] } });
+    )({}, "run-1", runDir, "p42", {
+      normalization: { rotationDeg: 1.5, cropBox: [0, 0, 150, 150] },
+    });
 
     // Check that writeFile was called with updated sidecar
     const writeFileCalls = writeFile.mock.calls;
@@ -490,14 +544,17 @@ describe("IPC handler registration", () => {
     });
     readFile.mockResolvedValueOnce(mockSidecar).mockResolvedValueOnce(mockManifest);
 
+    const outputDir = path.join(process.cwd(), "pipeline-results");
+    const runDir = getRunDir(outputDir, "run-1");
     await (
       handler as (
         event: unknown,
         runId: string,
+        runDir: string,
         pageId: string,
         overrides: Record<string, unknown>
       ) => Promise<void>
-    )({}, "run-1", "p42", { normalization: { rotationDeg: -2.0 } });
+    )({}, "run-1", runDir, "p42", { normalization: { rotationDeg: -2.0 } });
 
     // Check that writeFile was called (writeJsonAtomic uses writeFile internally)
     expect(writeFile).toHaveBeenCalled();
@@ -537,20 +594,21 @@ describe("IPC handler registration", () => {
     // Sidecar read fails
     readFile.mockRejectedValueOnce(new Error("ENOENT"));
 
+    const outputDir = path.join(process.cwd(), "pipeline-results");
+    const runDir = getRunDir(outputDir, "run-1");
     // Should not throw, should still write override file
     await expect(
       (
         handler as (
           event: unknown,
           runId: string,
+          runDir: string,
           pageId: string,
           overrides: Record<string, unknown>
         ) => Promise<void>
-      )({}, "run-1", "p99", { normalization: { rotationDeg: 0.5 } })
+      )({}, "run-1", runDir, "p99", { normalization: { rotationDeg: 0.5 } })
     ).resolves.toBeUndefined();
 
-    const outputDir = path.join(process.cwd(), "pipeline-results");
-    const runDir = getRunDir(outputDir, "run-1");
     expect(rename).toHaveBeenCalledWith(
       expect.any(String),
       path.join(runDir, "overrides", "p99.json")
@@ -566,16 +624,19 @@ describe("IPC handler registration", () => {
     // Manifest read fails
     readFile.mockResolvedValueOnce(mockSidecar).mockRejectedValueOnce(new Error("ENOENT"));
 
+    const outputDir = path.join(process.cwd(), "pipeline-results");
+    const runDir = getRunDir(outputDir, "run-1");
     // Should not throw, sidecar should still be updated
     await expect(
       (
         handler as (
           event: unknown,
           runId: string,
+          runDir: string,
           pageId: string,
           overrides: Record<string, unknown>
         ) => Promise<void>
-      )({}, "run-1", "p42", { normalization: { rotationDeg: 0.5 } })
+      )({}, "run-1", runDir, "p42", { normalization: { rotationDeg: 0.5 } })
     ).resolves.toBeUndefined();
 
     // Check sidecar was written
@@ -595,16 +656,19 @@ describe("IPC handler registration", () => {
     const mockManifest = JSON.stringify({ runId: "run-1", pages: "not-an-array" });
     readFile.mockResolvedValueOnce(mockSidecar).mockResolvedValueOnce(mockManifest);
 
+    const outputDir = path.join(process.cwd(), "pipeline-results");
+    const runDir = getRunDir(outputDir, "run-1");
     // Should not throw even with malformed manifest
     await expect(
       (
         handler as (
           event: unknown,
           runId: string,
+          runDir: string,
           pageId: string,
           overrides: Record<string, unknown>
         ) => Promise<void>
-      )({}, "run-1", "p42", { normalization: { rotationDeg: 0.5 } })
+      )({}, "run-1", runDir, "p42", { normalization: { rotationDeg: 0.5 } })
     ).resolves.toBeUndefined();
 
     // Manifest should not be updated (no writeFile call with the manifest content)
@@ -624,9 +688,16 @@ describe("IPC handler registration", () => {
       .mockResolvedValueOnce([])
       .mockRejectedValueOnce(new Error("missing"));
 
+    const outputDir = path.join(process.cwd(), "pipeline-results");
+    const runDir = getRunDir(outputDir, "run-missing");
     const result = await (
-      handler as (event: unknown, runId: string, formats: Array<"png">) => Promise<unknown>
-    )({}, "run-missing", ["png"]);
+      handler as (
+        event: unknown,
+        runId: string,
+        runDir: string,
+        formats: Array<"png">
+      ) => Promise<unknown>
+    )({}, "run-missing", runDir, ["png"]);
 
     expect(String(result)).toContain("exports");
   });
@@ -674,14 +745,13 @@ describe("IPC handler registration", () => {
       })
     );
 
-    const result = await (handler as (event: unknown, runId: string) => Promise<unknown>)(
-      {},
-      "run-1"
-    );
-
-    expect(result).toMatchObject({ runId: "run-1", projectId: "proj" });
     const outputDir = path.join(process.cwd(), "pipeline-results");
     const runDir = getRunDir(outputDir, "run-1");
+    const result = await (
+      handler as (event: unknown, runId: string, runDir: string) => Promise<unknown>
+    )({}, "run-1", runDir);
+
+    expect(result).toMatchObject({ runId: "run-1", projectId: "proj" });
     expect(readFile).toHaveBeenCalledWith(getRunReviewQueuePath(runDir), "utf-8");
   });
 
@@ -698,14 +768,13 @@ describe("IPC handler registration", () => {
       })
     );
 
-    const result = await (handler as (event: unknown, runId: string) => Promise<unknown>)(
-      {},
-      "run-5"
-    );
-
-    expect(result).toMatchObject({ runId: "run-5", projectId: "proj" });
     const outputDir = path.join(process.cwd(), "pipeline-results");
     const runDir = getRunDir(outputDir, "run-5");
+    const result = await (
+      handler as (event: unknown, runId: string, runDir: string) => Promise<unknown>
+    )({}, "run-5", runDir);
+
+    expect(result).toMatchObject({ runId: "run-5", projectId: "proj" });
     expect(readFile).toHaveBeenCalledWith(getRunReviewQueuePath(runDir), "utf-8");
   });
 
@@ -717,10 +786,11 @@ describe("IPC handler registration", () => {
       .mockRejectedValueOnce(new Error("missing"))
       .mockRejectedValueOnce(new Error("missing"));
 
-    const result = await (handler as (event: unknown, runId: string) => Promise<unknown>)(
-      {},
-      "run-2"
-    );
+    const outputDir = path.join(process.cwd(), "pipeline-results");
+    const runDir = getRunDir(outputDir, "run-2");
+    const result = await (
+      handler as (event: unknown, runId: string, runDir: string) => Promise<unknown>
+    )({}, "run-2", runDir);
 
     expect(result).toMatchObject({ runId: "run-2", items: [] });
   });
@@ -730,11 +800,11 @@ describe("IPC handler registration", () => {
     const handler = handlers.get("asteria:submit-review");
     expect(handler).toBeDefined();
 
-    await (handler as (event: unknown, runId: string, decisions: unknown[]) => Promise<void>)(
-      {},
-      "run-3",
-      [{ pageId: "p1", decision: "accept" }]
-    );
+    const outputDir = path.join(process.cwd(), "pipeline-results");
+    const runDir = getRunDir(outputDir, "run-3");
+    await (
+      handler as (event: unknown, runId: string, runDir: string, decisions: unknown[]) => Promise<void>
+    )({}, "run-3", runDir, [{ pageId: "p1", decision: "accept" }]);
   });
 
   it("list-runs returns run index entries", async () => {
@@ -760,6 +830,7 @@ describe("IPC handler registration", () => {
     expect(result).toMatchObject([
       {
         runId: "run-1",
+        runDir: getRunDir(path.join(process.cwd(), "pipeline-results"), "run-1"),
         projectId: "proj",
         generatedAt: "2026-01-01",
         reviewCount: 3,
@@ -820,10 +891,11 @@ describe("IPC handler registration", () => {
     expect(handler).toBeDefined();
     readFile.mockResolvedValueOnce(JSON.stringify({ configSnapshot: null }));
 
-    const result = await (handler as (event: unknown, runId: string) => Promise<unknown>)(
-      {},
-      "run-4"
-    );
+    const outputDir = path.join(process.cwd(), "pipeline-results");
+    const runDir = getRunDir(outputDir, "run-4");
+    const result = await (
+      handler as (event: unknown, runId: string, runDir: string) => Promise<unknown>
+    )({}, "run-4", runDir);
 
     expect(result).toBeNull();
   });
@@ -902,10 +974,11 @@ describe("IPC handler registration", () => {
       })
     );
 
-    const result = await (handler as (event: unknown, runId: string) => Promise<unknown>)(
-      {},
-      "run-1"
-    );
+    const outputDir = path.join(process.cwd(), "pipeline-results");
+    const runDir = getRunDir(outputDir, "run-1");
+    const result = await (
+      handler as (event: unknown, runId: string, runDir: string) => Promise<unknown>
+    )({}, "run-1", runDir);
 
     expect(result).toMatchObject({
       resolvedConfig: { version: "0.1.0" },
@@ -919,10 +992,11 @@ describe("IPC handler registration", () => {
 
     readFile.mockRejectedValueOnce(new Error("missing"));
 
-    const result = await (handler as (event: unknown, runId: string) => Promise<unknown>)(
-      {},
-      "run-404"
-    );
+    const outputDir = path.join(process.cwd(), "pipeline-results");
+    const runDir = getRunDir(outputDir, "run-404");
+    const result = await (
+      handler as (event: unknown, runId: string, runDir: string) => Promise<unknown>
+    )({}, "run-404", runDir);
 
     expect(result).toBeNull();
   });

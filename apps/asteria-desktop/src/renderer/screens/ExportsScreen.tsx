@@ -35,13 +35,13 @@ export function ExportsScreen(): JSX.Element {
           setSelectedRunId((prev) => prev ?? data[0]?.runId ?? null);
         }
         const getManifest = windowRef.asteria.ipc["asteria:get-run-manifest"] as
-          | ((runId: string) => Promise<RunManifestSummary | null>)
+          | ((runId: string, runDir: string) => Promise<RunManifestSummary | null>)
           | undefined;
         if (getManifest && data.length > 0) {
           const manifestEntries = await Promise.all(
             data.map(async (run) => ({
               runId: run.runId,
-              manifest: await getManifest(run.runId),
+              manifest: await getManifest(run.runId, run.runDir),
             }))
           );
           if (!cancelled) {
@@ -76,11 +76,13 @@ export function ExportsScreen(): JSX.Element {
 
   const handleExport = async (): Promise<void> => {
     if (!selectedRunId) return;
+    const selectedRun = runs.find((run) => run.runId === selectedRunId);
+    if (!selectedRun) return;
     const windowRef: typeof globalThis & { asteria?: { ipc?: Record<string, unknown> } } =
       globalThis;
     if (!windowRef.asteria?.ipc) return;
     const exportRun = windowRef.asteria.ipc["asteria:export-run"] as
-      | ((runId: string, formats: Array<ExportFormat>) => Promise<string>)
+      | ((runId: string, runDir: string, formats: Array<ExportFormat>) => Promise<string>)
       | undefined;
     if (!exportRun) return;
     const selectedFormats = exportFormats.filter((format) => formats[format]);
@@ -92,7 +94,7 @@ export function ExportsScreen(): JSX.Element {
     setExportPath(null);
     setError(null);
     try {
-      const path = await exportRun(selectedRunId, selectedFormats);
+      const path = await exportRun(selectedRunId, selectedRun.runDir, selectedFormats);
       setExportPath(path);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Export failed";

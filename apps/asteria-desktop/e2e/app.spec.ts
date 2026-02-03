@@ -46,12 +46,13 @@ test.describe("Asteria Desktop App", () => {
           "asteria:list-runs": async () => [
             {
               runId: "run-1",
+              runDir: "/tmp/runs/run-1",
               projectId: "project-1",
               generatedAt: "2026-02-02",
               reviewCount: 1,
             },
           ],
-          "asteria:fetch-review-queue": async () => ({
+          "asteria:fetch-review-queue": async (_runId: string, _runDir: string) => ({
             runId: "run-1",
             projectId: "project-1",
             generatedAt: "2026-02-02",
@@ -72,6 +73,7 @@ test.describe("Asteria Desktop App", () => {
           }),
           "asteria:submit-review": async (
             _runId: string,
+            _runDir: string,
             decisions: Array<{ pageId: string; decision: string }>
           ) => {
             globalRef.__submitted = { runId: "run-1", decisions };

@@ -23,6 +23,7 @@ import {
   validateOverrides,
   validatePageId,
   validatePipelineRunConfig,
+  validateRunDir,
   validateRunId,
 } from "../ipc/validation.js";
 import { analyzeCorpus } from "../ipc/corpusAnalysis.js";
@@ -207,9 +208,6 @@ const buildAdjustmentSummary = (params: {
 export function registerIpcHandlers(): void {
   const resolveOutputDir = (): string =>
     process.env.ASTERIA_OUTPUT_DIR ?? path.join(process.cwd(), "pipeline-results");
-  const resolveRunDir = async (outputDir: string, runId: string): Promise<string> => {
-    return getRunDir(outputDir, runId);
-  };
 
   ipcMain.handle(
     "asteria:start-run",
@@ -222,8 +220,10 @@ export function registerIpcHandlers(): void {
       const projectRoot = resolveProjectRoot(config.pages);
       const outputDir = resolveOutputDir();
       const runId = await startRun(config, projectRoot, outputDir);
+      const runDir = getRunDir(outputDir, runId);
       return {
         runId,
+        runDir,
         status: "running",
         pagesProcessed: 0,
         errors: [],
@@ -299,11 +299,10 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle(
     "asteria:fetch-page",
-    async (_event: IpcMainInvokeEvent, runId: string, pageId: string) => {
+    async (_event: IpcMainInvokeEvent, runId: string, runDir: string, pageId: string) => {
       validateRunId(runId);
+      validateRunDir(runDir, runId);
       validatePageId(pageId);
-      const outputDir = resolveOutputDir();
-      const runDir = await resolveRunDir(outputDir, runId);
       const runSidecarPath = getRunSidecarPath(runDir, pageId);
 
       try {
@@ -329,11 +328,10 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle(
     "asteria:fetch-sidecar",
-    async (_event: IpcMainInvokeEvent, runId: string, pageId: string) => {
+    async (_event: IpcMainInvokeEvent, runId: string, runDir: string, pageId: string) => {
       validateRunId(runId);
+      validateRunDir(runDir, runId);
       validatePageId(pageId);
-      const outputDir = resolveOutputDir();
-      const runDir = await resolveRunDir(outputDir, runId);
       const runSidecarPath = getRunSidecarPath(runDir, pageId);
       try {
         const raw = await fs.readFile(runSidecarPath, "utf-8");
@@ -349,14 +347,14 @@ export function registerIpcHandlers(): void {
     async (
       _event: IpcMainInvokeEvent,
       runId: string,
+      runDir: string,
       pageId: string,
       overrides: Record<string, unknown>
     ) => {
       validateRunId(runId);
+      validateRunDir(runDir, runId);
       validatePageId(pageId);
       validateOverrides(overrides);
-      const outputDir = resolveOutputDir();
-      const runDir = await resolveRunDir(outputDir, runId);
       const overridesDir = path.join(runDir, "overrides");
       await fs.mkdir(overridesDir, { recursive: true });
       const appliedAt = new Date().toISOString();
@@ -422,11 +420,15 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle(
     "asteria:export-run",
-    async (_event: IpcMainInvokeEvent, runId: string, formats: ExportFormat[]): Promise<string> => {
+    async (
+      _event: IpcMainInvokeEvent,
+      runId: string,
+      runDir: string,
+      formats: ExportFormat[]
+    ): Promise<string> => {
       validateRunId(runId);
+      validateRunDir(runDir, runId);
       validateExportFormats(formats);
-      const outputDir = resolveOutputDir();
-      const runDir = await resolveRunDir(outputDir, runId);
       const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
       const exportDir = path.join(runDir, "exports", timestamp);
       await fs.mkdir(exportDir, { recursive: true });
@@ -537,10 +539,13 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle(
     "asteria:get-run-config",
-    async (_event: IpcMainInvokeEvent, runId: string): Promise<RunConfigSnapshot | null> => {
+    async (
+      _event: IpcMainInvokeEvent,
+      runId: string,
+      runDir: string
+    ): Promise<RunConfigSnapshot | null> => {
       validateRunId(runId);
-      const outputDir = resolveOutputDir();
-      const runDir = getRunDir(outputDir, runId);
+      validateRunDir(runDir, runId);
       const reportPath = getRunReportPath(runDir);
 
       try {
@@ -555,10 +560,13 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle(
     "asteria:get-run-manifest",
-    async (_event: IpcMainInvokeEvent, runId: string): Promise<RunManifestSummary | null> => {
+    async (
+      _event: IpcMainInvokeEvent,
+      runId: string,
+      runDir: string
+    ): Promise<RunManifestSummary | null> => {
       validateRunId(runId);
-      const outputDir = resolveOutputDir();
-      const runDir = await resolveRunDir(outputDir, runId);
+      validateRunDir(runDir, runId);
       const manifestPath = getRunManifestPath(runDir);
       try {
         const raw = await fs.readFile(manifestPath, "utf-8");
@@ -581,10 +589,13 @@ export function registerIpcHandlers(): void {
     const indexPath = path.join(outputDir, "run-index.json");
     try {
       const raw = await fs.readFile(indexPath, "utf-8");
-      const parsed = JSON.parse(raw) as { runs?: Array<RunSummary & { reviewQueuePath?: string }> };
+      const parsed = JSON.parse(raw) as {
+        runs?: Array<Omit<RunSummary, "runDir"> & { reviewQueuePath?: string }>;
+      };
       if (Array.isArray(parsed.runs)) {
         return parsed.runs.map((run) => ({
           runId: run.runId,
+          runDir: getRunDir(outputDir, run.runId),
           projectId: run.projectId,
           generatedAt: run.generatedAt,
           reviewCount: run.reviewCount ?? 0,
@@ -606,10 +617,13 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle(
     "asteria:fetch-review-queue",
-    async (_event: IpcMainInvokeEvent, runId: string): Promise<ReviewQueue> => {
+    async (
+      _event: IpcMainInvokeEvent,
+      runId: string,
+      runDir: string
+    ): Promise<ReviewQueue> => {
       validateRunId(runId);
-      const outputDir = resolveOutputDir();
-      const runDir = await resolveRunDir(outputDir, runId);
+      validateRunDir(runDir, runId);
       const reviewPath = getRunReviewQueuePath(runDir);
       try {
         const data = await fs.readFile(reviewPath, "utf-8");
@@ -630,11 +644,13 @@ export function registerIpcHandlers(): void {
     async (
       _event: IpcMainInvokeEvent,
       runId: string,
+      runDir: string,
       decisions: ReviewDecision[]
     ): Promise<void> => {
       validateRunId(runId);
+      validateRunDir(runDir, runId);
       validateOverrides({ decisions });
-      const reviewDir = path.join(resolveOutputDir(), "reviews");
+      const reviewDir = path.join(runDir, "reviews");
       await fs.mkdir(reviewDir, { recursive: true });
       const reviewPath = path.join(reviewDir, `${runId}.json`);
       const submittedAt = new Date().toISOString();
@@ -644,8 +660,6 @@ export function registerIpcHandlers(): void {
         decisions,
       });
 
-      const outputDir = resolveOutputDir();
-      const runDir = await resolveRunDir(outputDir, runId);
       const trainingDir = getTrainingDir(runDir);
       await fs.mkdir(trainingDir, { recursive: true });
 
