@@ -23,6 +23,7 @@
     "package:full": "pnpm package && pnpm package:verify",
     "pipeline:run": "pnpm -C apps/asteria-desktop pipeline:run",
     "pipeline:export": "pnpm -C apps/asteria-desktop pipeline:export",
+    "benchmark:run": "pnpm -C apps/asteria-desktop benchmark:run",
     "golden:generate": "pnpm -C apps/asteria-desktop golden:generate",
     "golden:bless": "pnpm -C apps/asteria-desktop golden:bless",
     "golden:test": "pnpm -C apps/asteria-desktop golden:test",

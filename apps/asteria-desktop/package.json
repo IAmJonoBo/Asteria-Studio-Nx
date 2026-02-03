@@ -27,6 +27,7 @@
     "test": "node scripts/run-vitest.mjs run --coverage",
     "test:ui": "node scripts/run-vitest.mjs run src/renderer --coverage",
     "test:e2e": "playwright test",
+    "benchmark:run": "ts-node --transpile-only scripts/run-benchmark.ts",
     "pipeline:run": "ts-node --transpile-only scripts/run-pipeline.ts",
     "pipeline:export": "ts-node scripts/export-normalized.ts",
     "golden:generate": "ts-node --transpile-only scripts/run-golden-generator.ts",

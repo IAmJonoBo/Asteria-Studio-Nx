@@ -427,6 +427,17 @@ graph LR
 7. **UI Components** — Navigation, keyboard shortcuts, theme switching, accessibility
 8. **Review Queue** — Keyboard triage (A/F/R), overlay toggle, badge updates
 
+**Performance Benchmarks**:
+
+- **Command**: `pnpm benchmark:run` (fixed-size corpus from `projects/mind-myth-and-magick`). 
+- **Defaults**: 8 pages, results stored in `apps/asteria-desktop/benchmark-results/benchmark.json`.
+- **Metrics**: Per-stage latency + throughput (pages/sec), total duration, overall throughput.
+- **Thresholds**: CI fails if any stage latency exceeds `ASTERIA_BENCHMARK_MAX_STAGE_LATENCY_MS` (default: 180,000ms). Override with:
+  - `ASTERIA_BENCHMARK_SAMPLE_COUNT` (page count)
+  - `ASTERIA_BENCHMARK_CORPUS` (corpus root)
+  - `ASTERIA_BENCHMARK_OUTPUT_DIR` (results directory)
+- **CI Artifacts**: Benchmark results are uploaded from `apps/asteria-desktop/benchmark-results/benchmark.json`.
+
 **Golden Image Tests** (Planned):
 
 - Frozen inputs with expected outputs (crops, angles, layout JSON)
