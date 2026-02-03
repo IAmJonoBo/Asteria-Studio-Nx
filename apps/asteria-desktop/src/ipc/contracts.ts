@@ -215,7 +215,13 @@ export interface PageLayoutSidecar {
     spineShadowScore?: number;
     baseline?: BaselineSummary;
   };
-  decisions?: { accepted?: boolean; notes?: string; overrides?: string[] };
+  decisions?: {
+    accepted?: boolean;
+    notes?: string;
+    overrides?: string[];
+    overrideAppliedAt?: string;
+  };
+  overrides?: Record<string, unknown>;
   bookModel?: BookModel;
   version?: string;
 }

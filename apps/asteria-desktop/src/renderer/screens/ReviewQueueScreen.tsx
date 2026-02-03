@@ -1,4 +1,4 @@
-import type { JSX, KeyboardEvent, MouseEvent, WheelEvent, MutableRefObject } from "react";
+import type { JSX, KeyboardEvent, MouseEvent, WheelEvent, MutableRefObject, PointerEvent } from "react";
 import { useState, useEffect, useRef } from "react";
 import { useKeyboardShortcuts } from "../hooks/useKeyboardShortcut.js";
 import type { ReviewQueue, PageLayoutSidecar } from "../../ipc/contracts.js";
@@ -73,6 +73,7 @@ type ReasonInfo = {
 type OverlayLayersState = {
   pageBounds: boolean;
   cropBox: boolean;
+  trimBox: boolean;
   pageMask: boolean;
   textBlocks: boolean;
   titles: boolean;
@@ -82,6 +83,25 @@ type OverlayLayersState = {
 };
 
 type OverlayLayerKey = keyof OverlayLayersState;
+
+type Box = [number, number, number, number];
+
+type AdjustmentMode = "crop" | "trim" | null;
+
+type OverlayHandleEdge =
+  | "left"
+  | "right"
+  | "top"
+  | "bottom"
+  | "top-left"
+  | "top-right"
+  | "bottom-left"
+  | "bottom-right";
+
+type OverlayHandle = {
+  boxType: "crop" | "trim";
+  edge: OverlayHandleEdge;
+};
 
 const getDecisionBadgeClass = (decisionValue: DecisionValue): string => {
   if (decisionValue === "accept") return "badge-success";
@@ -159,6 +179,119 @@ const createZoomBy =
   (delta: number): void => {
     setZoom((prev) => Math.min(4, Math.max(0.5, Number((prev + delta).toFixed(2)))));
   };
+
+const clampBox = (
+  box: Box,
+  bounds: Box,
+  minSize = 12
+): Box => {
+  const [minX, minY, maxX, maxY] = bounds;
+  let [x0, y0, x1, y1] = box;
+
+  // Ensure coordinates are ordered
+  if (x0 > x1) {
+    [x0, x1] = [x1, x0];
+  }
+  if (y0 > y1) {
+    [y0, y1] = [y1, y0];
+  }
+
+  // First, clamp each edge independently to the bounds
+  x0 = Math.max(minX, Math.min(x0, maxX));
+  x1 = Math.max(minX, Math.min(x1, maxX));
+  y0 = Math.max(minY, Math.min(y0, maxY));
+  y1 = Math.max(minY, Math.min(y1, maxY));
+
+  let width = x1 - x0;
+  let height = y1 - y0;
+
+  // Enforce minimum width without re-centering, preferring to grow to the right
+  if (width < minSize) {
+    const needed = minSize - width;
+    if (x1 + needed <= maxX) {
+      x1 += needed;
+    } else if (x0 - needed >= minX) {
+      x0 -= needed;
+    } else {
+      // Bounds smaller than minSize, fill available width
+      x0 = minX;
+      x1 = maxX;
+    }
+    width = x1 - x0;
+  }
+
+  // Enforce minimum height without re-centering, preferring to grow downward
+  if (height < minSize) {
+    const needed = minSize - height;
+    if (y1 + needed <= maxY) {
+      y1 += needed;
+    } else if (y0 - needed >= minY) {
+      y0 -= needed;
+    } else {
+      // Bounds smaller than minSize, fill available height
+      y0 = minY;
+      y1 = maxY;
+    }
+    height = y1 - y0;
+  }
+
+  return [Math.round(x0), Math.round(y0), Math.round(x1), Math.round(y1)];
+};
+
+const applyHandleDrag = (box: Box, handle: OverlayHandleEdge, deltaX: number, deltaY: number): Box => {
+  const [x0, y0, x1, y1] = box;
+  switch (handle) {
+    case "left":
+      return [x0 + deltaX, y0, x1, y1];
+    case "right":
+      return [x0, y0, x1 + deltaX, y1];
+    case "top":
+      return [x0, y0 + deltaY, x1, y1];
+    case "bottom":
+      return [x0, y0, x1, y1 + deltaY];
+    case "top-left":
+      return [x0 + deltaX, y0 + deltaY, x1, y1];
+    case "top-right":
+      return [x0, y0 + deltaY, x1 + deltaX, y1];
+    case "bottom-left":
+      return [x0 + deltaX, y0, x1, y1 + deltaY];
+    case "bottom-right":
+      return [x0, y0, x1 + deltaX, y1 + deltaY];
+    default:
+      return box;
+  }
+};
+
+const snapBoxToPrior = (box: Box, prior: Box | null | undefined, threshold = 6): Box => {
+  if (!prior) return box;
+  const snapped: Box = [...box];
+  for (let i = 0; i < 4; i += 1) {
+    if (Math.abs(box[i] - prior[i]) <= threshold) {
+      snapped[i] = prior[i];
+    }
+  }
+  return snapped;
+};
+
+const isSameBox = (a: Box | null, b: Box | null): boolean => {
+  if (!a || !b) return a === b;
+  return a[0] === b[0] && a[1] === b[1] && a[2] === b[2] && a[3] === b[3];
+};
+
+const buildTrimBoxFromCrop = (cropBox: Box | null, trimMm?: number, dpi?: number): Box | null => {
+  if (!cropBox || trimMm === undefined || trimMm === null || !dpi) return null;
+  const trimPx = (trimMm / 25.4) * dpi;
+  const width = cropBox[2] - cropBox[0];
+  const height = cropBox[3] - cropBox[1];
+  const maxTrimPx = Math.min(width, height) / 2;
+  const usedTrimPx = Math.min(trimPx, maxTrimPx);
+  return [
+    cropBox[0] + usedTrimPx,
+    cropBox[1] + usedTrimPx,
+    cropBox[2] - usedTrimPx,
+    cropBox[3] - usedTrimPx,
+  ];
+};
 
 const createDecisionHandler =
   (
@@ -552,6 +685,11 @@ type OverlayRenderParams = {
   overlayLayers: OverlayLayersState;
   overlayScaleX: number;
   overlayScaleY: number;
+  cropBox: Box | null;
+  trimBox: Box | null;
+  adjustmentMode: AdjustmentMode;
+  overlaySvgRef: MutableRefObject<globalThis.SVGSVGElement | null>;
+  onHandlePointerDown: (event: PointerEvent<globalThis.SVGCircleElement>, handle: OverlayHandle) => void;
 };
 
 const buildOverlaySvg = ({
@@ -561,6 +699,11 @@ const buildOverlaySvg = ({
   overlayLayers,
   overlayScaleX,
   overlayScaleY,
+  cropBox,
+  trimBox,
+  adjustmentMode,
+  overlaySvgRef,
+  onHandlePointerDown,
 }: OverlayRenderParams): JSX.Element | null => {
   if (!sidecar || !normalizedPreview || !overlaysVisible) return null;
 
@@ -591,12 +734,30 @@ const buildOverlaySvg = ({
     return false;
   };
 
-  const cropBox = sidecar.normalization?.cropBox;
   const pageMask = sidecar.normalization?.pageMask;
+  const handleSize = 6;
+  const handles: Array<{ key: string; x: number; y: number; edge: OverlayHandleEdge }> = [];
+  const activeBox = adjustmentMode === "crop" ? cropBox : adjustmentMode === "trim" ? trimBox : null;
+  if (activeBox) {
+    const [x0, y0, x1, y1] = activeBox;
+    const midX = (x0 + x1) / 2;
+    const midY = (y0 + y1) / 2;
+    handles.push(
+      { key: "top-left", x: x0, y: y0, edge: "top-left" },
+      { key: "top-right", x: x1, y: y0, edge: "top-right" },
+      { key: "bottom-left", x: x0, y: y1, edge: "bottom-left" },
+      { key: "bottom-right", x: x1, y: y1, edge: "bottom-right" },
+      { key: "top", x: midX, y: y0, edge: "top" },
+      { key: "bottom", x: midX, y: y1, edge: "bottom" },
+      { key: "left", x: x0, y: midY, edge: "left" },
+      { key: "right", x: x1, y: midY, edge: "right" }
+    );
+  }
 
   return (
     <svg
       aria-hidden="true"
+      ref={overlaySvgRef}
       style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }}
       viewBox={`0 0 ${normalizedPreview.width} ${normalizedPreview.height}`}
     >
@@ -609,6 +770,20 @@ const buildOverlaySvg = ({
           fill="none"
           stroke="rgba(34, 197, 94, 0.9)"
           strokeWidth={2}
+          pointerEvents="none"
+        />
+      )}
+      {overlayLayers.trimBox && trimBox && (
+        <rect
+          x={trimBox[0] * overlayScaleX}
+          y={trimBox[1] * overlayScaleY}
+          width={(trimBox[2] - trimBox[0]) * overlayScaleX}
+          height={(trimBox[3] - trimBox[1]) * overlayScaleY}
+          fill="none"
+          stroke="rgba(14, 165, 233, 0.85)"
+          strokeWidth={2}
+          strokeDasharray="6 4"
+          pointerEvents="none"
         />
       )}
       {overlayLayers.pageMask && pageMask && (
@@ -620,6 +795,7 @@ const buildOverlaySvg = ({
           fill="none"
           stroke="rgba(14, 165, 233, 0.6)"
           strokeWidth={2}
+          pointerEvents="none"
         />
       )}
       {elements
@@ -637,6 +813,37 @@ const buildOverlaySvg = ({
               fill="none"
               stroke={color}
               strokeWidth={1.5}
+              pointerEvents="none"
+            />
+          );
+        })}
+      {activeBox &&
+        handles.map((handle) => {
+          const boxType = adjustmentMode === "trim" ? "trim" : "crop";
+          const edgeLabel = handle.edge
+            .split("-")
+            .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+            .join(" ");
+          return (
+            <circle
+              key={`${adjustmentMode}-${handle.key}`}
+              cx={handle.x * overlayScaleX}
+              cy={handle.y * overlayScaleY}
+              r={handleSize}
+              fill="var(--bg-primary)"
+              stroke="var(--text-primary)"
+              strokeWidth={1.5}
+              style={{ cursor: "grab" }}
+              aria-label={`Drag to adjust ${edgeLabel.toLowerCase()} edge of ${boxType} box`}
+              role="button"
+              tabIndex={0}
+              onPointerDown={(event) => {
+                event.stopPropagation();
+                onHandlePointerDown(event, {
+                  boxType: adjustmentMode === "trim" ? "trim" : "crop",
+                  edge: handle.edge,
+                });
+              }}
             />
           );
         })}
@@ -653,6 +860,7 @@ type ReviewQueueLayoutProps = {
   overlaysVisible: boolean;
   showSourcePreview: boolean;
   zoom: number;
+  rotationDeg: number;
   overlayLayers: OverlayLayersState;
   selectedIds: Set<string>;
   listRef: { current: globalThis.HTMLDivElement | null };
@@ -667,6 +875,12 @@ type ReviewQueueLayoutProps = {
   isSubmitting: boolean;
   submitError: string | null;
   canSubmit: boolean;
+  adjustmentMode: AdjustmentMode;
+  cropBox: Box | null;
+  trimBox: Box | null;
+  isApplyingOverride: boolean;
+  overrideError: string | null;
+  lastOverrideAppliedAt: string | null;
   onSelectIndex: (index: number) => void;
   onScroll: (scrollTop: number) => void;
   onToggleSelected: (pageId: string) => void;
@@ -675,6 +889,14 @@ type ReviewQueueLayoutProps = {
   onZoomOut: () => void;
   onZoomIn: () => void;
   onResetView: () => void;
+  onRotateLeft: () => void;
+  onRotateRight: () => void;
+  onMicroRotateLeft: () => void;
+  onMicroRotateRight: () => void;
+  onResetRotation: () => void;
+  onSetAdjustmentMode: (mode: AdjustmentMode) => void;
+  onResetAdjustments: () => void;
+  onApplyOverride: () => void;
   onViewerMouseDown: (event: MouseEvent<globalThis.HTMLButtonElement>) => void;
   onViewerMouseMove: (event: MouseEvent<globalThis.HTMLButtonElement>) => void;
   onViewerMouseUp: () => void;
@@ -699,6 +921,7 @@ const ReviewQueueLayout = ({
   overlaysVisible,
   showSourcePreview,
   zoom,
+  rotationDeg,
   overlayLayers,
   selectedIds,
   listRef,
@@ -713,6 +936,12 @@ const ReviewQueueLayout = ({
   isSubmitting,
   submitError,
   canSubmit,
+  adjustmentMode,
+  cropBox,
+  trimBox,
+  isApplyingOverride,
+  overrideError,
+  lastOverrideAppliedAt,
   onSelectIndex,
   onScroll,
   onToggleSelected,
@@ -721,6 +950,14 @@ const ReviewQueueLayout = ({
   onZoomOut,
   onZoomIn,
   onResetView,
+  onRotateLeft,
+  onRotateRight,
+  onMicroRotateLeft,
+  onMicroRotateRight,
+  onResetRotation,
+  onSetAdjustmentMode,
+  onResetAdjustments,
+  onApplyOverride,
   onViewerMouseDown,
   onViewerMouseMove,
   onViewerMouseUp,
@@ -910,6 +1147,25 @@ const ReviewQueueLayout = ({
             <span style={{ fontSize: "12px", color: "var(--text-secondary)" }}>
               {Math.round(zoom * 100)}%
             </span>
+            <div style={{ width: "1px", background: "var(--border)", margin: "0 4px" }} />
+            <button className="btn btn-secondary btn-sm" onClick={onRotateLeft}>
+              ⟲ <kbd>[</kbd>
+            </button>
+            <button className="btn btn-secondary btn-sm" onClick={onRotateRight}>
+              ⟳ <kbd>]</kbd>
+            </button>
+            <button className="btn btn-secondary btn-sm" onClick={onMicroRotateLeft}>
+              −0.1° <kbd>Alt+[</kbd>
+            </button>
+            <button className="btn btn-secondary btn-sm" onClick={onMicroRotateRight}>
+              +0.1° <kbd>Alt+]</kbd>
+            </button>
+            <button className="btn btn-secondary btn-sm" onClick={onResetRotation}>
+              Reset rotation
+            </button>
+            <span style={{ fontSize: "12px", color: "var(--text-secondary)" }}>
+              {rotationDeg.toFixed(1)}°
+            </span>
           </div>
         </div>
 
@@ -958,7 +1214,7 @@ const ReviewQueueLayout = ({
               {normalizedSrc ? (
                 <div
                   style={{
-                    transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
+                    transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom}) rotate(${rotationDeg}deg)`,
                     transformOrigin: "center center",
                     transition: isPanning ? "none" : "transform 120ms",
                     display: "inline-block",
@@ -1059,6 +1315,7 @@ const ReviewQueueLayout = ({
                 {[
                   { key: "pageBounds", label: "Page bounds" },
                   { key: "cropBox", label: "Crop box" },
+                  { key: "trimBox", label: "Trim box" },
                   { key: "pageMask", label: "Page mask" },
                   { key: "textBlocks", label: "Text blocks" },
                   { key: "titles", label: "Titles" },
@@ -1114,11 +1371,54 @@ const ReviewQueueLayout = ({
                   Accept all with same reason
                 </button>
                 <button className="btn btn-secondary btn-sm" disabled>
-                  Apply override (planned)
-                </button>
-                <button className="btn btn-secondary btn-sm" disabled>
                   Reprocess selected (planned)
                 </button>
+              </div>
+            </div>
+
+            <div>
+              <strong style={{ fontSize: "13px" }}>Adjustments</strong>
+              <div style={{ marginTop: "8px", display: "grid", gap: "8px" }}>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
+                  <button
+                    className={`btn btn-sm ${adjustmentMode === "crop" ? "btn-primary" : "btn-secondary"}`}
+                    onClick={() => onSetAdjustmentMode(adjustmentMode === "crop" ? null : "crop")}
+                  >
+                    Crop handles
+                  </button>
+                  <button
+                    className={`btn btn-sm ${adjustmentMode === "trim" ? "btn-primary" : "btn-secondary"}`}
+                    onClick={() => onSetAdjustmentMode(adjustmentMode === "trim" ? null : "trim")}
+                  >
+                    Trim handles
+                  </button>
+                  <button className="btn btn-secondary btn-sm" onClick={onResetAdjustments}>
+                    Reset crop/trim
+                  </button>
+                </div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: "8px", alignItems: "center" }}>
+                  <button
+                    className="btn btn-primary btn-sm"
+                    onClick={onApplyOverride}
+                    disabled={isApplyingOverride}
+                  >
+                    {isApplyingOverride ? "Applying…" : "Apply override"}
+                  </button>
+                  {lastOverrideAppliedAt && (
+                    <span style={{ fontSize: "11px", color: "var(--text-secondary)" }}>
+                      Applied {new Date(lastOverrideAppliedAt).toLocaleTimeString()}
+                    </span>
+                  )}
+                  {overrideError && (
+                    <span style={{ fontSize: "11px", color: "var(--color-error)" }}>
+                      {overrideError}
+                    </span>
+                  )}
+                </div>
+                <p style={{ margin: 0, fontSize: "11px", color: "var(--text-tertiary)" }}>
+                  Drag the on-canvas handles to nudge crop or trim boxes; edges snap to book priors
+                  when close.
+                </p>
               </div>
             </div>
           </div>
@@ -1198,14 +1498,37 @@ export function ReviewQueueScreen({ runId }: Readonly<ReviewQueueScreenProps>): 
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [showSourcePreview, setShowSourcePreview] = useState(false);
   const [zoom, setZoom] = useState(1);
+  const [rotationDeg, setRotationDeg] = useState(0);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const panOriginRef = useRef<{ x: number; y: number } | null>(null);
   const [isPanning, setIsPanning] = useState(false);
   const currentPage = queuePages[selectedIndex];
   const { sidecar, sidecarError } = useSidecarData(runId, currentPage);
+  const normalizedPreview = currentPage?.previews.normalized;
+  const sourcePreview = currentPage?.previews.source;
+  const [adjustmentMode, setAdjustmentMode] = useState<AdjustmentMode>(null);
+  const [cropBox, setCropBox] = useState<Box | null>(null);
+  const [trimBox, setTrimBox] = useState<Box | null>(null);
+  const [isApplyingOverride, setIsApplyingOverride] = useState(false);
+  const [overrideError, setOverrideError] = useState<string | null>(null);
+  const [lastOverrideAppliedAt, setLastOverrideAppliedAt] = useState<string | null>(null);
+  const overlaySvgRef = useRef<globalThis.SVGSVGElement | null>(null);
+  const dragHandleRef = useRef<{
+    handle: OverlayHandle;
+    start: { x: number; y: number };
+    box: Box;
+    target: Element;
+    pointerId: number;
+  } | null>(null);
+  const baselineBoxesRef = useRef<{ crop: Box | null; trim: Box | null }>({
+    crop: null,
+    trim: null,
+  });
+  const baselineRotationRef = useRef(0);
   const [overlayLayers, setOverlayLayers] = useState({
     pageBounds: true,
     cropBox: true,
+    trimBox: true,
     pageMask: false,
     textBlocks: true,
     titles: true,
@@ -1246,6 +1569,179 @@ export function ReviewQueueScreen({ runId }: Readonly<ReviewQueueScreenProps>): 
   const handleViewerMouseUp = createViewerMouseUp(setIsPanning, panOriginRef);
   const handleViewerWheel = createViewerWheel(zoomBy);
   const handleViewerKeyDown = createViewerKeyDown(zoomBy, resetView, setPan);
+  const rotateBy = (delta: number): void => {
+    setRotationDeg((prev) => Number((prev + delta).toFixed(1)));
+  };
+  const resetRotation = (): void => setRotationDeg(0);
+  const resetAdjustments = (): void => {
+    setCropBox(baselineBoxesRef.current.crop);
+    setTrimBox(baselineBoxesRef.current.trim);
+    setRotationDeg(baselineRotationRef.current);
+    setAdjustmentMode(null);
+  };
+
+  const handleSetAdjustmentMode = (mode: AdjustmentMode): void => {
+    if (mode === "crop" && !cropBox) {
+      // Initialize default crop box if none exists (using full normalized image bounds)
+      if (normalizedPreview) {
+        const defaultCrop: Box = [0, 0, normalizedPreview.width - 1, normalizedPreview.height - 1];
+        setCropBox(defaultCrop);
+      }
+    } else if (mode === "trim" && !trimBox) {
+      // Initialize default trim box if none exists (10% margin from crop box)
+      const baseCrop = cropBox || (normalizedPreview ? [0, 0, normalizedPreview.width - 1, normalizedPreview.height - 1] : null);
+      if (baseCrop) {
+        const width = baseCrop[2] - baseCrop[0];
+        const height = baseCrop[3] - baseCrop[1];
+        const margin = Math.min(width, height) * 0.1;
+        const defaultTrim: Box = [
+          baseCrop[0] + margin,
+          baseCrop[1] + margin,
+          baseCrop[2] - margin,
+          baseCrop[3] - margin,
+        ];
+        setTrimBox(defaultTrim);
+        if (!cropBox) {
+          setCropBox(baseCrop);
+        }
+      }
+    }
+    setAdjustmentMode(mode);
+  };
+
+  useEffect(() => {
+    const baseCropBox = sidecar?.normalization?.cropBox ?? null;
+    const rawTrimBox = buildTrimBoxFromCrop(baseCropBox, sidecar?.normalization?.trim, sidecar?.dpi);
+    const baseTrimBox = baseCropBox && rawTrimBox ? clampBox(rawTrimBox, baseCropBox) : null;
+    baselineBoxesRef.current = {
+      crop: baseCropBox,
+      trim: baseTrimBox ?? null,
+    };
+    setCropBox(baseCropBox);
+    setTrimBox(baseTrimBox ?? null);
+    setRotationDeg(0);
+    baselineRotationRef.current = 0;
+    setAdjustmentMode(null);
+    setOverrideError(null);
+    setLastOverrideAppliedAt(null);
+  }, [currentPage?.id, sidecar]);
+
+  const calculateOverlayScale = (
+    currentSidecar: PageLayoutSidecar | null | undefined,
+    currentNormalizedPreview: PreviewRef | null | undefined
+  ): { x: number; y: number } | null => {
+    if (!currentNormalizedPreview) return null;
+
+    const outputWidth = currentSidecar?.normalization?.cropBox
+      ? currentSidecar.normalization.cropBox[2] + 1
+      : currentNormalizedPreview.width;
+    const outputHeight = currentSidecar?.normalization?.cropBox
+      ? currentSidecar.normalization.cropBox[3] + 1
+      : currentNormalizedPreview.height;
+
+    return {
+      x: outputWidth > 0 ? currentNormalizedPreview.width / outputWidth : 1,
+      y: outputHeight > 0 ? currentNormalizedPreview.height / outputHeight : 1,
+    };
+  };
+
+  const getOverlayScale = (): { x: number; y: number } | null => {
+    return calculateOverlayScale(sidecar, normalizedPreview);
+  };
+
+  const getSvgPoint = (
+    event: globalThis.PointerEvent | PointerEvent<globalThis.SVGCircleElement>
+  ): { x: number; y: number } | null => {
+    // Note: The SVG overlay is nested inside the rotated container (the div with the rotate
+    // transform), so it rotates with the image. getBoundingClientRect() accounts for all CSS
+    // transforms (rotation, zoom, pan), so pointer coordinates are correctly mapped even when rotated.
+    const svg = overlaySvgRef.current;
+    if (!svg || !normalizedPreview) return null;
+    const rect = svg.getBoundingClientRect();
+    if (!rect.width || !rect.height) return null;
+    const rawX = ((event.clientX - rect.left) / rect.width) * normalizedPreview.width;
+    const rawY = ((event.clientY - rect.top) / rect.height) * normalizedPreview.height;
+    const scale = getOverlayScale();
+    if (!scale) return null;
+    return { x: rawX / scale.x, y: rawY / scale.y };
+  };
+
+  const handleHandlePointerDown = (
+    event: PointerEvent<globalThis.SVGCircleElement>,
+    handle: OverlayHandle
+  ): void => {
+    const point = getSvgPoint(event);
+    if (!point) return;
+    const targetBox = handle.boxType === "trim" ? trimBox : cropBox;
+    if (!targetBox) return;
+    dragHandleRef.current = {
+      handle,
+      start: point,
+      box: targetBox,
+      target: event.currentTarget,
+      pointerId: event.pointerId,
+    };
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+  };
+
+  useEffect(() => {
+    const handlePointerMove = (event: globalThis.PointerEvent): void => {
+      if (!dragHandleRef.current || !normalizedPreview) return;
+      const point = getSvgPoint(event);
+      if (!point) return;
+      const { handle, start, box } = dragHandleRef.current;
+      const deltaX = point.x - start.x;
+      const deltaY = point.y - start.y;
+      const outputWidth = sidecar?.normalization?.cropBox
+        ? sidecar.normalization.cropBox[2] + 1
+        : normalizedPreview.width;
+      const outputHeight = sidecar?.normalization?.cropBox
+        ? sidecar.normalization.cropBox[3] + 1
+        : normalizedPreview.height;
+      const bounds: Box = [0, 0, outputWidth - 1, outputHeight - 1];
+      const prior =
+        handle.boxType === "trim"
+          ? sidecar?.bookModel?.trimBoxPx?.median
+          : sidecar?.bookModel?.contentBoxPx?.median;
+      
+      // Scale snap threshold based on output dimensions to provide consistent snapping
+      // at different zoom levels and image sizes. Uses 1% of average dimension with
+      // bounds of 4-12px to ensure reasonable snapping across image sizes.
+      const avgDimension = (outputWidth + outputHeight) / 2;
+      const scaledThreshold = Math.max(4, Math.min(12, avgDimension * 0.01));
+      
+      const snapped = snapBoxToPrior(
+        clampBox(applyHandleDrag(box, handle.edge, deltaX, deltaY), bounds),
+        prior,
+        scaledThreshold
+      );
+      if (handle.boxType === "trim") {
+        setTrimBox(snapped);
+      } else {
+        setCropBox(snapped);
+      }
+    };
+
+    const handlePointerUp = (): void => {
+      if (dragHandleRef.current) {
+        const { target, pointerId } = dragHandleRef.current;
+        target.releasePointerCapture(pointerId);
+        dragHandleRef.current = null;
+      }
+    };
+
+    globalThis.addEventListener?.("pointermove", handlePointerMove);
+    globalThis.addEventListener?.("pointerup", handlePointerUp);
+    return () => {
+      globalThis.removeEventListener?.("pointermove", handlePointerMove);
+      globalThis.removeEventListener?.("pointerup", handlePointerUp);
+    };
+  }, [
+    normalizedPreview,
+    sidecar?.bookModel?.trimBoxPx?.median,
+    sidecar?.bookModel?.contentBoxPx?.median,
+    sidecar?.normalization?.cropBox,
+  ]);
 
   const handleSubmitReview = async (): Promise<void> => {
     const windowRef: typeof globalThis & {
@@ -1269,7 +1765,62 @@ export function ReviewQueueScreen({ runId }: Readonly<ReviewQueueScreenProps>): 
     }
   };
 
+  const handleApplyOverride = async (): Promise<void> => {
+    if (!runId || !currentPage) return;
+    const overrides: Record<string, unknown> = {};
+    const normalization: Record<string, unknown> = {};
+    if (rotationDeg !== baselineRotationRef.current) {
+      normalization.rotationDeg = rotationDeg;
+    }
+    if (cropBox && !isSameBox(cropBox, baselineBoxesRef.current.crop)) {
+      normalization.cropBox = cropBox;
+    }
+    // NOTE: Trim box overrides are persisted as absolute coordinates, independent of
+    // the computed trim margin. This allows per-page manual trim adjustments that
+    // don't follow the book-wide trim margin setting. The normalization pipeline
+    // will use the override trimBox directly instead of deriving it from cropBox + trimMm.
+    if (trimBox && !isSameBox(trimBox, baselineBoxesRef.current.trim)) {
+      normalization.trimBox = trimBox;
+    }
+    if (Object.keys(normalization).length > 0) {
+      overrides.normalization = normalization;
+    }
+    if (Object.keys(overrides).length === 0) {
+      setOverrideError("No changes to save — adjustments match current values");
+      return;
+    }
+
+    const windowRef: typeof globalThis & {
+      asteria?: {
+        ipc?: {
+          [key: string]: (runId: string, pageId: string, overrides: Record<string, unknown>) => Promise<void>;
+        };
+      };
+    } = globalThis;
+    if (!windowRef.asteria?.ipc) {
+      setOverrideError("IPC unavailable.");
+      return;
+    }
+    setIsApplyingOverride(true);
+    setOverrideError(null);
+    try {
+      await windowRef.asteria.ipc["asteria:apply-override"](runId, currentPage.id, overrides);
+      setLastOverrideAppliedAt(new Date().toISOString());
+      baselineBoxesRef.current = {
+        crop: cropBox,
+        trim: trimBox,
+      };
+      baselineRotationRef.current = rotationDeg;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to apply override";
+      setOverrideError(message);
+    } finally {
+      setIsApplyingOverride(false);
+    }
+  };
+
   useKeyboardShortcuts([
+    // Navigation
     {
       key: "j",
       handler: (): void => setSelectedIndex(Math.min(selectedIndex + 1, queuePages.length - 1)),
@@ -1280,6 +1831,8 @@ export function ReviewQueueScreen({ runId }: Readonly<ReviewQueueScreenProps>): 
       handler: (): void => setSelectedIndex(Math.max(selectedIndex - 1, 0)),
       description: "Previous page",
     },
+    
+    // Decision actions
     {
       key: "a",
       handler: handleAccept,
@@ -1301,17 +1854,19 @@ export function ReviewQueueScreen({ runId }: Readonly<ReviewQueueScreenProps>): 
       description: "Undo last decision",
     },
     {
-      key: " ",
-      handler: (): void => setOverlaysVisible(!overlaysVisible),
-      description: "Toggle overlays",
-    },
-    {
       key: "Enter",
       ctrlKey: true,
       handler: (): void => {
         void handleSubmitReview();
       },
       description: "Submit review decisions",
+    },
+    
+    // View controls
+    {
+      key: " ",
+      handler: (): void => setOverlaysVisible(!overlaysVisible),
+      description: "Toggle overlays",
     },
     {
       key: "+",
@@ -1328,6 +1883,32 @@ export function ReviewQueueScreen({ runId }: Readonly<ReviewQueueScreenProps>): 
       handler: resetView,
       description: "Reset view",
     },
+    
+    // Rotation controls
+    {
+      key: "[",
+      handler: (): void => rotateBy(-0.5),
+      description: "Rotate counterclockwise",
+    },
+    {
+      key: "]",
+      handler: (): void => rotateBy(0.5),
+      description: "Rotate clockwise",
+    },
+    {
+      key: "[",
+      altKey: true,
+      handler: (): void => rotateBy(-0.1),
+      description: "Micro-rotate counterclockwise",
+    },
+    {
+      key: "]",
+      altKey: true,
+      handler: (): void => rotateBy(0.1),
+      description: "Micro-rotate clockwise",
+    },
+    
+    // Pan controls
     {
       key: "ArrowUp",
       shiftKey: true,
@@ -1370,22 +1951,13 @@ export function ReviewQueueScreen({ runId }: Readonly<ReviewQueueScreenProps>): 
 
   const hasDecisions = decisions.size > 0;
   const canSubmit = Boolean(runId) && hasDecisions && !isSubmitting;
-  const normalizedPreview = currentPage?.previews.normalized;
-  const sourcePreview = currentPage?.previews.source;
   const normalizedSrc = resolvePreviewSrc(normalizedPreview);
   const sourceSrc = resolvePreviewSrc(sourcePreview);
-  const overlayOutputWidth = sidecar?.normalization?.cropBox
-    ? sidecar.normalization.cropBox[2] + 1
-    : (normalizedPreview?.width ?? 0);
-  const overlayOutputHeight = sidecar?.normalization?.cropBox
-    ? sidecar.normalization.cropBox[3] + 1
-    : (normalizedPreview?.height ?? 0);
-  const overlayScaleX =
-    normalizedPreview && overlayOutputWidth > 0 ? normalizedPreview.width / overlayOutputWidth : 1;
-  const overlayScaleY =
-    normalizedPreview && overlayOutputHeight > 0
-      ? normalizedPreview.height / overlayOutputHeight
-      : 1;
+  const activeCropBox = cropBox ?? sidecar?.normalization?.cropBox ?? null;
+  const activeTrimBox = trimBox ?? null;
+  const overlayScale = calculateOverlayScale(sidecar, normalizedPreview);
+  const overlayScaleX = overlayScale?.x ?? 1;
+  const overlayScaleY = overlayScale?.y ?? 1;
 
   const overlaySvg = buildOverlaySvg({
     sidecar,
@@ -1394,6 +1966,11 @@ export function ReviewQueueScreen({ runId }: Readonly<ReviewQueueScreenProps>): 
     overlayLayers,
     overlayScaleX,
     overlayScaleY,
+    cropBox: activeCropBox,
+    trimBox: activeTrimBox,
+    adjustmentMode,
+    overlaySvgRef,
+    onHandlePointerDown: handleHandlePointerDown,
   });
 
   return (
@@ -1406,6 +1983,7 @@ export function ReviewQueueScreen({ runId }: Readonly<ReviewQueueScreenProps>): 
       overlaysVisible={overlaysVisible}
       showSourcePreview={showSourcePreview}
       zoom={zoom}
+      rotationDeg={rotationDeg}
       overlayLayers={overlayLayers}
       selectedIds={selectedIds}
       listRef={listRef}
@@ -1420,6 +1998,12 @@ export function ReviewQueueScreen({ runId }: Readonly<ReviewQueueScreenProps>): 
       isSubmitting={isSubmitting}
       submitError={submitError}
       canSubmit={canSubmit}
+      adjustmentMode={adjustmentMode}
+      cropBox={activeCropBox}
+      trimBox={activeTrimBox}
+      isApplyingOverride={isApplyingOverride}
+      overrideError={overrideError}
+      lastOverrideAppliedAt={lastOverrideAppliedAt}
       onSelectIndex={setSelectedIndex}
       onScroll={setScrollTop}
       onToggleSelected={toggleSelected}
@@ -1428,6 +2012,14 @@ export function ReviewQueueScreen({ runId }: Readonly<ReviewQueueScreenProps>): 
       onZoomOut={() => zoomBy(-0.1)}
       onZoomIn={() => zoomBy(0.1)}
       onResetView={resetView}
+      onRotateLeft={() => rotateBy(-0.5)}
+      onRotateRight={() => rotateBy(0.5)}
+      onMicroRotateLeft={() => rotateBy(-0.1)}
+      onMicroRotateRight={() => rotateBy(0.1)}
+      onResetRotation={resetRotation}
+      onSetAdjustmentMode={handleSetAdjustmentMode}
+      onResetAdjustments={resetAdjustments}
+      onApplyOverride={() => void handleApplyOverride()}
       onViewerMouseDown={handleViewerMouseDown}
       onViewerMouseMove={handleViewerMouseMove}
       onViewerMouseUp={handleViewerMouseUp}

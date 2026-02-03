@@ -123,17 +123,21 @@ graph TD
 - `+` / `-` — Zoom in/out
 - `0` — Reset zoom
 - `Shift + Arrows` — Pan
+- `[` / `]` — Rotate counterclockwise/clockwise
+- `Alt + [` / `Alt + ]` — Micro-rotate
 
 **Visual Feedback**:
 
 - Badge color: 🟢 Accepted, 🟡 Flagged, 🔴 Rejected
 - Confidence label per page (sidebar)
 - Overlay layers toggled via checkboxes (when sidecar data is available)
+- Crop/trim handles appear on-canvas when adjustment mode is active
 
 **Implementation note**:
 
 - Compare view is shown when source previews are available.
 - Overlay layers are driven by sidecar element data; if sidecar is missing, overlays are hidden.
+- Adjustments are persisted via per-page overrides and reflected in sidecars/manifest entries.
 
 **Data Source** (Implemented):
 
@@ -209,23 +213,28 @@ graph TD
 └─────────────────────────────────────┘
 ```
 
-### Overlay System (Planned)
+### Overlay System (Implemented)
 
 **Layer Types**:
 
-- **Crop bounds** (blue) — Detected page edges
-- **Trim box** (green) — Content area after bleed
-- **Text blocks** (cyan) — Detected paragraphs
-- **Titles** (magenta) — Chapter headings, running heads
-- **Folios** (yellow) — Page numbers
-- **Ornaments** (red) — Decorative elements
+- **Crop bounds** (green) — Detected page edges
+- **Trim box** (blue dashed) — Trim boundary after bleed
+- **Text blocks** (amber) — Detected paragraphs
+- **Titles / Running heads** (magenta) — Header cues
+- **Folios** (cyan) — Page numbers
+- **Ornaments** (violet) — Decorative elements
 
 **Controls**:
 
 - `Space` — Toggle all overlays
 - Individual layer toggles in sidebar
-- Opacity slider per layer
-- Confidence tooltip on hover
+- On-canvas handles for crop/trim nudging (snaps to book priors)
+
+**Adjustment UX**:
+
+- Toolbar provides rotation, micro-rotation, and reset controls.
+- Crop/trim buttons enable draggable handles on the preview.
+- Apply override persists adjustments to the run’s override folder and metadata files.
 
 ### Bulk Operations (Planned)
 

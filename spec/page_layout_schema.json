@@ -254,8 +254,13 @@
       "properties": {
         "accepted": { "type": "boolean" },
         "notes": { "type": "string" },
-        "overrides": { "type": "array", "items": { "type": "string" } }
+        "overrides": { "type": "array", "items": { "type": "string" } },
+        "overrideAppliedAt": { "type": "string", "format": "date-time" }
       }
+    },
+    "overrides": {
+      "type": "object",
+      "description": "Per-page override values that replace pipeline outputs"
     },
     "version": { "type": "string", "description": "Schema version" }
   }

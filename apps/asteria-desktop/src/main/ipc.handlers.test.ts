@@ -434,6 +434,181 @@ describe("IPC handler registration", () => {
     );
   });
 
+  it("apply-override updates sidecar with decisions.overrides and decisions.overrideAppliedAt", async () => {
+    registerIpcHandlers();
+    const handler = handlers.get("asteria:apply-override");
+    expect(handler).toBeDefined();
+
+    const mockSidecar = JSON.stringify({
+      pageId: "p42",
+      normalization: { cropBox: [0, 0, 100, 100] },
+      decisions: { accepted: true, notes: "test" },
+    });
+    readFile.mockResolvedValueOnce(mockSidecar);
+
+    await (
+      handler as (
+        event: unknown,
+        runId: string,
+        pageId: string,
+        overrides: Record<string, unknown>
+      ) => Promise<void>
+    )({}, "run-1", "p42", { normalization: { rotationDeg: 1.5, cropBox: [0, 0, 150, 150] } });
+
+    // Check that writeFile was called with updated sidecar
+    const writeFileCalls = writeFile.mock.calls;
+    const sidecarWriteCall = writeFileCalls.find((call) => 
+      typeof call[1] === "string" && call[1].includes('"overrideAppliedAt"')
+    );
+    expect(sidecarWriteCall).toBeDefined();
+    
+    const writtenData = JSON.parse(sidecarWriteCall![1] as string);
+    expect(writtenData.decisions.overrides).toEqual(["normalization.rotationDeg", "normalization.cropBox"]);
+    expect(writtenData.decisions.overrideAppliedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    expect(writtenData.overrides).toEqual({ normalization: { rotationDeg: 1.5, cropBox: [0, 0, 150, 150] } });
+  });
+
+  it("apply-override updates manifest with per-page overrides and overrideAppliedAt", async () => {
+    registerIpcHandlers();
+    const handler = handlers.get("asteria:apply-override");
+    expect(handler).toBeDefined();
+
+    const mockSidecar = JSON.stringify({ pageId: "p42" });
+    const mockManifest = JSON.stringify({
+      runId: "run-1",
+      pages: [
+        { pageId: "p41", filename: "page41.png" },
+        { pageId: "p42", filename: "page42.png" },
+        { pageId: "p43", filename: "page43.png" },
+      ],
+    });
+    readFile.mockResolvedValueOnce(mockSidecar).mockResolvedValueOnce(mockManifest);
+
+    await (
+      handler as (
+        event: unknown,
+        runId: string,
+        pageId: string,
+        overrides: Record<string, unknown>
+      ) => Promise<void>
+    )({}, "run-1", "p42", { normalization: { rotationDeg: -2.0 } });
+
+    // Check that writeFile was called (writeJsonAtomic uses writeFile internally)
+    expect(writeFile).toHaveBeenCalled();
+    
+    // Find a writeFile call that looks like it's writing JSON with the pages structure
+    const jsonWriteCalls = writeFile.mock.calls.filter((call) => {
+      if (typeof call[1] !== "string") return false;
+      try {
+        const data = JSON.parse(call[1]);
+        return Array.isArray(data.pages);
+      } catch {
+        return false;
+      }
+    });
+    
+    expect(jsonWriteCalls.length).toBeGreaterThan(0);
+    
+    // Parse the manifest write and verify it has the expected structure
+    const manifestData = JSON.parse(jsonWriteCalls[jsonWriteCalls.length - 1][1] as string);
+    expect(manifestData.pages).toHaveLength(3);
+    const updatedPage = manifestData.pages.find((p: { pageId: string }) => p.pageId === "p42");
+    expect(updatedPage).toBeDefined();
+    expect(updatedPage.overrides).toEqual({ normalization: { rotationDeg: -2.0 } });
+    expect(updatedPage.overrideAppliedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    // Other pages should not be affected
+    const otherPages = manifestData.pages.filter((p: { pageId: string }) => p.pageId !== "p42");
+    otherPages.forEach((p: { overrides?: unknown }) => {
+      expect(p.overrides).toBeUndefined();
+    });
+  });
+
+  it("apply-override handles missing sidecar gracefully", async () => {
+    registerIpcHandlers();
+    const handler = handlers.get("asteria:apply-override");
+    expect(handler).toBeDefined();
+
+    // Sidecar read fails
+    readFile.mockRejectedValueOnce(new Error("ENOENT"));
+
+    // Should not throw, should still write override file
+    await expect(
+      (
+        handler as (
+          event: unknown,
+          runId: string,
+          pageId: string,
+          overrides: Record<string, unknown>
+        ) => Promise<void>
+      )({}, "run-1", "p99", { normalization: { rotationDeg: 0.5 } })
+    ).resolves.toBeUndefined();
+
+    const outputDir = path.join(process.cwd(), "pipeline-results");
+    const runDir = getRunDir(outputDir, "run-1");
+    expect(rename).toHaveBeenCalledWith(
+      expect.any(String),
+      path.join(runDir, "overrides", "p99.json")
+    );
+  });
+
+  it("apply-override handles missing manifest gracefully", async () => {
+    registerIpcHandlers();
+    const handler = handlers.get("asteria:apply-override");
+    expect(handler).toBeDefined();
+
+    const mockSidecar = JSON.stringify({ pageId: "p42" });
+    // Manifest read fails
+    readFile.mockResolvedValueOnce(mockSidecar).mockRejectedValueOnce(new Error("ENOENT"));
+
+    // Should not throw, sidecar should still be updated
+    await expect(
+      (
+        handler as (
+          event: unknown,
+          runId: string,
+          pageId: string,
+          overrides: Record<string, unknown>
+        ) => Promise<void>
+      )({}, "run-1", "p42", { normalization: { rotationDeg: 0.5 } })
+    ).resolves.toBeUndefined();
+
+    // Check sidecar was written
+    const writeFileCalls = writeFile.mock.calls;
+    const sidecarWriteCall = writeFileCalls.find((call) => 
+      typeof call[1] === "string" && call[1].includes('"overrideAppliedAt"')
+    );
+    expect(sidecarWriteCall).toBeDefined();
+  });
+
+  it("apply-override handles non-array manifest.pages", async () => {
+    registerIpcHandlers();
+    const handler = handlers.get("asteria:apply-override");
+    expect(handler).toBeDefined();
+
+    const mockSidecar = JSON.stringify({ pageId: "p42" });
+    const mockManifest = JSON.stringify({ runId: "run-1", pages: "not-an-array" });
+    readFile.mockResolvedValueOnce(mockSidecar).mockResolvedValueOnce(mockManifest);
+
+    // Should not throw even with malformed manifest
+    await expect(
+      (
+        handler as (
+          event: unknown,
+          runId: string,
+          pageId: string,
+          overrides: Record<string, unknown>
+        ) => Promise<void>
+      )({}, "run-1", "p42", { normalization: { rotationDeg: 0.5 } })
+    ).resolves.toBeUndefined();
+
+    // Manifest should not be updated (no writeFile call with the manifest content)
+    const writeFileCalls = writeFile.mock.calls;
+    const manifestWriteCall = writeFileCalls.find((call) => 
+      typeof call[1] === "string" && call[1].includes('"pages":"not-an-array"')
+    );
+    expect(manifestWriteCall).toBeUndefined();
+  });
+
   it("export-run handles missing normalized directory", async () => {
     registerIpcHandlers();
     const handler = handlers.get("asteria:export-run");

@@ -240,12 +240,64 @@ export function registerIpcHandlers(): void {
       const runDir = await resolveRunDir(outputDir, runId);
       const overridesDir = path.join(runDir, "overrides");
       await fs.mkdir(overridesDir, { recursive: true });
+      const appliedAt = new Date().toISOString();
       const overridePath = path.join(overridesDir, `${pageId}.json`);
       await writeJsonAtomic(overridePath, {
         pageId,
         overrides,
-        appliedAt: new Date().toISOString(),
+        appliedAt,
       });
+      const sidecarPath = getRunSidecarPath(runDir, pageId);
+      try {
+        const raw = await fs.readFile(sidecarPath, "utf-8");
+        const sidecar = JSON.parse(raw) as Record<string, unknown>;
+        const decisions =
+          (sidecar.decisions && typeof sidecar.decisions === "object"
+            ? (sidecar.decisions as Record<string, unknown>)
+            : {}) ?? {};
+        
+        // Extract actual field paths from overrides (e.g., "normalization.cropBox", "normalization.rotationDeg")
+        const overrideFieldPaths: string[] = [];
+        const collectFieldPaths = (obj: Record<string, unknown>, prefix = ""): void => {
+          for (const key of Object.keys(obj)) {
+            const fullPath = prefix ? `${prefix}.${key}` : key;
+            const value = obj[key];
+            if (value && typeof value === "object" && !Array.isArray(value)) {
+              collectFieldPaths(value as Record<string, unknown>, fullPath);
+            } else {
+              overrideFieldPaths.push(fullPath);
+            }
+          }
+        };
+        collectFieldPaths(overrides);
+        
+        await writeJsonAtomic(sidecarPath, {
+          ...sidecar,
+          overrides,
+          decisions: {
+            ...decisions,
+            overrides: overrideFieldPaths,
+            overrideAppliedAt: appliedAt,
+          },
+        });
+      } catch {
+        // ignore missing sidecar
+      }
+      const manifestPath = getRunManifestPath(runDir);
+      try {
+        const raw = await fs.readFile(manifestPath, "utf-8");
+        const manifest = JSON.parse(raw) as { pages?: Array<Record<string, unknown>> };
+        if (Array.isArray(manifest.pages)) {
+          manifest.pages = manifest.pages.map((page) =>
+            page.pageId === pageId
+              ? { ...page, overrides, overrideAppliedAt: appliedAt }
+              : page
+          );
+          await writeJsonAtomic(manifestPath, manifest);
+        }
+      } catch {
+        // ignore missing manifest
+      }
     }
   );
 
