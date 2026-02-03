@@ -38,6 +38,7 @@ export interface BaselineSummary {
   spacingMAD?: number;
   lineStraightnessResidual?: number;
   confidence?: number;
+  peaksY?: number[];
 }
 
 export interface BoxDistribution {
@@ -76,6 +77,28 @@ export interface BaselineGridModel {
   confidence?: number;
 }
 
+export interface PageTemplate {
+  id: string;
+  pageType: LayoutProfile;
+  pageIds: string[];
+  margins?: { top: number; right: number; bottom: number; left: number };
+  columns?: { count: number; valleyRatio?: number };
+  headBand?: { ratio: number };
+  footerBand?: { ratio: number };
+  baseline?: { spacingPx?: number; consistency?: number };
+  gutter?: { meanRatio?: number };
+  ornamentHashes?: string[];
+  textDensity?: number;
+  whitespaceRatio?: number;
+  confidence: number;
+export interface BaselineGridGuide {
+  spacingPx?: number;
+  offsetPx?: number;
+  angleDeg?: number;
+  confidence?: number;
+  source?: "auto" | "user";
+}
+
 export interface BookModel {
   trimBoxPx?: BoxDistribution;
   contentBoxPx?: BoxDistribution;
@@ -83,6 +106,7 @@ export interface BookModel {
   folioModel?: FolioModel;
   ornamentLibrary?: OrnamentAnchor[];
   baselineGrid?: BaselineGridModel;
+  pageTemplates?: PageTemplate[];
 }
 
 export interface ReviewPreview {
@@ -151,6 +175,7 @@ export interface ImportCorpusRequest {
 
 export interface RunSummary {
   runId: string;
+  runDir: string;
   projectId: string;
   generatedAt: string;
   reviewCount: number;
@@ -184,8 +209,28 @@ export interface PageLayoutElement {
   source?: string;
 }
 
+export interface GuideLine {
+  id: string;
+  axis: "x" | "y";
+  position: number;
+  kind: "major" | "minor";
+  label?: string;
+}
+
+export interface GuideLayerData {
+  id: string;
+  guides: GuideLine[];
+}
+
+export interface GuideLayout {
+  layers: GuideLayerData[];
+}
+
 export interface PageLayoutSidecar {
   pageId: string;
+  pageType?: LayoutProfile;
+  templateId?: string;
+  templateConfidence?: number;
   source: { path: string; checksum: string; pageIndex?: number };
   spread?: {
     sourcePageId: string;
@@ -211,6 +256,9 @@ export interface PageLayoutSidecar {
       darkness?: number;
     };
     shading?: NormalizationShading;
+    guides?: {
+      baselineGrid?: BaselineGridGuide;
+    };
   };
   elements: PageLayoutElement[];
   metrics: {
@@ -246,6 +294,7 @@ export interface PageLayoutSidecar {
     source?: "review";
   };
   overrides?: Record<string, unknown>;
+  guides?: GuideLayout;
   bookModel?: BookModel;
   version?: string;
 }
@@ -259,6 +308,7 @@ export interface PipelineRunConfig {
 
 export interface PipelineRunResult {
   runId: string;
+  runDir: string;
   status: "success" | "error" | "cancelled" | "running" | "paused";
   pagesProcessed: number;
   errors: Array<{ pageId: string; message: string }>;
@@ -476,15 +526,21 @@ export interface IpcChannels {
   "asteria:cancel-run": (_runId: string) => Promise<void>;
   "asteria:pause-run": (_runId: string) => Promise<void>;
   "asteria:resume-run": (_runId: string) => Promise<void>;
-  "asteria:fetch-page": (_runId: string, _pageId: string) => Promise<PageData>;
-  "asteria:fetch-sidecar": (_runId: string, _pageId: string) => Promise<PageLayoutSidecar | null>;
+  "asteria:fetch-page": (_runId: string, _runDir: string, _pageId: string) => Promise<PageData>;
+  "asteria:fetch-sidecar": (
+    _runId: string,
+    _runDir: string,
+    _pageId: string
+  ) => Promise<PageLayoutSidecar | null>;
   "asteria:apply-override": (
     _runId: string,
+    _runDir: string,
     _pageId: string,
     _overrides: Record<string, unknown>
   ) => Promise<void>;
   "asteria:export-run": (
     _runId: string,
+    _runDir: string,
     _formats: Array<"png" | "tiff" | "pdf">
   ) => Promise<string>;
   "asteria:analyze-corpus": (_config: PipelineRunConfig) => Promise<CorpusSummary>;
@@ -496,7 +552,10 @@ export interface IpcChannels {
   "asteria:list-projects": () => Promise<ProjectSummary[]>;
   "asteria:import-corpus": (_request: ImportCorpusRequest) => Promise<ProjectSummary>;
   "asteria:list-runs": () => Promise<RunSummary[]>;
-  "asteria:get-run-manifest": (_runId: string) => Promise<RunManifestSummary | null>;
+  "asteria:get-run-manifest": (
+    _runId: string,
+    _runDir: string
+  ) => Promise<RunManifestSummary | null>;
   "asteria:get-pipeline-config": (_projectId?: string) => Promise<PipelineConfigSnapshot>;
   "asteria:save-project-config": (
     _projectId: string,

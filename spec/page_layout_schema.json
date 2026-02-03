@@ -76,6 +76,21 @@
             "params": { "type": "object" },
             "confidence": { "type": "number", "minimum": 0, "maximum": 1 }
           }
+        },
+        "guides": {
+          "type": "object",
+          "properties": {
+            "baselineGrid": {
+              "type": "object",
+              "properties": {
+                "spacingPx": { "type": "number" },
+                "offsetPx": { "type": "number" },
+                "angleDeg": { "type": "number" },
+                "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+                "source": { "type": "string", "enum": ["auto", "user"] }
+              }
+            }
+          }
         }
       }
     },
@@ -134,7 +149,11 @@
             "medianSpacingPx": { "type": "number" },
             "spacingMAD": { "type": "number" },
             "lineStraightnessResidual": { "type": "number" },
-            "confidence": { "type": "number", "minimum": 0, "maximum": 1 }
+            "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+            "peaksY": {
+              "type": "array",
+              "items": { "type": "number", "minimum": 0, "maximum": 1 }
+            }
           }
         }
       }

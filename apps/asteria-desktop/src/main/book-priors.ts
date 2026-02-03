@@ -15,6 +15,10 @@ export type BandSpec = {
   yEndRatio: number;
 };
 
+export const RUNNING_HEAD_BAND: BandSpec = { yStartRatio: 0.02, yEndRatio: 0.14 };
+export const FOLIO_BAND: BandSpec = { yStartRatio: 0.86, yEndRatio: 0.98 };
+export const ORNAMENT_BAND: BandSpec = { yStartRatio: 0.14, yEndRatio: 0.24 };
+
 const computeDHash = (data: Uint8Array, width: number, height: number): string => {
   const native = getPipelineCoreNative();
   if (native && width === 9 && height === 8 && data.length >= 72) {
@@ -49,7 +53,7 @@ const computeVariance = (data: Uint8Array): number => {
   return variance;
 };
 
-const hashBand = async (
+export const hashBand = async (
   imagePath: string,
   band: BandSpec
 ): Promise<{ hash: string; variance: number } | null> => {
@@ -86,7 +90,7 @@ export const deriveRunningHeadTemplates = async (
   outputSize: { width: number; height: number },
   minCount = 3
 ): Promise<RunningHeadTemplate[]> => {
-  const band = { yStartRatio: 0.02, yEndRatio: 0.14 };
+  const band = RUNNING_HEAD_BAND;
   const counts = new Map<string, number>();
   for (const imagePath of imagePaths) {
     const hashed = await hashBand(imagePath, band);
@@ -113,7 +117,7 @@ export const deriveFolioModel = async (
   outputSize: { width: number; height: number },
   minCount = 3
 ): Promise<FolioModel | undefined> => {
-  const band = { yStartRatio: 0.86, yEndRatio: 0.98 };
+  const band = FOLIO_BAND;
   const counts = new Map<string, number>();
   for (const imagePath of imagePaths) {
     const hashed = await hashBand(imagePath, band);
@@ -146,7 +150,7 @@ export const deriveOrnamentLibrary = async (
   outputSize: { width: number; height: number },
   minCount = 2
 ): Promise<OrnamentAnchor[]> => {
-  const band = { yStartRatio: 0.14, yEndRatio: 0.24 };
+  const band = ORNAMENT_BAND;
   const hashes: Array<{ hash: string; variance: number }> = [];
   for (const imagePath of imagePaths) {
     const hashed = await hashBand(imagePath, band);

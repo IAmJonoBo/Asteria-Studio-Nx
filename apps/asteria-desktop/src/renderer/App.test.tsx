@@ -60,7 +60,7 @@ describe("App", () => {
       dimensionConfidence: 0.9,
       dpiConfidence: 0.85,
     });
-    const startRun = vi.fn().mockResolvedValue({ runId: "run-42" });
+    const startRun = vi.fn().mockResolvedValue({ runId: "run-42", runDir: "/tmp/runs/run-42" });
     const listRuns = vi.fn().mockResolvedValue([]);
     const confirmMock = vi.spyOn(globalThis, "confirm").mockReturnValue(true);
     windowRef.asteria = {
@@ -141,6 +141,7 @@ describe("App", () => {
     const listRuns = vi.fn().mockResolvedValue([
       {
         runId: "run-123",
+        runDir: "/tmp/runs/run-123",
         projectId: "project-a",
         generatedAt: "2026-01-01",
         reviewCount: 1,
@@ -182,7 +183,7 @@ describe("App", () => {
 
     await user.click(screen.getAllByRole("button", { name: /review queue/i })[0]);
 
-    expect(fetchReviewQueue).toHaveBeenCalledWith("run-123");
+    expect(fetchReviewQueue).toHaveBeenCalledWith("run-123", "/tmp/runs/run-123");
     const pageEntries = await screen.findAllByText(/page-123\.jpg/i);
     expect(pageEntries.length).toBeGreaterThan(0);
 
@@ -545,6 +546,7 @@ describe("App", () => {
         "asteria:list-runs": vi.fn().mockResolvedValue([
           {
             runId: "run-42",
+            runDir: "/tmp/runs/run-42",
             projectId: "proj",
             generatedAt: "2024-01-01",
             reviewCount: 0,

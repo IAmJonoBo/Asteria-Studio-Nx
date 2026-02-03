@@ -23,6 +23,7 @@ describe("screen flows", () => {
     const listRuns = vi.fn().mockResolvedValue([
       {
         runId: "run-1",
+        runDir: "/tmp/runs/run-1",
         projectId: "proj",
         generatedAt: new Date("2024-01-01T00:00:00.000Z").toISOString(),
         reviewCount: 2,
@@ -54,6 +55,7 @@ describe("screen flows", () => {
     render(
       <RunsScreen
         selectedRunId="run-1"
+        selectedRunDir="/tmp/runs/run-1"
         onSelectRun={onSelectRun}
         onOpenReviewQueue={onOpenReviewQueue}
       />
@@ -64,7 +66,7 @@ describe("screen flows", () => {
     expect(screen.getByText(/Selected run config/i)).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: /open review queue/i }));
-    expect(onSelectRun).toHaveBeenCalledWith("run-1");
+    expect(onSelectRun).toHaveBeenCalledWith("run-1", "/tmp/runs/run-1");
     expect(onOpenReviewQueue).toHaveBeenCalled();
   });
 
@@ -108,7 +110,9 @@ describe("screen flows", () => {
   it("ExportsScreen shows previous manifests and triggers export", async () => {
     const listRuns = vi
       .fn()
-      .mockResolvedValue([{ runId: "run-9", projectId: "proj", generatedAt: "", reviewCount: 0 }]);
+      .mockResolvedValue([
+        { runId: "run-9", runDir: "/tmp/runs/run-9", projectId: "proj", generatedAt: "", reviewCount: 0 },
+      ]);
     const exportRun = vi.fn().mockResolvedValue("/tmp/export");
     const getManifest = vi.fn().mockResolvedValue({
       runId: "run-9",
@@ -137,7 +141,7 @@ describe("screen flows", () => {
     await user.click(screen.getByRole("button", { name: /Export Run/i }));
 
     expect(await screen.findByText(/Export saved to/i)).toBeInTheDocument();
-    expect(exportRun).toHaveBeenCalledWith("run-9", ["png"]);
+    expect(exportRun).toHaveBeenCalledWith("run-9", "/tmp/runs/run-9", ["png"]);
   });
 
   it("SettingsScreen saves and clears overrides", async () => {

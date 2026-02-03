@@ -2,6 +2,10 @@ import type { JSX, KeyboardEvent, MouseEvent, WheelEvent, MutableRefObject, Poin
 import { useState, useEffect, useRef, useMemo } from "react";
 import { useKeyboardShortcuts } from "../hooks/useKeyboardShortcut.js";
 import type { LayoutProfile, ReviewQueue, PageLayoutSidecar } from "../../ipc/contracts.js";
+import { renderGuideLayers } from "../guides/registry.js";
+import type { ReviewQueue, PageLayoutSidecar } from "../../ipc/contracts.js";
+import { snapBoxWithSources, getBoxSnapCandidates } from "../utils/snapping.js";
+import type { SnapEdge } from "../utils/snapping.js";
 
 type PreviewRef = {
   path: string;
@@ -37,6 +41,7 @@ type TemplateSummary = {
 
 interface ReviewQueueScreenProps {
   runId?: string;
+  runDir?: string;
 }
 
 type DecisionValue = "accept" | "flag" | "reject";
@@ -214,6 +219,14 @@ type Box = [number, number, number, number];
 
 type AdjustmentMode = "crop" | "trim" | null;
 
+type BaselineGridOverrides = {
+  spacingPx: number | null;
+  offsetPx: number | null;
+  angleDeg: number | null;
+  snapToPeaks: boolean;
+  markCorrect: boolean;
+};
+
 type OverlayHandleEdge =
   | "left"
   | "right"
@@ -246,6 +259,22 @@ const getIpcChannel = <TArgs extends unknown[], TReturn>(
   const channel = windowRef.asteria?.ipc?.[channelName];
   if (!channel) return undefined;
   return channel as (...args: TArgs) => Promise<TReturn>;
+type SnapGuideLine = {
+  axis: "x" | "y";
+  value: number;
+  edge: "left" | "right" | "top" | "bottom";
+  label?: string;
+};
+
+const handleSnapEdges: Record<OverlayHandleEdge, SnapEdge[]> = {
+  left: ["left"],
+  right: ["right"],
+  top: ["top"],
+  bottom: ["bottom"],
+  "top-left": ["top", "left"],
+  "top-right": ["top", "right"],
+  "bottom-left": ["bottom", "left"],
+  "bottom-right": ["bottom", "right"],
 };
 
 const getDecisionBadgeClass = (decisionValue: DecisionValue): string => {
@@ -258,6 +287,68 @@ const getConfidenceColor = (confidence: number): string => {
   if (confidence < 0.5) return "var(--color-error)";
   if (confidence < 0.7) return "var(--color-warning)";
   return "var(--color-success)";
+};
+
+const isFiniteNumber = (value: unknown): value is number =>
+  typeof value === "number" && Number.isFinite(value);
+
+const buildBaselineGridOverrides = (
+  sidecar: PageLayoutSidecar | null | undefined
+): BaselineGridOverrides => {
+  const overrides = sidecar?.overrides;
+  const guides =
+    overrides && typeof overrides === "object" && "guides" in overrides
+      ? (overrides.guides as Record<string, unknown> | null)
+      : null;
+  const baselineGrid =
+    guides && typeof guides === "object" && "baselineGrid" in guides
+      ? (guides.baselineGrid as Record<string, unknown> | null)
+      : null;
+
+  const overrideSpacing = baselineGrid && isFiniteNumber(baselineGrid.spacingPx)
+    ? baselineGrid.spacingPx
+    : null;
+  const overrideOffset = baselineGrid && isFiniteNumber(baselineGrid.offsetPx)
+    ? baselineGrid.offsetPx
+    : null;
+  const overrideAngle = baselineGrid && isFiniteNumber(baselineGrid.angleDeg)
+    ? baselineGrid.angleDeg
+    : null;
+  const overrideSnap =
+    baselineGrid && typeof baselineGrid.snapToPeaks === "boolean"
+      ? baselineGrid.snapToPeaks
+      : null;
+  const overrideCorrect =
+    baselineGrid && typeof baselineGrid.markCorrect === "boolean"
+      ? baselineGrid.markCorrect
+      : null;
+
+  const autoSpacing =
+    sidecar?.bookModel?.baselineGrid?.dominantSpacingPx ??
+    sidecar?.metrics?.baseline?.medianSpacingPx ??
+    null;
+
+  return {
+    spacingPx: overrideSpacing ?? (isFiniteNumber(autoSpacing) ? autoSpacing : null),
+    offsetPx: overrideOffset,
+    angleDeg: overrideAngle,
+    snapToPeaks: overrideSnap ?? true,
+    markCorrect: overrideCorrect ?? false,
+  };
+};
+
+const areBaselineGridOverridesEqual = (
+  current: BaselineGridOverrides,
+  baseline: BaselineGridOverrides | null
+): boolean => {
+  if (!baseline) return false;
+  return (
+    current.spacingPx === baseline.spacingPx &&
+    current.offsetPx === baseline.offsetPx &&
+    current.angleDeg === baseline.angleDeg &&
+    current.snapToPeaks === baseline.snapToPeaks &&
+    current.markCorrect === baseline.markCorrect
+  );
 };
 
 const resolvePreviewSrc = (preview?: PreviewRef): string | undefined => {
@@ -407,15 +498,10 @@ const applyHandleDrag = (box: Box, handle: OverlayHandleEdge, deltaX: number, de
   }
 };
 
-const snapBoxToPrior = (box: Box, prior: Box | null | undefined, threshold = 6): Box => {
-  if (!prior) return box;
-  const snapped: Box = [...box];
-  for (let i = 0; i < 4; i += 1) {
-    if (Math.abs(box[i] - prior[i]) <= threshold) {
-      snapped[i] = prior[i];
-    }
-  }
-  return snapped;
+type SnapGuidesState = {
+  guides: Array<{ axis: "x" | "y"; value: number; edge: "left" | "right" | "top" | "bottom"; label?: string }>;
+  active: boolean;
+  tooltip: string | null;
 };
 
 const isSameBox = (a: Box | null, b: Box | null): boolean => {
@@ -436,6 +522,13 @@ const buildTrimBoxFromCrop = (cropBox: Box | null, trimMm?: number, dpi?: number
     cropBox[2] - usedTrimPx,
     cropBox[3] - usedTrimPx,
   ];
+};
+
+const formatSnapTooltip = (guides: SnapGuideLine[]): string | null => {
+  if (guides.length === 0) return null;
+  const labels = Array.from(new Set(guides.map((guide) => guide.label).filter(Boolean)));
+  if (labels.length === 0) return "Snapped";
+  return `Snapped: ${labels.join(", ")}`;
 };
 
 const createDecisionHandler =
@@ -649,21 +742,21 @@ const getReasonInfo = (code: string): ReasonInfo => {
 const ITEM_HEIGHT = 86;
 const OVERSCAN = 6;
 
-const useReviewQueuePages = (runId?: string): ReviewPage[] => {
+const useReviewQueuePages = (runId?: string, runDir?: string): ReviewPage[] => {
   const [pages, setPages] = useState<ReviewPage[]>([]);
 
   useEffect((): void | (() => void) => {
     let cancelled = false;
     const loadQueue = async (): Promise<void> => {
       const windowRef: typeof globalThis & {
-        asteria?: { ipc?: { [key: string]: (runId: string) => Promise<ReviewQueue> } };
+        asteria?: { ipc?: { [key: string]: (runId: string, runDir: string) => Promise<ReviewQueue> } };
       } = globalThis;
-      if (!runId || !windowRef.asteria?.ipc) {
+      if (!runId || !runDir || !windowRef.asteria?.ipc) {
         if (!cancelled) setPages([]);
         return;
       }
       try {
-        const queue = await windowRef.asteria.ipc["asteria:fetch-review-queue"](runId);
+        const queue = await windowRef.asteria.ipc["asteria:fetch-review-queue"](runId, runDir);
         if (cancelled) return;
         setPages(mapReviewQueue(queue));
       } catch {
@@ -674,7 +767,7 @@ const useReviewQueuePages = (runId?: string): ReviewPage[] => {
     return () => {
       cancelled = true;
     };
-  }, [runId]);
+  }, [runDir, runId]);
 
   return pages;
 };
@@ -774,6 +867,7 @@ const useQueueViewport = (
 
 const useSidecarData = (
   runId: string | undefined,
+  runDir: string | undefined,
   currentPage: ReviewPage | undefined
 ): { sidecar: PageLayoutSidecar | null; sidecarError: string | null } => {
   const [sidecar, setSidecar] = useState<PageLayoutSidecar | null>(null);
@@ -790,11 +884,15 @@ const useSidecarData = (
       const windowRef: typeof globalThis & {
         asteria?: {
           ipc?: {
-            [key: string]: (runId: string, pageId: string) => Promise<PageLayoutSidecar | null>;
+            [key: string]: (
+              runId: string,
+              runDir: string,
+              pageId: string
+            ) => Promise<PageLayoutSidecar | null>;
           };
         };
       } = globalThis;
-      if (!runId || !windowRef.asteria?.ipc) {
+      if (!runId || !runDir || !windowRef.asteria?.ipc) {
         setSidecar(null);
         setSidecarError(null);
         return;
@@ -802,6 +900,7 @@ const useSidecarData = (
       try {
         const sidecarData = await windowRef.asteria.ipc["asteria:fetch-sidecar"](
           runId,
+          runDir,
           currentPage.id
         );
         if (cancelled) return;
@@ -818,7 +917,7 @@ const useSidecarData = (
     return () => {
       cancelled = true;
     };
-  }, [currentPage, runId]);
+  }, [currentPage, runDir, runId]);
 
   return { sidecar, sidecarError };
 };
@@ -830,9 +929,13 @@ type OverlayRenderParams = {
   overlayLayers: OverlayLayersState;
   overlayScaleX: number;
   overlayScaleY: number;
+  zoom: number;
   cropBox: Box | null;
   trimBox: Box | null;
   adjustmentMode: AdjustmentMode;
+  snapGuides: SnapGuideLine[];
+  showSnapGuides: boolean;
+  snapTooltip: string | null;
   overlaySvgRef: MutableRefObject<globalThis.SVGSVGElement | null>;
   onHandlePointerDown: (event: PointerEvent<globalThis.SVGCircleElement>, handle: OverlayHandle) => void;
 };
@@ -844,9 +947,13 @@ const buildOverlaySvg = ({
   overlayLayers,
   overlayScaleX,
   overlayScaleY,
+  zoom,
   cropBox,
   trimBox,
   adjustmentMode,
+  snapGuides,
+  showSnapGuides,
+  snapTooltip,
   overlaySvgRef,
   onHandlePointerDown,
 }: OverlayRenderParams): JSX.Element | null => {
@@ -906,6 +1013,68 @@ const buildOverlaySvg = ({
       style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }}
       viewBox={`0 0 ${normalizedPreview.width} ${normalizedPreview.height}`}
     >
+      {showSnapGuides &&
+        snapGuides.map((guide, index) => {
+          const isVertical = guide.axis === "x";
+          const scaledValue = guide.value * (isVertical ? overlayScaleX : overlayScaleY);
+          const glowId = `snap-glow-${index}`;
+          return (
+            <g key={`${guide.axis}-${guide.value}-${guide.edge}-${index}`} pointerEvents="none">
+              <defs>
+                <filter id={glowId} x="-50%" y="-50%" width="200%" height="200%">
+                  <feGaussianBlur stdDeviation="3" result="blur" />
+                  <feMerge>
+                    <feMergeNode in="blur" />
+                    <feMergeNode in="SourceGraphic" />
+                  </feMerge>
+                </filter>
+              </defs>
+              {isVertical ? (
+                <line
+                  x1={scaledValue}
+                  x2={scaledValue}
+                  y1={0}
+                  y2={normalizedPreview.height}
+                  stroke="rgba(250, 204, 21, 0.9)"
+                  strokeWidth={2}
+                  filter={`url(#${glowId})`}
+                />
+              ) : (
+                <line
+                  x1={0}
+                  x2={normalizedPreview.width}
+                  y1={scaledValue}
+                  y2={scaledValue}
+                  stroke="rgba(250, 204, 21, 0.9)"
+                  strokeWidth={2}
+                  filter={`url(#${glowId})`}
+                />
+              )}
+            </g>
+          );
+        })}
+      {showSnapGuides && snapTooltip && (
+        <g pointerEvents="none">
+          <rect
+            x={12}
+            y={12}
+            width={Math.min(320, snapTooltip.length * 7 + 24)}
+            height={30}
+            rx={8}
+            fill="rgba(15, 23, 42, 0.85)"
+            stroke="rgba(148, 163, 184, 0.7)"
+          />
+          <text x={24} y={32} fill="white" fontSize={12} fontFamily="var(--font-body)">
+            {snapTooltip}
+          </text>
+        </g>
+      )}
+      {renderGuideLayers({
+        guideLayout: sidecar.guides,
+        zoom,
+        canvasWidth: normalizedPreview.width,
+        canvasHeight: normalizedPreview.height,
+      })}
       {overlayLayers.cropBox && cropBox && (
         <rect
           x={cropBox[0] * overlayScaleX}
@@ -1702,6 +1871,97 @@ const ReviewQueueLayout = ({
                   </div>
                 </div>
               )}
+              <strong style={{ fontSize: "13px" }}>Baseline grid</strong>
+              <div style={{ marginTop: "8px", display: "grid", gap: "8px" }}>
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+                    gap: "8px",
+                  }}
+                >
+                  <label style={{ display: "grid", gap: "4px", fontSize: "11px" }}>
+                    Spacing (px)
+                    <input
+                      type="number"
+                      step="0.1"
+                      value={baselineSpacingPx ?? ""}
+                      onChange={(event) => {
+                        const value = event.target.value;
+                        const parsed = Number(value);
+                        setBaselineSpacingPx(value === "" || !Number.isFinite(parsed) ? null : parsed);
+                      }}
+                    />
+                  </label>
+                  <label style={{ display: "grid", gap: "4px", fontSize: "11px" }}>
+                    Offset (px)
+                    <input
+                      type="number"
+                      step="0.1"
+                      value={baselineOffsetPx ?? ""}
+                      onChange={(event) => {
+                        const value = event.target.value;
+                        const parsed = Number(value);
+                        setBaselineOffsetPx(value === "" || !Number.isFinite(parsed) ? null : parsed);
+                      }}
+                    />
+                  </label>
+                  <label style={{ display: "grid", gap: "4px", fontSize: "11px" }}>
+                    Angle (°)
+                    <input
+                      type="number"
+                      step="0.1"
+                      value={baselineAngleDeg ?? ""}
+                      onChange={(event) => {
+                        const value = event.target.value;
+                        const parsed = Number(value);
+                        setBaselineAngleDeg(value === "" || !Number.isFinite(parsed) ? null : parsed);
+                      }}
+                    />
+                  </label>
+                </div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: "12px" }}>
+                  <label style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                    <input
+                      type="checkbox"
+                      checked={baselineSnapToPeaks}
+                      onChange={(event) => setBaselineSnapToPeaks(event.target.checked)}
+                    />
+                    <span style={{ fontSize: "12px" }}>Snap to peaks</span>
+                  </label>
+                  <label style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                    <input
+                      type="checkbox"
+                      checked={baselineMarkCorrect}
+                      onChange={(event) => setBaselineMarkCorrect(event.target.checked)}
+                    />
+                    <span style={{ fontSize: "12px" }}>Mark correct</span>
+                  </label>
+                </div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: "8px", alignItems: "center" }}>
+                  <button
+                    className="btn btn-primary btn-sm"
+                    onClick={onApplyOverride}
+                    disabled={isApplyingOverride}
+                  >
+                    {isApplyingOverride ? "Applying…" : "Apply override"}
+                  </button>
+                  {lastOverrideAppliedAt && (
+                    <span style={{ fontSize: "11px", color: "var(--text-secondary)" }}>
+                      Applied {new Date(lastOverrideAppliedAt).toLocaleTimeString()}
+                    </span>
+                  )}
+                  {overrideError && (
+                    <span style={{ fontSize: "11px", color: "var(--color-error)" }}>
+                      {overrideError}
+                    </span>
+                  )}
+                </div>
+                <p style={{ margin: 0, fontSize: "11px", color: "var(--text-tertiary)" }}>
+                  Tune spacing, offset, and angle for the page baseline grid. Snap-to-peaks aligns
+                  to detected line clusters, and mark-correct confirms the guide for training.
+                </p>
+              </div>
             </div>
           </div>
 
@@ -1768,8 +2028,11 @@ const ReviewQueueLayout = ({
   );
 };
 
-export function ReviewQueueScreen({ runId }: Readonly<ReviewQueueScreenProps>): JSX.Element {
-  const pages = useReviewQueuePages(runId);
+export function ReviewQueueScreen({
+  runId,
+  runDir,
+}: Readonly<ReviewQueueScreenProps>): JSX.Element {
+  const pages = useReviewQueuePages(runId, runDir);
   const queuePages = useQueueWorker(pages);
   const { selectedIndex, setSelectedIndex } = useQueueSelection(queuePages);
   const { listRef, scrollTop, setScrollTop, viewportHeight } = useQueueViewport(selectedIndex);
@@ -1785,7 +2048,7 @@ export function ReviewQueueScreen({ runId }: Readonly<ReviewQueueScreenProps>): 
   const panOriginRef = useRef<{ x: number; y: number } | null>(null);
   const [isPanning, setIsPanning] = useState(false);
   const currentPage = queuePages[selectedIndex];
-  const { sidecar, sidecarError } = useSidecarData(runId, currentPage);
+  const { sidecar, sidecarError } = useSidecarData(runId, runDir, currentPage);
   const normalizedPreview = currentPage?.previews.normalized;
   const sourcePreview = currentPage?.previews.source;
   const [adjustmentMode, setAdjustmentMode] = useState<AdjustmentMode>(null);
@@ -1795,7 +2058,19 @@ export function ReviewQueueScreen({ runId }: Readonly<ReviewQueueScreenProps>): 
   const [overrideError, setOverrideError] = useState<string | null>(null);
   const [lastOverrideAppliedAt, setLastOverrideAppliedAt] = useState<string | null>(null);
   const [applyScope, setApplyScope] = useState<TemplateScope>("page");
+  const [baselineSpacingPx, setBaselineSpacingPx] = useState<number | null>(null);
+  const [baselineOffsetPx, setBaselineOffsetPx] = useState<number | null>(null);
+  const [baselineAngleDeg, setBaselineAngleDeg] = useState<number | null>(null);
+  const [baselineSnapToPeaks, setBaselineSnapToPeaks] = useState(true);
+  const [baselineMarkCorrect, setBaselineMarkCorrect] = useState(false);
   const overlaySvgRef = useRef<globalThis.SVGSVGElement | null>(null);
+  const [snapGuidesState, setSnapGuidesState] = useState<SnapGuidesState>({
+    guides: [],
+    active: false,
+    tooltip: null,
+  });
+  const [isDraggingHandle, setIsDraggingHandle] = useState(false);
+  const [snapTemporarilyDisabled, setSnapTemporarilyDisabled] = useState(false);
   const dragHandleRef = useRef<{
     handle: OverlayHandle;
     start: { x: number; y: number };
@@ -1808,6 +2083,7 @@ export function ReviewQueueScreen({ runId }: Readonly<ReviewQueueScreenProps>): 
     trim: null,
   });
   const baselineRotationRef = useRef(0);
+  const baselineGuidesRef = useRef<BaselineGridOverrides | null>(null);
   const [overlayLayers, setOverlayLayers] = useState({
     pageBounds: true,
     cropBox: true,
@@ -1819,6 +2095,75 @@ export function ReviewQueueScreen({ runId }: Readonly<ReviewQueueScreenProps>): 
     folios: true,
     ornaments: true,
   });
+  const snapSources = useMemo(() => {
+    const sources = [];
+    const templateCandidates = [
+      ...(sidecar?.bookModel?.runningHeadTemplates?.flatMap((template) =>
+        getBoxSnapCandidates(template.bbox, template.confidence ?? 1, "Template: running head", "templates")
+      ) ?? []),
+      ...(sidecar?.bookModel?.ornamentLibrary?.flatMap((ornament) =>
+        getBoxSnapCandidates(ornament.bbox, ornament.confidence ?? 1, "Template: ornament", "templates")
+      ) ?? []),
+    ];
+    sources.push({
+      id: "templates",
+      priority: 4,
+      minConfidence: 0.4,
+      weight: 1.2,
+      radius: 10,
+      label: "Templates",
+      candidates: templateCandidates,
+    });
+
+    const detectedCandidates =
+      sidecar?.elements?.flatMap((element) =>
+        getBoxSnapCandidates(
+          element.bbox,
+          element.confidence ?? 1,
+          `Detected: ${element.type.replace("_", " ")}`,
+          "detected"
+        )
+      ) ?? [];
+    sources.push({
+      id: "detected",
+      priority: 3,
+      minConfidence: 0.5,
+      weight: 1,
+      radius: 8,
+      label: "Detected elements",
+      candidates: detectedCandidates,
+    });
+
+    const baselineCandidates = [
+      ...(baselineBoxesRef.current.crop
+        ? getBoxSnapCandidates(baselineBoxesRef.current.crop, 1, "Baseline: crop", "baseline")
+        : []),
+      ...(baselineBoxesRef.current.trim
+        ? getBoxSnapCandidates(baselineBoxesRef.current.trim, 1, "Baseline: trim", "baseline")
+        : []),
+    ];
+    sources.push({
+      id: "baseline",
+      priority: 2,
+      minConfidence: 0.1,
+      weight: 0.9,
+      radius: 12,
+      label: "Baseline",
+      candidates: baselineCandidates,
+    });
+
+    sources.push({
+      id: "user-guides",
+      priority: 5,
+      minConfidence: 0,
+      weight: 1.5,
+      radius: 14,
+      label: "User guides",
+      candidates: [],
+    });
+
+    return sources;
+  }, [sidecar]);
 
   const templateSummaries = useMemo(() => buildTemplateSummaries(queuePages), [queuePages]);
   const templateKey = getTemplateKey(currentPage);
@@ -1894,6 +2239,20 @@ export function ReviewQueueScreen({ runId }: Readonly<ReviewQueueScreenProps>): 
     setAdjustmentMode(null);
   };
 
+  useEffect(() => {
+    const handleKeyChange = (event: globalThis.KeyboardEvent): void => {
+      if (event.key === "Control" || event.key === "Meta") {
+        setSnapTemporarilyDisabled(event.type === "keydown");
+      }
+    };
+    globalThis.addEventListener?.("keydown", handleKeyChange);
+    globalThis.addEventListener?.("keyup", handleKeyChange);
+    return () => {
+      globalThis.removeEventListener?.("keydown", handleKeyChange);
+      globalThis.removeEventListener?.("keyup", handleKeyChange);
+    };
+  }, []);
+
   const handleSetAdjustmentMode = (mode: AdjustmentMode): void => {
     if (mode === "crop" && !cropBox) {
       // Initialize default crop box if none exists (using full normalized image bounds)
@@ -1927,13 +2286,20 @@ export function ReviewQueueScreen({ runId }: Readonly<ReviewQueueScreenProps>): 
     const baseCropBox = sidecar?.normalization?.cropBox ?? null;
     const rawTrimBox = buildTrimBoxFromCrop(baseCropBox, sidecar?.normalization?.trim, sidecar?.dpi);
     const baseTrimBox = baseCropBox && rawTrimBox ? clampBox(rawTrimBox, baseCropBox) : null;
+    const baselineGrid = buildBaselineGridOverrides(sidecar);
     baselineBoxesRef.current = {
       crop: baseCropBox,
       trim: baseTrimBox ?? null,
     };
+    baselineGuidesRef.current = baselineGrid;
     setCropBox(baseCropBox);
     setTrimBox(baseTrimBox ?? null);
     setRotationDeg(0);
+    setBaselineSpacingPx(baselineGrid.spacingPx);
+    setBaselineOffsetPx(baselineGrid.offsetPx);
+    setBaselineAngleDeg(baselineGrid.angleDeg);
+    setBaselineSnapToPeaks(baselineGrid.snapToPeaks);
+    setBaselineMarkCorrect(baselineGrid.markCorrect);
     baselineRotationRef.current = 0;
     setAdjustmentMode(null);
     setOverrideError(null);
@@ -1995,6 +2361,8 @@ export function ReviewQueueScreen({ runId }: Readonly<ReviewQueueScreenProps>): 
       target: event.currentTarget,
       pointerId: event.pointerId,
     };
+    setIsDraggingHandle(true);
+    setSnapGuidesState((prev) => ({ ...prev, active: true }));
     event.currentTarget.setPointerCapture?.(event.pointerId);
   };
 
@@ -2013,22 +2381,22 @@ export function ReviewQueueScreen({ runId }: Readonly<ReviewQueueScreenProps>): 
         ? sidecar.normalization.cropBox[3] + 1
         : normalizedPreview.height;
       const bounds: Box = [0, 0, outputWidth - 1, outputHeight - 1];
-      const prior =
-        handle.boxType === "trim"
-          ? sidecar?.bookModel?.trimBoxPx?.median
-          : sidecar?.bookModel?.contentBoxPx?.median;
-      
-      // Scale snap threshold based on output dimensions to provide consistent snapping
-      // at different zoom levels and image sizes. Uses 1% of average dimension with
-      // bounds of 4-12px to ensure reasonable snapping across image sizes.
-      const avgDimension = (outputWidth + outputHeight) / 2;
-      const scaledThreshold = Math.max(4, Math.min(12, avgDimension * 0.01));
-      
-      const snapped = snapBoxToPrior(
-        clampBox(applyHandleDrag(box, handle.edge, deltaX, deltaY), bounds),
-        prior,
-        scaledThreshold
-      );
+      const dragged = clampBox(applyHandleDrag(box, handle.edge, deltaX, deltaY), bounds);
+      const snapDisabled = snapTemporarilyDisabled || event.ctrlKey || event.metaKey;
+      const snapEdges = handleSnapEdges[handle.edge];
+      const snapResult = snapDisabled
+        ? { box: dragged, guides: [], applied: false }
+        : snapBoxWithSources({
+            box: dragged,
+            edges: snapEdges,
+            sources: snapSources,
+          });
+      setSnapGuidesState({
+        guides: snapResult.guides,
+        active: true,
+        tooltip: formatSnapTooltip(snapResult.guides),
+      });
+      const snapped = snapResult.box;
       if (handle.boxType === "trim") {
         setTrimBox(snapped);
       } else {
@@ -2042,6 +2410,8 @@ export function ReviewQueueScreen({ runId }: Readonly<ReviewQueueScreenProps>): 
         target.releasePointerCapture(pointerId);
         dragHandleRef.current = null;
       }
+      setIsDraggingHandle(false);
+      setSnapGuidesState({ guides: [], active: false, tooltip: null });
     };
 
     globalThis.addEventListener?.("pointermove", handlePointerMove);
@@ -2052,16 +2422,18 @@ export function ReviewQueueScreen({ runId }: Readonly<ReviewQueueScreenProps>): 
     };
   }, [
     normalizedPreview,
-    sidecar?.bookModel?.trimBoxPx?.median,
-    sidecar?.bookModel?.contentBoxPx?.median,
     sidecar?.normalization?.cropBox,
+    snapSources,
+    snapTemporarilyDisabled,
   ]);
 
   const handleSubmitReview = async (): Promise<void> => {
     const windowRef: typeof globalThis & {
-      asteria?: { ipc?: { [key: string]: (runId: string, payload: unknown) => Promise<unknown> } };
+      asteria?: {
+        ipc?: { [key: string]: (runId: string, runDir: string, payload: unknown) => Promise<unknown> };
+      };
     } = globalThis;
-    if (!runId || !windowRef.asteria?.ipc || decisions.size === 0) return;
+    if (!runId || !runDir || !windowRef.asteria?.ipc || decisions.size === 0) return;
     setIsSubmitting(true);
     setSubmitError(null);
     try {
@@ -2069,7 +2441,7 @@ export function ReviewQueueScreen({ runId }: Readonly<ReviewQueueScreenProps>): 
         pageId,
         decision: decisionValue === "flag" ? "adjust" : decisionValue,
       }));
-      await windowRef.asteria.ipc["asteria:submit-review"](runId, payload);
+      await windowRef.asteria.ipc["asteria:submit-review"](runId, runDir, payload);
       setDecisions(new Map());
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to submit review";
@@ -2080,9 +2452,16 @@ export function ReviewQueueScreen({ runId }: Readonly<ReviewQueueScreenProps>): 
   };
 
   const handleApplyOverride = async (): Promise<void> => {
-    if (!runId || !currentPage) return;
+    if (!runId || !runDir || !currentPage) return;
     const overrides: Record<string, unknown> = {};
     const normalization: Record<string, unknown> = {};
+    const baselineGrid: BaselineGridOverrides = {
+      spacingPx: baselineSpacingPx ?? null,
+      offsetPx: baselineOffsetPx ?? null,
+      angleDeg: baselineAngleDeg ?? null,
+      snapToPeaks: baselineSnapToPeaks,
+      markCorrect: baselineMarkCorrect,
+    };
     if (rotationDeg !== baselineRotationRef.current) {
       normalization.rotationDeg = rotationDeg;
     }
@@ -2098,6 +2477,9 @@ export function ReviewQueueScreen({ runId }: Readonly<ReviewQueueScreenProps>): 
     }
     if (Object.keys(normalization).length > 0) {
       overrides.normalization = normalization;
+    }
+    if (!areBaselineGridOverridesEqual(baselineGrid, baselineGuidesRef.current)) {
+      overrides.guides = { baselineGrid };
     }
     if (Object.keys(overrides).length === 0) {
       setOverrideError("No changes to save — adjustments match current values");
@@ -2176,6 +2558,14 @@ export function ReviewQueueScreen({ runId }: Readonly<ReviewQueueScreenProps>): 
           appendError(overrideError, `Overrides applied to multiple pages. Other pages in this ${applyScope} may show stale data until you refresh the review queue.`)
         );
       }
+      await windowRef.asteria.ipc["asteria:apply-override"](runId, runDir, currentPage.id, overrides);
+      setLastOverrideAppliedAt(new Date().toISOString());
+      baselineBoxesRef.current = {
+        crop: cropBox,
+        trim: trimBox,
+      };
+      baselineRotationRef.current = rotationDeg;
+      baselineGuidesRef.current = baselineGrid;
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to apply override";
       setOverrideError(message);
@@ -2300,7 +2690,7 @@ export function ReviewQueueScreen({ runId }: Readonly<ReviewQueueScreenProps>): 
     },
   ]);
 
-  if (!runId) {
+  if (!runId || !runDir) {
     return (
       <div className="empty-state">
         <div className="empty-state-icon" aria-hidden="true">
@@ -2331,9 +2721,13 @@ export function ReviewQueueScreen({ runId }: Readonly<ReviewQueueScreenProps>): 
     overlayLayers,
     overlayScaleX,
     overlayScaleY,
+    zoom,
     cropBox: activeCropBox,
     trimBox: activeTrimBox,
     adjustmentMode,
+    snapGuides: snapGuidesState.guides,
+    showSnapGuides: isDraggingHandle && snapGuidesState.active,
+    snapTooltip: snapGuidesState.tooltip,
     overlaySvgRef,
     onHandlePointerDown: handleHandlePointerDown,
   });

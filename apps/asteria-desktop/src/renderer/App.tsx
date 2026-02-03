@@ -7,13 +7,14 @@ import { ReviewQueueScreen } from "./screens/ReviewQueueScreen.js";
 import { RunsScreen, MonitorScreen, ExportsScreen, SettingsScreen } from "./screens/index.js";
 import { useTheme } from "./hooks/useTheme.js";
 import { useKeyboardShortcut, useKeyboardShortcuts } from "./hooks/useKeyboardShortcut.js";
-import type { ProjectSummary, PipelineRunConfig } from "../ipc/contracts.js";
+import type { ProjectSummary, PipelineRunConfig, RunSummary } from "../ipc/contracts.js";
 
 export function App(): JSX.Element {
   const [theme, setTheme] = useTheme();
   const [activeScreen, setActiveScreen] = useState<NavItem>("projects");
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [selectedRunId, setSelectedRunId] = useState<string | undefined>(undefined);
+  const [selectedRunDir, setSelectedRunDir] = useState<string | undefined>(undefined);
   const [activeProjectId, setActiveProjectId] = useState<string | undefined>(undefined);
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [projectsLoading, setProjectsLoading] = useState(true);
@@ -70,12 +71,29 @@ export function App(): JSX.Element {
     const windowRef: typeof globalThis & {
       asteria?: {
         onRunProgress?: (handler: (event: { runId: string; stage: string }) => void) => () => void;
+        ipc?: Record<string, unknown>;
       };
     } = globalThis;
     if (!windowRef.asteria?.onRunProgress) return;
     const unsubscribe = windowRef.asteria.onRunProgress((event): void => {
       if (event.stage === "complete") {
         setSelectedRunId(event.runId);
+        setSelectedRunDir(undefined);
+        const listRuns = windowRef.asteria?.ipc?.["asteria:list-runs"] as
+          | (() => Promise<RunSummary[]>)
+          | undefined;
+        if (listRuns) {
+          void listRuns()
+            .then((runs) => runs.find((run) => run.runId === event.runId))
+            .then((match) => {
+              if (match?.runDir) {
+                setSelectedRunDir(match.runDir);
+              }
+            })
+            .catch(() => {
+              setSelectedRunDir(undefined);
+            });
+        }
         setActiveScreen("runs");
       }
     });
@@ -197,6 +215,7 @@ export function App(): JSX.Element {
       }
       const runResult = await startRun(effectiveConfig);
       setSelectedRunId(runResult.runId);
+      setSelectedRunDir(runResult.runDir);
       setActiveProjectId(selectedProject.id);
       setActiveScreen("runs");
     } catch (error) {
@@ -317,12 +336,18 @@ export function App(): JSX.Element {
           {activeScreen === "runs" && (
             <RunsScreen
               selectedRunId={selectedRunId}
-              onSelectRun={(runId) => setSelectedRunId(runId)}
+              selectedRunDir={selectedRunDir}
+              onSelectRun={(runId, runDir) => {
+                setSelectedRunId(runId);
+                setSelectedRunDir(runDir);
+              }}
               onOpenReviewQueue={() => setActiveScreen("review")}
             />
           )}
           {activeScreen === "monitor" && <MonitorScreen />}
-          {activeScreen === "review" && <ReviewQueueScreen runId={selectedRunId} />}
+          {activeScreen === "review" && (
+            <ReviewQueueScreen runId={selectedRunId} runDir={selectedRunDir} />
+          )}
           {activeScreen === "exports" && <ExportsScreen />}
           {activeScreen === "settings" && <SettingsScreen projectId={activeProjectId} />}
         </main>
