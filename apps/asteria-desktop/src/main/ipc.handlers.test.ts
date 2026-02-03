@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import path from "node:path";
-import { getRunDir, getRunSidecarPath } from "./run-paths";
+import { getRunDir, getRunReviewQueuePath, getRunSidecarPath } from "./run-paths";
 
 const handlers = vi.hoisted(() => new Map<string, (...args: unknown[]) => unknown>());
 const readFile = vi.hoisted(() => vi.fn());
@@ -346,9 +346,7 @@ describe("IPC handler registration", () => {
     registerIpcHandlers();
     const handler = handlers.get("asteria:fetch-page");
     expect(handler).toBeDefined();
-    readFile
-      .mockResolvedValueOnce(JSON.stringify({ runs: [] }))
-      .mockResolvedValueOnce(JSON.stringify({ source: { path: "/tmp/source/page.png" } }));
+    readFile.mockResolvedValueOnce(JSON.stringify({ source: { path: "/tmp/source/page.png" } }));
 
     const result = await (
       handler as (event: unknown, runId: string, pageId: string) => Promise<unknown>
@@ -363,9 +361,7 @@ describe("IPC handler registration", () => {
     registerIpcHandlers();
     const handler = handlers.get("asteria:fetch-page");
     expect(handler).toBeDefined();
-    readFile
-      .mockResolvedValueOnce(JSON.stringify({ runs: [] }))
-      .mockResolvedValueOnce(JSON.stringify({ source: {} }));
+    readFile.mockResolvedValueOnce(JSON.stringify({ source: {} }));
 
     const result = await (
       handler as (event: unknown, runId: string, pageId: string) => Promise<unknown>
@@ -378,11 +374,9 @@ describe("IPC handler registration", () => {
     registerIpcHandlers();
     const handler = handlers.get("asteria:fetch-sidecar");
     expect(handler).toBeDefined();
-    readFile
-      .mockResolvedValueOnce(JSON.stringify({ runs: [] }))
-      .mockResolvedValueOnce(
-        JSON.stringify({ pageId: "p1", normalization: { cropBox: [0, 0, 10, 10] } })
-      );
+    readFile.mockResolvedValueOnce(
+      JSON.stringify({ pageId: "p1", normalization: { cropBox: [0, 0, 10, 10] } })
+    );
 
     const result = await (
       handler as (event: unknown, runId: string, pageId: string) => Promise<unknown>
@@ -397,9 +391,7 @@ describe("IPC handler registration", () => {
     registerIpcHandlers();
     const handler = handlers.get("asteria:fetch-sidecar");
     expect(handler).toBeDefined();
-    readFile
-      .mockResolvedValueOnce(JSON.stringify({ runs: [] }))
-      .mockRejectedValueOnce(new Error("missing"));
+    readFile.mockRejectedValueOnce(new Error("missing"));
 
     const result = await (
       handler as (event: unknown, runId: string, pageId: string) => Promise<unknown>
@@ -482,27 +474,14 @@ describe("IPC handler registration", () => {
     registerIpcHandlers();
     const handler = handlers.get("asteria:fetch-review-queue");
     expect(handler).toBeDefined();
-    readFile
-      .mockResolvedValueOnce(
-        JSON.stringify({
-          runs: [
-            {
-              runId: "run-1",
-              projectId: "proj",
-              generatedAt: "2026-01-01",
-              reviewQueuePath: "/tmp/run-1/review-queue.json",
-            },
-          ],
-        })
-      )
-      .mockResolvedValueOnce(
-        JSON.stringify({
-          runId: "run-1",
-          projectId: "proj",
-          generatedAt: "2026-01-01",
-          items: [],
-        })
-      );
+    readFile.mockResolvedValueOnce(
+      JSON.stringify({
+        runId: "run-1",
+        projectId: "proj",
+        generatedAt: "2026-01-01",
+        items: [],
+      })
+    );
 
     const result = await (handler as (event: unknown, runId: string) => Promise<unknown>)(
       {},
@@ -510,26 +489,23 @@ describe("IPC handler registration", () => {
     );
 
     expect(result).toMatchObject({ runId: "run-1", projectId: "proj" });
+    const outputDir = path.join(process.cwd(), "pipeline-results");
+    const runDir = getRunDir(outputDir, "run-1");
+    expect(readFile).toHaveBeenCalledWith(getRunReviewQueuePath(runDir), "utf-8");
   });
 
   it("fetch-review-queue uses run directory when index lacks path", async () => {
     registerIpcHandlers();
     const handler = handlers.get("asteria:fetch-review-queue");
     expect(handler).toBeDefined();
-    readFile
-      .mockResolvedValueOnce(
-        JSON.stringify({
-          runs: [{ runId: "run-5", projectId: "proj" }],
-        })
-      )
-      .mockResolvedValueOnce(
-        JSON.stringify({
-          runId: "run-5",
-          projectId: "proj",
-          generatedAt: "2026-01-01",
-          items: [],
-        })
-      );
+    readFile.mockResolvedValueOnce(
+      JSON.stringify({
+        runId: "run-5",
+        projectId: "proj",
+        generatedAt: "2026-01-01",
+        items: [],
+      })
+    );
 
     const result = await (handler as (event: unknown, runId: string) => Promise<unknown>)(
       {},
@@ -537,6 +513,9 @@ describe("IPC handler registration", () => {
     );
 
     expect(result).toMatchObject({ runId: "run-5", projectId: "proj" });
+    const outputDir = path.join(process.cwd(), "pipeline-results");
+    const runDir = getRunDir(outputDir, "run-5");
+    expect(readFile).toHaveBeenCalledWith(getRunReviewQueuePath(runDir), "utf-8");
   });
 
   it("fetch-review-queue returns empty queue when missing", async () => {
@@ -658,25 +637,6 @@ describe("IPC handler registration", () => {
     expect(result).toBeNull();
   });
 
-  it("get-run-config uses index report path", async () => {
-    registerIpcHandlers();
-    const handler = handlers.get("asteria:get-run-config");
-    expect(handler).toBeDefined();
-    readFile
-      .mockResolvedValueOnce(
-        JSON.stringify({ runs: [{ runId: "run-5", reportPath: "/tmp/custom-report.json" }] })
-      )
-      .mockResolvedValueOnce(JSON.stringify({ configSnapshot: { runId: "run-5" } }));
-
-    const result = await (handler as (event: unknown, runId: string) => Promise<unknown>)(
-      {},
-      "run-5"
-    );
-
-    expect(result).toMatchObject({ runId: "run-5" });
-    expect(readFile).toHaveBeenNthCalledWith(2, "/tmp/custom-report.json", "utf-8");
-  });
-
   it("list-runs returns empty when index runs missing", async () => {
     registerIpcHandlers();
     const handler = handlers.get("asteria:list-runs");
@@ -742,20 +702,14 @@ describe("IPC handler registration", () => {
     const handler = handlers.get("asteria:get-run-config");
     expect(handler).toBeDefined();
 
-    readFile
-      .mockResolvedValueOnce(
-        JSON.stringify({
-          runs: [{ runId: "run-1", reportPath: "/tmp/report.json" }],
-        })
-      )
-      .mockResolvedValueOnce(
-        JSON.stringify({
-          configSnapshot: {
-            resolvedConfig: { version: "0.1.0" },
-            sources: { configPath: "/tmp/pipeline_config.yaml", loadedFromFile: true },
-          },
-        })
-      );
+    readFile.mockResolvedValueOnce(
+      JSON.stringify({
+        configSnapshot: {
+          resolvedConfig: { version: "0.1.0" },
+          sources: { configPath: "/tmp/pipeline_config.yaml", loadedFromFile: true },
+        },
+      })
+    );
 
     const result = await (handler as (event: unknown, runId: string) => Promise<unknown>)(
       {},
@@ -765,34 +719,6 @@ describe("IPC handler registration", () => {
     expect(result).toMatchObject({
       resolvedConfig: { version: "0.1.0" },
     });
-  });
-
-  it("get-run-config falls back to default report path", async () => {
-    registerIpcHandlers();
-    const handler = handlers.get("asteria:get-run-config");
-    expect(handler).toBeDefined();
-
-    readFile
-      .mockResolvedValueOnce(
-        JSON.stringify({
-          runs: [{ runId: "run-2" }],
-        })
-      )
-      .mockResolvedValueOnce(
-        JSON.stringify({
-          configSnapshot: {
-            resolvedConfig: { version: "0.1.0" },
-            sources: { configPath: "/tmp/pipeline_config.yaml", loadedFromFile: true },
-          },
-        })
-      );
-
-    const result = await (handler as (event: unknown, runId: string) => Promise<unknown>)(
-      {},
-      "run-2"
-    );
-
-    expect(result).toMatchObject({ resolvedConfig: { version: "0.1.0" } });
   });
 
   it("get-run-config returns null when report missing", async () => {
