@@ -158,4 +158,84 @@ describe("ReviewQueueScreen", () => {
       expect.arrayContaining([{ pageId: "page-1", decision: "accept" }])
     );
   }, 10000);
+
+  it("shows template clusters and records confirm/correct actions", async () => {
+    const recordTemplateTraining = vi.fn().mockResolvedValue(undefined);
+
+    (globalThis as typeof globalThis & { asteria?: unknown }).asteria = {
+      ipc: {
+        "asteria:fetch-review-queue": vi.fn().mockResolvedValue({
+          runId: "run-4",
+          projectId: "proj",
+          generatedAt: "2024-01-01",
+          items: [
+            {
+              pageId: "page-1",
+              filename: "page-1.png",
+              layoutProfile: "body",
+              layoutConfidence: 0.8,
+              reason: "semantic-layout",
+              qualityGate: { accepted: true, reasons: [] },
+              previews: [{ kind: "normalized", path: "/tmp/norm.png", width: 16, height: 16 }],
+            },
+          ],
+        }),
+        "asteria:fetch-sidecar": vi.fn().mockResolvedValue({
+          templateId: "template-01",
+          templateConfidence: 0.82,
+          bookModel: {
+            pageTemplates: [
+              {
+                id: "template-01",
+                pageType: "body",
+                pageIds: ["page-1", "page-2"],
+                confidence: 0.75,
+              },
+              {
+                id: "template-02",
+                pageType: "body",
+                pageIds: ["page-3"],
+                confidence: 0.65,
+              },
+            ],
+          },
+          normalization: {},
+          elements: [],
+        }),
+        "asteria:record-template-training": recordTemplateTraining,
+      },
+    };
+
+    const user = userEvent.setup();
+
+    render(<ReviewQueueScreen runId="run-4" runDir="/tmp/runs/run-4" />);
+
+    expect(await screen.findByText(/Template clusters/i)).toBeInTheDocument();
+    expect(screen.getByText(/template-01/i)).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /confirm template cluster/i }));
+
+    expect(recordTemplateTraining).toHaveBeenCalledWith(
+      "run-4",
+      expect.objectContaining({
+        templateId: "template-01",
+        scope: "template",
+        pages: ["page-1"],
+      })
+    );
+
+    await user.selectOptions(
+      screen.getByRole("combobox", { name: /template cluster selection/i }),
+      "template-02"
+    );
+    await user.click(screen.getByRole("button", { name: /correct template cluster/i }));
+
+    expect(recordTemplateTraining).toHaveBeenCalledWith(
+      "run-4",
+      expect.objectContaining({
+        templateId: "template-02",
+        scope: "template",
+      })
+    );
+  });
 });
