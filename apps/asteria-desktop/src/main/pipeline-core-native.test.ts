@@ -23,7 +23,6 @@ describe("pipeline-core native loader", () => {
     vi.resetModules();
     createRequireMock.mockReset();
     const fake = {
-      processPageStub: vi.fn(() => "ok"),
       estimateSkewAngle: vi.fn(() => ({ angle: 0, confidence: 0.5 })),
       baselineMetrics: vi.fn(() => ({ lineConsistency: 0.8, textLineCount: 12 })),
       columnMetrics: vi.fn(() => ({ columnCount: 2, columnSeparation: 0.6 })),

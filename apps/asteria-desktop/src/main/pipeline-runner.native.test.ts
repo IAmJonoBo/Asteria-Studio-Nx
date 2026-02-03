@@ -7,7 +7,6 @@ import type { PageData } from "../ipc/contracts.js";
 import type { NormalizationResult } from "./normalization.js";
 
 const mockNative = {
-  processPageStub: vi.fn(() => "ok"),
   estimateSkewAngle: vi.fn(() => ({ angle: 0, confidence: 0.8 })),
   baselineMetrics: vi.fn(() => ({ lineConsistency: 0.8, textLineCount: 12 })),
   columnMetrics: vi.fn(() => ({ columnCount: 1, columnSeparation: 0.6 })),

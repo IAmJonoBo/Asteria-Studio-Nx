@@ -1,7 +1,6 @@
 import { createRequire } from "node:module";
 
 export type PipelineCoreNative = {
-  processPageStub: (pageId: string) => string;
   estimateSkewAngle: (
     data: Buffer,
     width: number,
@@ -43,7 +42,6 @@ const loadPipelineCoreNative = (): PipelineCoreNative | null => {
     try {
       const mod = require(candidate) as Partial<PipelineCoreNative>;
       if (
-        typeof mod?.processPageStub === "function" &&
         typeof mod?.estimateSkewAngle === "function" &&
         typeof mod?.baselineMetrics === "function" &&
         typeof mod?.columnMetrics === "function" &&

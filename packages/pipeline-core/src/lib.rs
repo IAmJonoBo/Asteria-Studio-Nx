@@ -4,15 +4,6 @@
 use napi::bindgen_prelude::Buffer;
 use napi_derive::napi;
 
-pub fn process_page_stub(page_id: &str) -> String {
-    format!("Processing not yet implemented for {page_id}")
-}
-
-#[napi(js_name = "processPageStub")]
-pub fn process_page_stub_js(page_id: String) -> String {
-    process_page_stub(&page_id)
-}
-
 /// Compute horizontal projection profile (sum of pixels per row).
 pub fn projection_profile_y(data: &[u8], width: usize, height: usize) -> Vec<u32> {
     let mut rows = vec![0u32; height];
@@ -455,11 +446,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn stub_runs() {
-        assert!(process_page_stub("demo").contains("demo"));
-    }
-
-    #[test]
     fn projection_profiles_have_expected_lengths() {
         let data = vec![10u8; 16];
         let rows = projection_profile_y(&data, 4, 4);
@@ -490,5 +476,40 @@ mod tests {
         }
         let hash = dhash_9x8(&data);
         assert_ne!(hash, 0);
+    }
+
+    #[test]
+    fn baseline_and_column_metrics_return_values() {
+        let width = 8;
+        let height = 8;
+        let mut data = vec![255u8; width * height];
+        for x in 0..width {
+            data[2 * width + x] = 0;
+            data[5 * width + x] = 0;
+        }
+        for y in 0..height {
+            data[y * width + 3] = 0;
+        }
+        let baseline = baseline_metrics_js(Buffer::from(data.clone()), width as u32, height as u32);
+        let columns = column_metrics_js(Buffer::from(data), width as u32, height as u32);
+        assert!(baseline.line_consistency >= 0.0);
+        assert!(baseline.text_line_count >= 1);
+        assert!(columns.column_count >= 1);
+        assert!(columns.column_separation >= 0.0);
+    }
+
+    #[test]
+    fn detect_layout_elements_returns_content_boxes() {
+        let width = 10;
+        let height = 10;
+        let mut data = vec![255u8; width * height];
+        for y in 2..8 {
+            for x in 3..7 {
+                data[y * width + x] = 0;
+            }
+        }
+        let elements = detect_layout_elements_js(Buffer::from(data), width as u32, height as u32);
+        assert!(!elements.is_empty());
+        assert!(elements.iter().any(|el| el.id == "page-bounds"));
     }
 }

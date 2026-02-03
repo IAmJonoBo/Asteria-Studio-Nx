@@ -10,7 +10,6 @@ Rust-based CV/ML pipeline for Asteria Studio, exposed to Node via N-API.
 
 ## Current N-API Exports
 
-- `processPageStub(pageId: string): string`
 - `estimateSkewAngle(data: Buffer, width: number, height: number): { angle: number; confidence: number }`
 - `baselineMetrics(data: Buffer, width: number, height: number): { lineConsistency: number; textLineCount: number }`
 - `columnMetrics(data: Buffer, width: number, height: number): { columnCount: number; columnSeparation: number }`
@@ -23,5 +22,5 @@ Rust-based CV/ML pipeline for Asteria Studio, exposed to Node via N-API.
 ## Next Actions
 
 - Scaffold crate with OpenCV + ONNX Runtime + Tesseract dependencies.
-- Define N-API surface (`process_page`, `run_pipeline`) and data types.
+- Extend N-API surface (`process_page`, `run_pipeline`) and data types.
 - Set up golden image tests and benchmarks.
