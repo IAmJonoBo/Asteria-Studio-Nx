@@ -39,3 +39,8 @@ projects/mind-myth-and-magick/input/**/Pages/
 
 # Golden corpus artifacts
 .golden-artifacts/
+
+
+
+.nx/cache
+.nx/workspace-data
