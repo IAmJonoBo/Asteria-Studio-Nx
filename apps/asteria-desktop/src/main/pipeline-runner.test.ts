@@ -5,7 +5,12 @@ import type { NormalizationResult } from "./normalization.js";
 import type { PageData } from "../ipc/contracts.js";
 import { runPipeline, evaluateResults } from "./pipeline-runner.js";
 import { normalizePage } from "./normalization.js";
-import { getRunDir, getRunManifestPath } from "./run-paths.js";
+import {
+  getRunDir,
+  getRunManifestPath,
+  getRunNormalizedDir,
+  getRunNormalizedPath,
+} from "./run-paths.js";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -34,7 +39,7 @@ const createSpreadImage = async (dir: string, name: string, options?: { gutter?:
   return spreadPath;
 };
 
-const buildMockNormalization = (page: PageData): NormalizationResult => {
+const buildMockNormalization = (page: PageData, runDir: string): NormalizationResult => {
   const id = page.id;
   const isBlank = id.includes("blank");
   const isVeryLowMask = id.includes("very-low");
@@ -75,7 +80,7 @@ const buildMockNormalization = (page: PageData): NormalizationResult => {
 
   return {
     pageId: page.id,
-    normalizedPath: "/tmp/normalized.png",
+    normalizedPath: getRunNormalizedPath(runDir, page.id),
     cropBox: [0, 0, 100, 100] as [number, number, number, number],
     maskBox: [0, 0, 100, 100] as [number, number, number, number],
     dimensionsMm: { width: 210, height: 297 },
@@ -116,32 +121,70 @@ const buildMockNormalization = (page: PageData): NormalizationResult => {
   };
 };
 
+const seedNormalizedAsset = async (normalizedPath: string): Promise<void> => {
+  await fs.mkdir(path.dirname(normalizedPath), { recursive: true });
+  await fs.copyFile("/tmp/normalized.png", normalizedPath);
+};
+
 vi.mock("./normalization.ts", () => ({
-  normalizePages: vi.fn(async (pages: PageData[]) => {
+  normalizePages: vi.fn(async (pages: PageData[], _analysis, runDir: string) => {
     if (pages.some((page) => page.id.includes("throw-normalize"))) {
       throw new Error("batch-normalize-failure");
     }
-    return new Map(pages.map((page) => [page.id, buildMockNormalization(page)]));
+    const results = await Promise.all(
+      pages.map(async (page) => {
+        const normalization = buildMockNormalization(page, runDir);
+        await seedNormalizedAsset(normalization.normalizedPath);
+        return [page.id, normalization] as const;
+      })
+    );
+    return new Map(results);
   }),
-  normalizePage: vi.fn(async (page: PageData) => buildMockNormalization(page)),
+  normalizePage: vi.fn(async (page: PageData, _estimate, _analysis, runDir: string) => {
+    const normalization = buildMockNormalization(page, runDir);
+    await seedNormalizedAsset(normalization.normalizedPath);
+    return normalization;
+  }),
 }));
 vi.mock("./normalization", () => ({
-  normalizePages: vi.fn(async (pages: PageData[]) => {
+  normalizePages: vi.fn(async (pages: PageData[], _analysis, runDir: string) => {
     if (pages.some((page) => page.id.includes("throw-normalize"))) {
       throw new Error("batch-normalize-failure");
     }
-    return new Map(pages.map((page) => [page.id, buildMockNormalization(page)]));
+    const results = await Promise.all(
+      pages.map(async (page) => {
+        const normalization = buildMockNormalization(page, runDir);
+        await seedNormalizedAsset(normalization.normalizedPath);
+        return [page.id, normalization] as const;
+      })
+    );
+    return new Map(results);
   }),
-  normalizePage: vi.fn(async (page: PageData) => buildMockNormalization(page)),
+  normalizePage: vi.fn(async (page: PageData, _estimate, _analysis, runDir: string) => {
+    const normalization = buildMockNormalization(page, runDir);
+    await seedNormalizedAsset(normalization.normalizedPath);
+    return normalization;
+  }),
 }));
 vi.mock("./normalization.js", () => ({
-  normalizePages: vi.fn(async (pages: PageData[]) => {
+  normalizePages: vi.fn(async (pages: PageData[], _analysis, runDir: string) => {
     if (pages.some((page) => page.id.includes("throw-normalize"))) {
       throw new Error("batch-normalize-failure");
     }
-    return new Map(pages.map((page) => [page.id, buildMockNormalization(page)]));
+    const results = await Promise.all(
+      pages.map(async (page) => {
+        const normalization = buildMockNormalization(page, runDir);
+        await seedNormalizedAsset(normalization.normalizedPath);
+        return [page.id, normalization] as const;
+      })
+    );
+    return new Map(results);
   }),
-  normalizePage: vi.fn(async (page: PageData) => buildMockNormalization(page)),
+  normalizePage: vi.fn(async (page: PageData, _estimate, _analysis, runDir: string) => {
+    const normalization = buildMockNormalization(page, runDir);
+    await seedNormalizedAsset(normalization.normalizedPath);
+    return normalization;
+  }),
 }));
 
 describe("Pipeline Runner", () => {
@@ -189,6 +232,26 @@ describe("Pipeline Runner", () => {
     ).normalization;
     expect(normalizationMetrics?.reviewQueueCount).toBeDefined();
     expect(normalizationMetrics?.strictAcceptRate).toBe(1);
+  }, 20000);
+
+  it("writes normalized outputs under the run directory", async () => {
+    const outputDir = path.join(tempDir, "output");
+    const result = await runPipeline({
+      projectRoot,
+      projectId: "test-run-dir",
+      sampleCount: 2,
+      outputDir,
+    });
+
+    const runDir = getRunDir(outputDir, result.runId);
+    const normalizedDir = getRunNormalizedDir(runDir);
+    const normalizedFiles = await fs.readdir(normalizedDir);
+
+    expect(normalizedFiles.length).toBeGreaterThan(0);
+    for (const file of normalizedFiles) {
+      expect(path.join(normalizedDir, file)).toContain(runDir);
+    }
+    await expect(fs.stat(path.join(outputDir, "normalized"))).rejects.toThrow();
   }, 20000);
 
   it("runPipeline handles target DPI override", async () => {

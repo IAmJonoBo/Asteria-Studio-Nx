@@ -5,11 +5,11 @@ type PreviewKind = "source" | "normalized";
 export const getRunDir = (outputDir: string, runId: string): string =>
   path.join(outputDir, "runs", runId);
 
-export const getNormalizedDir = (runDir: string): string => path.join(runDir, "normalized");
-
 export const getSidecarDir = (runDir: string): string => path.join(runDir, "sidecars");
 
-export const getPreviewDir = (runDir: string): string => path.join(runDir, "previews");
+export const getRunNormalizedDir = (runDir: string): string => path.join(runDir, "normalized");
+
+export const getRunPreviewDir = (runDir: string): string => path.join(runDir, "previews");
 
 export const getOverlayDir = (runDir: string): string => path.join(runDir, "overlays");
 
@@ -26,10 +26,10 @@ export const getRunSidecarPath = (runDir: string, pageId: string): string =>
   path.join(getSidecarDir(runDir), `${pageId}.json`);
 
 export const getRunNormalizedPath = (runDir: string, pageId: string): string =>
-  path.join(getNormalizedDir(runDir), `${pageId}.png`);
+  path.join(getRunNormalizedDir(runDir), `${pageId}.png`);
 
 export const getRunPreviewPath = (runDir: string, pageId: string, kind: PreviewKind): string =>
-  path.join(getPreviewDir(runDir), `${pageId}-${kind}.png`);
+  path.join(getRunPreviewDir(runDir), `${pageId}-${kind}.png`);
 
 export const getRunOverlayPath = (runDir: string, pageId: string): string =>
   path.join(getOverlayDir(runDir), `${pageId}-overlay.png`);

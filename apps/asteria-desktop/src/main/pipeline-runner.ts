@@ -35,11 +35,11 @@ import { deriveBookModelFromImages, hashBand, ORNAMENT_BAND } from "./book-prior
 import { getPipelineCoreNative, type PipelineCoreNative } from "./pipeline-core-native.js";
 import {
   getRunDir,
-  getNormalizedDir,
   getOverlayDir,
-  getPreviewDir,
   getRunManifestPath,
+  getRunNormalizedDir,
   getRunOverlayPath,
+  getRunPreviewDir,
   getRunReportPath,
   getRunReviewQueuePath,
   getSidecarDir,
@@ -1192,8 +1192,8 @@ const buildFallbackSummary = (config: PipelineRunConfig): CorpusSummary => {
 };
 
 const cleanupNormalizedOutput = async (runDir: string, pages: PageData[]): Promise<void> => {
-  const normalizedDir = getNormalizedDir(runDir);
-  const previewDir = getPreviewDir(runDir);
+  const normalizedDir = getRunNormalizedDir(runDir);
+  const previewDir = getRunPreviewDir(runDir);
   const manifestPath = getRunManifestPath(runDir);
 
   try {
@@ -2271,9 +2271,9 @@ const savePipelineOutputs = async (params: {
     params.control
   );
 
-  const normalizedDir = getNormalizedDir(params.runDir);
+  const normalizedDir = getRunNormalizedDir(params.runDir);
   await fs.mkdir(normalizedDir, { recursive: true });
-  const previewDir = getPreviewDir(params.runDir);
+  const previewDir = getRunPreviewDir(params.runDir);
   await fs.mkdir(previewDir, { recursive: true });
   const overlayDir = getOverlayDir(params.runDir);
   await fs.mkdir(overlayDir, { recursive: true });

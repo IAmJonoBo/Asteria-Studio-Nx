@@ -44,7 +44,7 @@ import {
   getRunReportPath,
   getRunReviewQueuePath,
   getRunSidecarPath,
-  getNormalizedDir,
+  getRunNormalizedDir,
   getSidecarDir,
   getTrainingDir,
 } from "./run-paths.js";
@@ -662,7 +662,7 @@ export function registerIpcHandlers(): void {
         warnings.push(`Failed to copy training directory: ${err}`);
       }
 
-      const normalizedDir = getNormalizedDir(runDir);
+      const normalizedDir = getRunNormalizedDir(runDir);
       let normalizedFiles: string[] = [];
       try {
         normalizedFiles = await fs.readdir(normalizedDir);

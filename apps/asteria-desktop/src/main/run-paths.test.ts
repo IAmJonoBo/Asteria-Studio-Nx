@@ -1,13 +1,13 @@
 import { describe, it, expect } from "vitest";
 import path from "node:path";
 import {
-  getNormalizedDir,
   getOverlayDir,
-  getPreviewDir,
   getRunDir,
   getRunManifestPath,
+  getRunNormalizedDir,
   getRunNormalizedPath,
   getRunOverlayPath,
+  getRunPreviewDir,
   getRunPreviewPath,
   getRunReportPath,
   getRunReviewQueuePath,
@@ -23,8 +23,8 @@ describe("run-paths", () => {
     const runDir = getRunDir(outputDir, runId);
 
     expect(runDir).toBe(path.join(outputDir, "runs", runId));
-    expect(getNormalizedDir(runDir)).toBe(path.join(runDir, "normalized"));
-    expect(getPreviewDir(runDir)).toBe(path.join(runDir, "previews"));
+    expect(getRunNormalizedDir(runDir)).toBe(path.join(runDir, "normalized"));
+    expect(getRunPreviewDir(runDir)).toBe(path.join(runDir, "previews"));
     expect(getOverlayDir(runDir)).toBe(path.join(runDir, "overlays"));
     expect(getSidecarDir(runDir)).toBe(path.join(runDir, "sidecars"));
     expect(getTrainingDir(runDir)).toBe(path.join(runDir, "training"));
