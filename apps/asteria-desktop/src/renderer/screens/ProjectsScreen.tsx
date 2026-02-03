@@ -53,9 +53,9 @@ export function ProjectsScreen({
         </div>
         <h2 className="empty-state-title">No projects yet</h2>
         <p className="empty-state-description">
-          Import a corpus of scanned pages to get started. Asteria will normalize page geometry,
-          detect elements, and prepare publication-ready outputs with confidence scoring and QA
-          workflows.
+          Import a corpus of scanned pages to get started. Use the directory picker to choose a
+          folder of page images, and Asteria will normalize page geometry, detect elements, and
+          prepare publication-ready outputs with confidence scoring and QA workflows.
         </p>
         <button className="btn btn-primary btn-lg" onClick={onImportCorpus}>
           Import Corpus
@@ -94,7 +94,7 @@ export function ProjectsScreen({
         <div>
           <h1 style={{ margin: 0, fontSize: "24px", fontWeight: 600 }}>Projects</h1>
           <p style={{ margin: "4px 0 0", color: "var(--text-secondary)", fontSize: "14px" }}>
-            Manage your corpus libraries and processing workflows
+            Manage your corpus libraries and processing workflows with the directory picker
           </p>
         </div>
         <button className="btn btn-primary" onClick={onImportCorpus}>

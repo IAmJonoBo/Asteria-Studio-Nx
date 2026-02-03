@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import type { ImportCorpusRequest, ProjectSummary } from "../ipc/contracts.js";
 import { readRunIndex, type RunIndexStatus } from "./run-index.js";
@@ -31,11 +32,21 @@ const slugify = (value: string): string => {
   return slug || "project";
 };
 
+export const normalizeCorpusPath = (inputPath: string): string => {
+  const trimmed = inputPath.trim();
+  const expanded = trimmed.replace(/^~(?=$|[\\/])/, os.homedir());
+  return path.normalize(path.resolve(expanded));
+};
+
 const resolveInputPath = (projectDir: string, inputPath?: string): string => {
   if (!inputPath) {
     return path.join(projectDir, "input", "raw");
   }
-  return path.isAbsolute(inputPath) ? inputPath : path.join(projectDir, inputPath);
+  const expanded = inputPath.trim().replace(/^~(?=$|[\\/])/, os.homedir());
+  if (path.isAbsolute(expanded)) {
+    return path.normalize(expanded);
+  }
+  return path.normalize(path.join(projectDir, expanded));
 };
 
 const readProjectConfig = async (projectDir: string): Promise<ProjectConfig | null> => {
@@ -121,7 +132,7 @@ export const listProjects = async (): Promise<ProjectSummary[]> => {
 };
 
 export const importCorpus = async (request: ImportCorpusRequest): Promise<ProjectSummary> => {
-  const resolvedInput = path.resolve(request.inputPath);
+  const resolvedInput = normalizeCorpusPath(request.inputPath);
   const stats = await fs.stat(resolvedInput);
   if (!stats.isDirectory()) {
     throw new Error("Corpus path must be a directory");

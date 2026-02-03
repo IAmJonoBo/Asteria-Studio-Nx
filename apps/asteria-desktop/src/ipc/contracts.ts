@@ -402,6 +402,7 @@ export interface IpcChannels {
     _rootPath: string,
     _options?: ScanCorpusOptions
   ) => Promise<PipelineRunConfig>;
+  "asteria:pick-corpus-dir": () => Promise<string | null>;
   "asteria:list-projects": () => Promise<ProjectSummary[]>;
   "asteria:import-corpus": (_request: ImportCorpusRequest) => Promise<ProjectSummary>;
   "asteria:list-runs": () => Promise<RunSummary[]>;

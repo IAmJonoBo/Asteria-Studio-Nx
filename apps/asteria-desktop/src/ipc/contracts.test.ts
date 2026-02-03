@@ -33,6 +33,7 @@ describe("IPC Contracts", () => {
         "asteria:export-run",
         "asteria:analyze-corpus",
         "asteria:scan-corpus",
+        "asteria:pick-corpus-dir",
         "asteria:list-projects",
         "asteria:import-corpus",
         "asteria:list-runs",
@@ -43,7 +44,7 @@ describe("IPC Contracts", () => {
         "asteria:submit-review",
       ];
 
-      expect(channelNames).toHaveLength(18);
+      expect(channelNames).toHaveLength(19);
     });
   });
 });

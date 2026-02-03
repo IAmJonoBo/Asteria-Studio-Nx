@@ -52,6 +52,7 @@ const api: IpcChannels = {
     }
     return safeInvoke("asteria:scan-corpus", rootPath, options);
   },
+  "asteria:pick-corpus-dir": async () => safeInvoke("asteria:pick-corpus-dir"),
   "asteria:list-projects": async () => safeInvoke("asteria:list-projects"),
   "asteria:import-corpus": async (request: Parameters<IpcChannels["asteria:import-corpus"]>[0]) => {
     validateImportCorpusRequest(request);

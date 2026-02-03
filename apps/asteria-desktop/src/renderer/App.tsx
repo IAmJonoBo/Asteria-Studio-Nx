@@ -85,17 +85,21 @@ export function App(): JSX.Element {
   }, []);
 
   const handleImportCorpus = async (): Promise<void> => {
-    const inputPath = globalThis.prompt("Enter the folder path for the corpus");
-    if (!inputPath) return;
-    const name = globalThis.prompt("Project name (optional)") ?? undefined;
     const windowRef: typeof globalThis & { asteria?: { ipc?: Record<string, unknown> } } =
       globalThis;
     if (!windowRef.asteria?.ipc) return;
+    const pickCorpusDir = windowRef.asteria.ipc["asteria:pick-corpus-dir"] as
+      | (() => Promise<string | null>)
+      | undefined;
+    if (!pickCorpusDir) return;
     const importCorpus = windowRef.asteria.ipc["asteria:import-corpus"] as
       | ((request: { inputPath: string; name?: string }) => Promise<ProjectSummary>)
       | undefined;
     if (!importCorpus) return;
     try {
+      const inputPath = await pickCorpusDir();
+      if (!inputPath) return;
+      const name = globalThis.prompt("Project name (optional)") ?? undefined;
       await importCorpus({ inputPath, name });
       await loadProjects();
     } catch (error) {

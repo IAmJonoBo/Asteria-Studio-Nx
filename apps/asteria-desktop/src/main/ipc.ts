@@ -1,4 +1,4 @@
-import { ipcMain } from "electron";
+import { dialog, ipcMain } from "electron";
 import type { IpcMainInvokeEvent } from "electron";
 import type {
   PipelineRunConfig,
@@ -42,7 +42,7 @@ import {
   getSidecarDir,
 } from "./run-paths.js";
 import { writeJsonAtomic } from "./file-utils.js";
-import { importCorpus, listProjects } from "./projects.js";
+import { importCorpus, listProjects, normalizeCorpusPath } from "./projects.js";
 
 type ExportFormat = "png" | "tiff" | "pdf";
 
@@ -130,6 +130,16 @@ export function registerIpcHandlers(): void {
       return scanCorpus(rootPath, options);
     }
   );
+
+  ipcMain.handle("asteria:pick-corpus-dir", async (): Promise<string | null> => {
+    const result = await dialog.showOpenDialog({
+      properties: ["openDirectory"],
+    });
+    if (result.canceled || result.filePaths.length === 0) {
+      return null;
+    }
+    return normalizeCorpusPath(result.filePaths[0]);
+  });
 
   ipcMain.handle("asteria:list-projects", async (): Promise<ProjectSummary[]> => {
     return listProjects();
