@@ -203,5 +203,6 @@
       "lineStraightnessResidual": 8,
       "confidence": 0.744073565136393
     }
-  }
+  },
+  "overrides": {}
 }

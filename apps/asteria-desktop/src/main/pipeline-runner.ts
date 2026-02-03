@@ -2693,6 +2693,7 @@ const writeSidecars = async (
             : undefined,
         },
         elements,
+        overrides: {},
         metrics: {
           processingMs: (analysis as unknown as { processingMs?: number }).processingMs ?? 0,
           deskewConfidence,
