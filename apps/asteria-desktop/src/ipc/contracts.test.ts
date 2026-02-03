@@ -42,9 +42,10 @@ describe("IPC Contracts", () => {
         "asteria:get-run-config",
         "asteria:fetch-review-queue",
         "asteria:submit-review",
+        "asteria:record-template-training",
       ];
 
-      expect(channelNames).toHaveLength(19);
+      expect(channelNames).toHaveLength(20);
     });
   });
 });

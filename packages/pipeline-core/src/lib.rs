@@ -106,6 +106,19 @@ pub struct BaselineMetricsResult {
     pub line_consistency: f64,
     #[napi(js_name = "textLineCount")]
     pub text_line_count: u32,
+    #[napi(js_name = "spacingNorm")]
+    pub spacing_norm: f64,
+    #[napi(js_name = "spacingMadNorm")]
+    pub spacing_mad_norm: f64,
+    #[napi(js_name = "offsetNorm")]
+    pub offset_norm: f64,
+    #[napi(js_name = "angleDeg")]
+    pub angle_deg: f64,
+    pub confidence: f64,
+    #[napi(js_name = "peakSharpness")]
+    pub peak_sharpness: f64,
+    #[napi(js_name = "peaksY")]
+    pub peaks_y: Vec<f64>,
 }
 
 #[napi(object)]
@@ -202,6 +215,13 @@ pub fn baseline_metrics_js(data: Buffer, width: u32, height: u32) -> BaselineMet
         return BaselineMetricsResult {
             line_consistency: 0.0,
             text_line_count: 0,
+            spacing_norm: 0.0,
+            spacing_mad_norm: 0.0,
+            offset_norm: 0.0,
+            angle_deg: 0.0,
+            confidence: 0.0,
+            peak_sharpness: 0.0,
+            peaks_y: Vec::new(),
         };
     }
     let mut row_sums = vec![0f64; height];
@@ -226,16 +246,91 @@ pub fn baseline_metrics_js(data: Buffer, width: u32, height: u32) -> BaselineMet
         0.0
     };
     let threshold = mean + std * 0.6;
-    let mut line_count = 0u32;
+    let mut peaks: Vec<usize> = Vec::new();
+    let mut sharpness_sum = 0f64;
+    let mut sharpness_count = 0f64;
     for y in 1..row_sums.len().saturating_sub(1) {
         if row_sums[y] > threshold && row_sums[y] > row_sums[y - 1] && row_sums[y] > row_sums[y + 1]
         {
-            line_count += 1;
+            peaks.push(y);
+            let neighbor_avg = 0.5 * (row_sums[y - 1] + row_sums[y + 1]);
+            let sharpness = row_sums[y] - neighbor_avg;
+            if std > 0.0 {
+                sharpness_sum += sharpness / std;
+                sharpness_count += 1.0;
+            }
         }
     }
+    let peak_sharpness = if sharpness_count > 0.0 {
+        sharpness_sum / sharpness_count
+    } else {
+        0.0
+    };
+
+    let mut spacing_norm = 0.0;
+    let mut spacing_mad_norm = 0.0;
+    let mut offset_norm = 0.0;
+    if peaks.len() > 1 && height > 1 {
+        let mut deltas: Vec<f64> = peaks
+            .windows(2)
+            .map(|pair| (pair[1] as f64 - pair[0] as f64) / ((height - 1) as f64))
+            .collect();
+        deltas.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        spacing_norm = if deltas.len() % 2 == 0 {
+            let mid = deltas.len() / 2;
+            (deltas[mid - 1] + deltas[mid]) / 2.0
+        } else {
+            deltas[deltas.len() / 2]
+        };
+        let mut mad_values: Vec<f64> = deltas.iter().map(|d| (d - spacing_norm).abs()).collect();
+        mad_values.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        spacing_mad_norm = if mad_values.is_empty() {
+            0.0
+        } else if mad_values.len() % 2 == 0 {
+            let mid = mad_values.len() / 2;
+            (mad_values[mid - 1] + mad_values[mid]) / 2.0
+        } else {
+            mad_values[mad_values.len() / 2]
+        };
+        if spacing_norm > 0.0 {
+            let mut offsets: Vec<f64> = peaks
+                .iter()
+                .map(|y| (y % ((height - 1).max(1))) as f64 / ((height - 1) as f64))
+                .map(|y_norm| y_norm % spacing_norm)
+                .collect();
+            offsets.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+            offset_norm = if offsets.len() % 2 == 0 {
+                let mid = offsets.len() / 2;
+                (offsets[mid - 1] + offsets[mid]) / 2.0
+            } else {
+                offsets[offsets.len() / 2]
+            };
+        }
+    }
+    let peak_count_score = ((peaks.len() as f64 - 2.0) / 8.0).clamp(0.0, 1.0);
+    let spacing_score = if spacing_norm > 0.0 {
+        (1.0 - (spacing_mad_norm / spacing_norm).min(1.0)).max(0.0)
+    } else {
+        0.0
+    };
+    let sharpness_score = (peak_sharpness / 3.0).clamp(0.0, 1.0);
+    let confidence = (0.4 * spacing_score + 0.35 * sharpness_score + 0.25 * peak_count_score)
+        .clamp(0.0, 1.0);
+    let peaks_y: Vec<f64> = if height > 1 {
+        peaks.iter().map(|y| *y as f64 / ((height - 1) as f64)).collect()
+    } else {
+        Vec::new()
+    };
     BaselineMetricsResult {
         line_consistency,
-        text_line_count: line_count,
+        text_line_count: peaks.len() as u32,
+        spacing_norm,
+        spacing_mad_norm,
+        offset_norm,
+        angle_deg: 0.0,
+        confidence,
+        peak_sharpness,
+        peaks_y,
     }
 }
 

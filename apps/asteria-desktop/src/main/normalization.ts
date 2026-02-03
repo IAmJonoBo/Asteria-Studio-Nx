@@ -160,6 +160,13 @@ interface BaselineMetrics {
   residualAngle: number;
   lineConsistency: number;
   textLineCount: number;
+  peaksY: number[];
+  spacingNorm?: number;
+  spacingMADNorm?: number;
+  offsetNorm?: number;
+  angleDeg?: number;
+  confidence?: number;
+  peakSharpness?: number;
 }
 
 interface ColumnMetrics {
@@ -809,6 +816,67 @@ const projectionStats = (values: number[]): { mean: number; std: number } => {
   return { mean, std: Math.sqrt(variance) };
 };
 
+const median = (values: number[]): number => {
+  if (values.length === 0) return 0;
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
+};
+
+const computeBaselineSignal = (
+  rowSums: number[],
+  residualAngle: number
+): {
+  peaksY: number[];
+  spacingNorm: number;
+  spacingMADNorm: number;
+  offsetNorm: number;
+  angleDeg: number;
+  confidence: number;
+  peakSharpness: number;
+  textLineCount: number;
+  lineConsistency: number;
+} => {
+  const { mean, std } = projectionStats(rowSums);
+  const consistencyRaw = mean > 0 ? 1 - Math.min(1, std / (mean * 2)) : 0;
+  const threshold = mean + std * 0.6;
+  const peaks: number[] = [];
+  const sharpnessValues: number[] = [];
+  for (let y = 1; y < rowSums.length - 1; y++) {
+    if (rowSums[y] > threshold && rowSums[y] > rowSums[y - 1] && rowSums[y] > rowSums[y + 1]) {
+      peaks.push(y);
+      const neighborAvg = 0.5 * (rowSums[y - 1] + rowSums[y + 1]);
+      const sharpness = rowSums[y] - neighborAvg;
+      sharpnessValues.push(std > 0 ? sharpness / std : 0);
+    }
+  }
+  const peakSharpness = sharpnessValues.length > 0 ? median(sharpnessValues) : 0;
+  const peaksY =
+    rowSums.length > 1
+      ? peaks.map((y) => y / (rowSums.length - 1))
+      : new Array(peaks.length).fill(0);
+  const deltas = peaksY.slice(1).map((val, idx) => val - peaksY[idx]);
+  const spacingNorm = deltas.length > 0 ? median(deltas) : 0;
+  const spacingMADNorm =
+    spacingNorm > 0 ? median(deltas.map((delta) => Math.abs(delta - spacingNorm))) : 0;
+  const offsetNorm = spacingNorm > 0 ? median(peaksY.map((peak) => peak % spacingNorm)) : 0;
+  const peakCountScore = clamp01((peaks.length - 2) / 8);
+  const spacingScore = spacingNorm > 0 ? clamp01(1 - spacingMADNorm / spacingNorm) : 0;
+  const sharpnessScore = clamp01(peakSharpness / 3);
+  const confidence = clamp01(0.4 * spacingScore + 0.35 * sharpnessScore + 0.25 * peakCountScore);
+  return {
+    peaksY,
+    spacingNorm,
+    spacingMADNorm,
+    offsetNorm,
+    angleDeg: residualAngle,
+    confidence,
+    peakSharpness,
+    textLineCount: peaks.length,
+    lineConsistency: clamp01(consistencyRaw),
+  };
+};
+
 const estimateBaselineMetrics = (preview: PreviewImage, residualAngle: number): BaselineMetrics => {
   const native = getNativeCore();
   if (native) {
@@ -817,28 +885,33 @@ const estimateBaselineMetrics = (preview: PreviewImage, residualAngle: number): 
       preview.width,
       preview.height
     );
+    const peaksY = metrics.peaksY ?? [];
     return {
       residualAngle: Math.abs(residualAngle),
       lineConsistency: Math.max(0, Math.min(1, metrics.lineConsistency)),
       textLineCount: metrics.textLineCount,
+      peaksY,
+      spacingNorm: metrics.spacingNorm,
+      spacingMADNorm: metrics.spacingMadNorm,
+      offsetNorm: metrics.offsetNorm,
+      angleDeg: residualAngle,
+      confidence: clamp01(metrics.confidence),
+      peakSharpness: metrics.peakSharpness,
     };
   }
   const rowSums = computeRowSums(preview);
-
-  const { mean, std } = projectionStats(rowSums);
-  const consistencyRaw = mean > 0 ? 1 - Math.min(1, std / (mean * 2)) : 0;
-  let lineCount = 0;
-  const threshold = mean + std * 0.6;
-  for (let y = 1; y < rowSums.length - 1; y++) {
-    if (rowSums[y] > threshold && rowSums[y] > rowSums[y - 1] && rowSums[y] > rowSums[y + 1]) {
-      lineCount++;
-    }
-  }
-
+  const signal = computeBaselineSignal(rowSums, residualAngle);
   return {
     residualAngle: Math.abs(residualAngle),
-    lineConsistency: Math.max(0, Math.min(1, consistencyRaw)),
-    textLineCount: lineCount,
+    lineConsistency: signal.lineConsistency,
+    textLineCount: signal.textLineCount,
+    peaksY: signal.peaksY,
+    spacingNorm: signal.spacingNorm,
+    spacingMADNorm: signal.spacingMADNorm,
+    offsetNorm: signal.offsetNorm,
+    angleDeg: signal.angleDeg,
+    confidence: signal.confidence,
+    peakSharpness: signal.peakSharpness,
   };
 };
 

@@ -1,4 +1,5 @@
-import type { PageLayoutSidecar, PipelineRunConfig } from "./contracts.js";
+import path from "node:path";
+import type { PageLayoutSidecar, PipelineRunConfig, TemplateTrainingSignal } from "./contracts.js";
 
 const isNonEmptyString = (value: unknown): value is string =>
   typeof value === "string" && value.trim().length > 0;
@@ -42,6 +43,20 @@ const isJsonSafe = (value: unknown, depth = 0): boolean => {
 export const validateRunId = (runId: string): void => {
   if (!isNonEmptyString(runId)) {
     throw new Error("Invalid run id: expected non-empty string");
+  }
+};
+
+export const validateRunDir = (runDir: string, runId?: string): void => {
+  if (!isNonEmptyString(runDir)) {
+    throw new Error("Invalid run directory: expected non-empty string");
+  }
+  const normalized = path.resolve(runDir);
+  const parts = normalized.split(path.sep).filter(Boolean);
+  if (parts.length < 2 || parts[parts.length - 2] !== "runs") {
+    throw new Error("Invalid run directory: expected path ending in /runs/<runId>");
+  }
+  if (runId && path.basename(normalized) !== runId) {
+    throw new Error("Invalid run directory: runId mismatch");
   }
 };
 
@@ -93,6 +108,54 @@ export const validateOverrides = (overrides: Record<string, unknown>): void => {
     if (!isJsonSafe(value)) {
       throw new Error("Invalid overrides: values must be JSON-safe primitives, arrays, or objects");
     }
+  }
+};
+
+export const validateTemplateTrainingSignal = (signal: TemplateTrainingSignal): void => {
+  if (!isPlainObject(signal)) {
+    throw new Error("Invalid template training signal: expected object");
+  }
+
+  if (!isNonEmptyString(signal.templateId)) {
+    throw new Error("Invalid template training signal: templateId required");
+  }
+
+  if (signal.scope !== "template" && signal.scope !== "section") {
+    throw new Error("Invalid template training signal: scope must be template or section");
+  }
+
+  // Note: The scope field represents user intent for how overrides should be applied:
+  // - "template": User intends to apply to all pages with this layoutProfile
+  // - "section": User intends to apply to a contiguous block of pages with this layoutProfile
+  // The pages array contains the actual page IDs that received the override.
+  // Validation ensures scope is valid, but does not verify semantic consistency
+  // (e.g., whether pages array matches the stated scope intent).
+
+  if (!isNonEmptyString(signal.appliedAt)) {
+    throw new Error("Invalid template training signal: appliedAt required");
+  }
+
+  if (!Array.isArray(signal.pages) || signal.pages.length === 0) {
+    throw new Error("Invalid template training signal: pages must be a non-empty array");
+  }
+
+  signal.pages.forEach((pageId, index) => {
+    if (!isNonEmptyString(pageId)) {
+      throw new Error(`Invalid template training signal: pages[${index}] must be a string`);
+    }
+  });
+
+  if (!isPlainObject(signal.overrides)) {
+    throw new Error("Invalid template training signal: overrides must be an object");
+  }
+  validateOverrides(signal.overrides);
+
+  if (signal.sourcePageId !== undefined && !isNonEmptyString(signal.sourcePageId)) {
+    throw new Error("Invalid template training signal: sourcePageId must be a string");
+  }
+
+  if (signal.layoutProfile !== undefined && !isNonEmptyString(signal.layoutProfile)) {
+    throw new Error("Invalid template training signal: layoutProfile must be a string");
   }
 };
 
@@ -160,6 +223,43 @@ export const validatePipelineRunConfig = (config: PipelineRunConfig): void => {
   }
 };
 
+const ALLOWED_REVIEW_DECISIONS = new Set(["accept", "reject", "adjust"]);
+
+export const validateReviewDecisions = (decisions: unknown): void => {
+  if (!Array.isArray(decisions) || decisions.length === 0) {
+    throw new Error("Invalid review decisions: expected non-empty array");
+  }
+
+  decisions.forEach((decision, index) => {
+    if (!isPlainObject(decision)) {
+      throw new Error(`Invalid review decision ${index}: expected object`);
+    }
+
+    if (!isNonEmptyString(decision.pageId)) {
+      throw new Error(`Invalid review decision ${index}: pageId required`);
+    }
+
+    if (!ALLOWED_REVIEW_DECISIONS.has(decision.decision as string)) {
+      throw new Error(
+        `Invalid review decision ${index}: decision must be "accept", "reject", or "adjust"`
+      );
+    }
+
+    if (decision.notes !== undefined && typeof decision.notes !== "string") {
+      throw new Error(`Invalid review decision ${index}: notes must be a string`);
+    }
+
+    if (decision.overrides !== undefined) {
+      if (!isPlainObject(decision.overrides)) {
+        throw new Error(`Invalid review decision ${index}: overrides must be an object`);
+      }
+      if (!isJsonSafe(decision.overrides)) {
+        throw new Error(`Invalid review decision ${index}: overrides must be JSON-safe`);
+      }
+    }
+  });
+};
+
 export const validatePageLayoutSidecar = (layout: PageLayoutSidecar): void => {
   if (!isPlainObject(layout)) {
     throw new Error("Invalid page layout: expected object");
@@ -167,6 +267,18 @@ export const validatePageLayoutSidecar = (layout: PageLayoutSidecar): void => {
 
   if (!isNonEmptyString(layout.pageId)) {
     throw new Error("Invalid page layout: pageId required");
+  }
+
+  if (layout.pageType !== undefined && typeof layout.pageType !== "string") {
+    throw new Error("Invalid page layout: pageType must be a string");
+  }
+
+  if (layout.templateId !== undefined && !isNonEmptyString(layout.templateId)) {
+    throw new Error("Invalid page layout: templateId must be a string");
+  }
+
+  if (layout.templateConfidence !== undefined) {
+    assertOptionalRange(layout.templateConfidence, "templateConfidence", 0, 1);
   }
 
   const { normalization, metrics } = layout;
@@ -180,6 +292,20 @@ export const validatePageLayoutSidecar = (layout: PageLayoutSidecar): void => {
   }
   if (shading) {
     assertOptionalRange(shading.confidence, "shading.confidence", 0, 1);
+  }
+
+  const guides = normalization.guides;
+  if (guides !== undefined && !isPlainObject(guides)) {
+    throw new Error("Invalid page layout: normalization.guides must be an object");
+  }
+  if (guides?.baselineGrid) {
+    const grid = guides.baselineGrid;
+    if (!isPlainObject(grid)) {
+      throw new Error("Invalid page layout: normalization.guides.baselineGrid must be an object");
+    }
+    assertOptionalRange(grid.spacingPx, "normalization.guides.baselineGrid.spacingPx", 0);
+    assertOptionalRange(grid.offsetPx, "normalization.guides.baselineGrid.offsetPx", 0);
+    assertOptionalRange(grid.confidence, "normalization.guides.baselineGrid.confidence", 0, 1);
   }
 
   assertOptionalRange(metrics.deskewConfidence, "metrics.deskewConfidence", 0, 1);
@@ -201,5 +327,13 @@ export const validatePageLayoutSidecar = (layout: PageLayoutSidecar): void => {
       0
     );
     assertOptionalRange(baseline.confidence, "metrics.baseline.confidence", 0, 1);
+    if (baseline.peaksY !== undefined) {
+      if (!Array.isArray(baseline.peaksY)) {
+        throw new Error("Invalid page layout: metrics.baseline.peaksY must be an array");
+      }
+      baseline.peaksY.forEach((value, idx) => {
+        assertOptionalRange(value, `metrics.baseline.peaksY[${idx}]`, 0, 1);
+      });
+    }
   }
 };

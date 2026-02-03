@@ -14,7 +14,7 @@ describe("ReviewQueueScreen", () => {
   });
 
   it("renders empty state when no run selected", () => {
-    render(<ReviewQueueScreen runId={undefined} />);
+    render(<ReviewQueueScreen runId={undefined} runDir={undefined} />);
 
     expect(screen.getByText(/Select a run to review/i)).toBeInTheDocument();
   });
@@ -31,7 +31,7 @@ describe("ReviewQueueScreen", () => {
       },
     };
 
-    render(<ReviewQueueScreen runId="run-1" />);
+    render(<ReviewQueueScreen runId="run-1" runDir="/tmp/runs/run-1" />);
 
     expect(await screen.findByText(/No pages need review/i)).toBeInTheDocument();
   });
@@ -59,7 +59,7 @@ describe("ReviewQueueScreen", () => {
       },
     };
 
-    render(<ReviewQueueScreen runId="run-2" />);
+    render(<ReviewQueueScreen runId="run-2" runDir="/tmp/runs/run-2" />);
 
     const pageEntries = await screen.findAllByText(/page-1\.png/i);
     expect(pageEntries.length).toBeGreaterThan(0);
@@ -115,7 +115,7 @@ describe("ReviewQueueScreen", () => {
 
     const user = userEvent.setup();
 
-    render(<ReviewQueueScreen runId="run-3" />);
+    render(<ReviewQueueScreen runId="run-3" runDir="/tmp/runs/run-3" />);
 
     const pageEntries = await screen.findAllByText(/page-1\.png/i);
     expect(pageEntries.length).toBeGreaterThan(0);
@@ -154,6 +154,7 @@ describe("ReviewQueueScreen", () => {
     await user.click(screen.getByRole("button", { name: /submit review/i }));
     expect(submitReview).toHaveBeenCalledWith(
       "run-3",
+      "/tmp/runs/run-3",
       expect.arrayContaining([{ pageId: "page-1", decision: "accept" }])
     );
   }, 10000);

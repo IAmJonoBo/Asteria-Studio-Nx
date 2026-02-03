@@ -8,7 +8,17 @@ import type { NormalizationResult } from "./normalization.js";
 
 const mockNative = {
   estimateSkewAngle: vi.fn(() => ({ angle: 0, confidence: 0.8 })),
-  baselineMetrics: vi.fn(() => ({ lineConsistency: 0.8, textLineCount: 12 })),
+  baselineMetrics: vi.fn(() => ({
+    lineConsistency: 0.8,
+    textLineCount: 12,
+    spacingNorm: 0.05,
+    spacingMadNorm: 0.005,
+    offsetNorm: 0.02,
+    angleDeg: 0,
+    confidence: 0.7,
+    peakSharpness: 1.2,
+    peaksY: [0.1, 0.2, 0.3],
+  })),
   columnMetrics: vi.fn(() => ({ columnCount: 1, columnSeparation: 0.6 })),
   detectLayoutElements: vi.fn(() => [
     { id: "native-1", type: "text_block", bbox: [0, 0, 10, 10], confidence: 0.8 },
@@ -44,7 +54,7 @@ const buildNormalization = (page: PageData): NormalizationResult => ({
   },
   corrections: {
     deskewAngle: 0.1,
-    baseline: { lineConsistency: 0.8, textLineCount: 12, residualAngle: 0.1 },
+    baseline: { lineConsistency: 0.8, textLineCount: 12, residualAngle: 0.1, peaksY: [] },
   },
 });
 
