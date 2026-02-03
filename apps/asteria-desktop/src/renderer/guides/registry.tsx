@@ -83,10 +83,34 @@ export const getGuideLod = (zoom: number, config?: PipelineConfig): GuideLod => 
   return { showMinorGuides: true, labelVisibility: "all" };
 };
 
-const guidePaletteByGroup: Record<GuideGroup, string> = {
-  structural: "var(--guide-palette-structural)",
-  detected: "var(--guide-palette-detected)",
-  diagnostic: "var(--guide-palette-diagnostic)",
+export const guidePaletteByGroup: Record<GuideGroup, string> = {
+  structural: "var(--guide-passive)",
+  detected: "var(--guide-major)",
+  diagnostic: "var(--guide-hover)",
+};
+
+const guideDashTokensByLayer: Record<string, { major: string; minor: string }> = {
+  "baseline-grid": {
+    major: "var(--guide-dash-solid)",
+    minor: "var(--guide-dash-solid)",
+  },
+  "margin-guides": {
+    major: "var(--guide-dash-dashed)",
+    minor: "var(--guide-dash-dashed)",
+  },
+  "detected-guides": {
+    major: "var(--guide-dash-dashed)",
+    minor: "var(--guide-dash-dotted)",
+  },
+  "diagnostic-guides": {
+    major: "var(--guide-dash-dashed)",
+    minor: "var(--guide-dash-dotted)",
+  },
+};
+
+const defaultGuideDashTokens = {
+  major: "var(--guide-dash-solid)",
+  minor: "var(--guide-dash-dotted)",
 };
 
 const renderLinearGuideLayer = (context: GuideRenderContext): ReactElement | null => {
@@ -120,12 +144,21 @@ const renderLinearGuideLayer = (context: GuideRenderContext): ReactElement | nul
     return false;
   };
 
+  const dashTokens = guideDashTokensByLayer[layer.id] ?? defaultGuideDashTokens;
+
   return (
     <g data-guide-layer={layer.id} stroke={palette} fill="none" pointerEvents="none">
       {visibleGuides.map((guide) => {
         const isMinor = guide.kind === "minor";
+        const isActive = guide.id === activeGuideId;
+        const isHovered = guide.id === hoveredGuideId;
         const strokeWidth = isMinor ? "var(--guide-stroke-minor)" : "var(--guide-stroke-major)";
-        const strokeDasharray = isMinor ? "var(--guide-dash-minor)" : "var(--guide-dash-solid)";
+        const strokeDasharray = isMinor ? dashTokens.minor : dashTokens.major;
+        const strokeColor = isActive
+          ? "var(--guide-active)"
+          : isHovered
+            ? "var(--guide-hover)"
+            : palette;
         if (guide.axis === "x") {
           return (
             <line
@@ -134,6 +167,7 @@ const renderLinearGuideLayer = (context: GuideRenderContext): ReactElement | nul
               y1={0}
               x2={guide.position}
               y2={canvasHeight}
+              stroke={strokeColor}
               strokeWidth={strokeWidth}
               strokeDasharray={strokeDasharray}
             />
@@ -146,6 +180,7 @@ const renderLinearGuideLayer = (context: GuideRenderContext): ReactElement | nul
             y1={guide.position}
             x2={canvasWidth}
             y2={guide.position}
+            stroke={strokeColor}
             strokeWidth={strokeWidth}
             strokeDasharray={strokeDasharray}
           />
@@ -155,13 +190,19 @@ const renderLinearGuideLayer = (context: GuideRenderContext): ReactElement | nul
         if (!shouldShowLabel(guide)) return null;
         const labelX = guide.axis === "x" ? guide.position + 4 : 6;
         const labelY = guide.axis === "x" ? 14 : guide.position - 6;
+        const labelColor =
+          guide.id === activeGuideId
+            ? "var(--guide-active)"
+            : guide.id === hoveredGuideId
+              ? "var(--guide-hover)"
+              : palette;
         return (
           <text
             key={`${guide.id}-label`}
             x={labelX}
             y={labelY}
             fontSize={11}
-            fill={palette}
+            fill={labelColor}
             stroke="none"
             textAnchor="start"
           >

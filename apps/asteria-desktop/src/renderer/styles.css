@@ -34,14 +34,20 @@
   --color-info-bg: #dbeafe;
   --color-info-text: #1e40af;
 
-  --guide-palette-structural: #06b6d4;
-  --guide-palette-detected: #f59e0b;
-  --guide-palette-diagnostic: #a855f7;
+  --guide-passive: rgba(148, 163, 184, 0.22);
+  --guide-major: rgba(148, 163, 184, 0.32);
+  --guide-hover: rgba(59, 130, 246, 0.55);
+  --guide-active: rgba(59, 130, 246, 0.85);
+  --snap-line: rgba(34, 211, 238, 0.95);
+  --snap-glow: rgba(34, 211, 238, 0.35);
+  --band-headfoot: rgba(236, 72, 153, 0.08);
+  --band-gutter: rgba(239, 68, 68, 0.08);
   --guide-stroke-major: 1.6;
   --guide-stroke-minor: 1;
   --guide-dash-solid: none;
-  --guide-dash-minor: 4 4;
-  --guide-dash-emphasis: 8 4;
+  --guide-dash-dashed: 6 4;
+  --guide-dash-dotted: 2 4;
+  --guide-dash-gutter: 10 6;
 
   --focus-ring: rgba(59, 130, 246, 0.5);
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
@@ -79,14 +85,20 @@
   --color-info-bg: #1e3a8a;
   --color-info-text: #93c5fd;
 
-  --guide-palette-structural: #22d3ee;
-  --guide-palette-detected: #fbbf24;
-  --guide-palette-diagnostic: #c084fc;
+  --guide-passive: rgba(148, 163, 184, 0.22);
+  --guide-major: rgba(148, 163, 184, 0.32);
+  --guide-hover: rgba(59, 130, 246, 0.55);
+  --guide-active: rgba(59, 130, 246, 0.85);
+  --snap-line: rgba(34, 211, 238, 0.95);
+  --snap-glow: rgba(34, 211, 238, 0.35);
+  --band-headfoot: rgba(236, 72, 153, 0.08);
+  --band-gutter: rgba(239, 68, 68, 0.08);
   --guide-stroke-major: 1.6;
   --guide-stroke-minor: 1;
   --guide-dash-solid: none;
-  --guide-dash-minor: 4 4;
-  --guide-dash-emphasis: 8 4;
+  --guide-dash-dashed: 6 4;
+  --guide-dash-dotted: 2 4;
+  --guide-dash-gutter: 10 6;
 
   --focus-ring: rgba(96, 165, 250, 0.5);
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
