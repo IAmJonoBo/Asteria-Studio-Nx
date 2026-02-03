@@ -124,6 +124,10 @@ export interface NormalizationOptions {
     maxHighlightShift?: number;
     confidenceFloor?: number;
   };
+  confidenceGate?: {
+    deskewMin?: number;
+    shadingMin?: number;
+  };
   bookPriors?: {
     model?: BookModel;
     maxTrimDriftPx?: number;
@@ -190,6 +194,11 @@ export interface NormalizationResult {
     alignment?: AlignmentResult;
     bookSnap?: BookSnapResult;
     morphology?: MorphologyPlan;
+    deskewApplied?: boolean;
+  };
+  confidenceGate?: {
+    passed: boolean;
+    reasons: string[];
   };
   stats: {
     backgroundMean: number;
@@ -1109,6 +1118,12 @@ export async function normalizePage(
     confidenceFloor: 0.55,
     ...options?.shading,
   };
+  const confidenceGate = options?.confidenceGate;
+  const shadingConfidenceFloor =
+    confidenceGate?.shadingMin !== undefined
+      ? Math.max(shadingOptions.confidenceFloor, confidenceGate.shadingMin)
+      : shadingOptions.confidenceFloor;
+  shadingOptions.confidenceFloor = shadingConfidenceFloor;
 
   const imageMeta = await sharp(page.originalPath).metadata();
   const widthPx = imageMeta.width ?? estimate.widthPx;
@@ -1128,6 +1143,7 @@ export async function normalizePage(
   const refinementMode = options?.skewRefinement ?? "on";
 
   let finalAngle = skew.angle;
+  let deskewApplied = true;
   let rotated = sharp(page.originalPath).rotate(finalAngle, {
     background: { r: 255, g: 255, b: 255, alpha: 1 },
   });
@@ -1135,12 +1151,20 @@ export async function normalizePage(
   let residual = estimateSkewAngle(rotatedPreview);
   let skewRefined = false;
 
+  if (confidenceGate?.deskewMin !== undefined && skew.confidence < confidenceGate.deskewMin) {
+    finalAngle = 0;
+    deskewApplied = false;
+    rotated = sharp(page.originalPath);
+    rotatedPreview = await buildPreviewFromSharp(rotated);
+    residual = estimateSkewAngle(rotatedPreview);
+  }
+
   const shouldRefine =
     refinementMode === "forced" ||
     (refinementMode === "on" &&
       ((residual.confidence > 0.2 && Math.abs(residual.angle) > 0.1) || skew.confidence < 0.25));
 
-  if (shouldRefine) {
+  if (shouldRefine && deskewApplied) {
     finalAngle = skew.angle + residual.angle;
     rotated = sharp(page.originalPath).rotate(finalAngle, {
       background: { r: 255, g: 255, b: 255, alpha: 1 },
@@ -1161,6 +1185,17 @@ export async function normalizePage(
   );
   const shadingModel = shadingResult?.model;
   const shadingCorrected = shadingResult?.corrected ?? rotated;
+  const confidenceGateReasons: string[] = [];
+  if (!deskewApplied) {
+    confidenceGateReasons.push("deskew-low-confidence");
+  }
+  if (
+    shadingModel &&
+    !shadingModel.applied &&
+    shadingModel.confidence < (confidenceGate?.shadingMin ?? shadingConfidenceFloor)
+  ) {
+    confidenceGateReasons.push("shading-low-confidence");
+  }
   const computeBoxes = (
     bias: number,
     edgeScale: number
@@ -1321,7 +1356,14 @@ export async function normalizePage(
       alignment,
       bookSnap: bookSnap.snap,
       morphology: morphologyPlan,
+      deskewApplied,
     },
+    confidenceGate:
+      confidenceGateReasons.length > 0
+        ? { passed: false, reasons: confidenceGateReasons }
+        : confidenceGate
+          ? { passed: true, reasons: [] }
+          : undefined,
     stats: {
       backgroundMean: borderStats.mean,
       backgroundStd: borderStats.std,

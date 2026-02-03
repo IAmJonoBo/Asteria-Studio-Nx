@@ -580,6 +580,7 @@ type NormalizeConcurrentParams = {
   onError: (pageId: string, message: string) => void;
   control?: RunControl;
   onProgress?: (processed: number, total: number) => void;
+  onStageProgress?: (stage: string, processed: number, total: number, throughput: number) => void;
 };
 
 const normalizePagesConcurrent = async (
@@ -592,6 +593,9 @@ const normalizePagesConcurrent = async (
   const workerCount = Math.max(1, Math.min(concurrency, queue.length));
   const total = queue.length;
   let processed = 0;
+  const stageNames = ["preprocess", "deskew", "dewarp", "shading", "layout-detection", "normalize"];
+  const stageCounts = new Map(stageNames.map((stage) => [stage, 0]));
+  const stageStarts = new Map(stageNames.map((stage) => [stage, 0]));
 
   const workers = Array.from({ length: workerCount }, async () => {
     while (queue.length > 0) {
@@ -613,6 +617,20 @@ const normalizePagesConcurrent = async (
       } finally {
         processed += 1;
         onProgress?.(processed, total);
+        if (params.onStageProgress && results.has(page.id)) {
+          stageNames.forEach((stage) => {
+            const count = (stageCounts.get(stage) ?? 0) + 1;
+            stageCounts.set(stage, count);
+            const start = stageStarts.get(stage) ?? 0;
+            const startedAt = start === 0 ? Date.now() : start;
+            if (start === 0) {
+              stageStarts.set(stage, startedAt);
+            }
+            const elapsedSec = Math.max(0.001, (Date.now() - startedAt) / 1000);
+            const throughput = count / elapsedSec;
+            params.onStageProgress?.(stage, count, total, throughput);
+          });
+        }
       }
     }
   });
@@ -984,6 +1002,11 @@ const buildReviewQueue = (
     const assessment = inferLayoutProfile(page, index, norm, pages.length);
     const layoutConfidence = computeLayoutConfidence(assessment, norm);
     const qualityGate = computeQualityGate(norm, context, qaConfig);
+    const confidenceGate = norm.confidenceGate;
+    if (confidenceGate && !confidenceGate.passed) {
+      qualityGate.reasons.push(...confidenceGate.reasons, "confidence-gate");
+      qualityGate.accepted = false;
+    }
 
     // Validate baseline alignment for text pages
     const baselineValidation = validateBodyTextBaselines(norm, assessment.profile, qaConfig);
@@ -1610,6 +1633,7 @@ const buildSecondPassCandidates = (
   pages.forEach((page, index) => {
     const norm = normalizationResults.get(page.id);
     if (!norm) return;
+    if (norm.confidenceGate && !norm.confidenceGate.passed) return;
     const assessment = inferLayoutProfile(page, index, norm, pages.length);
     const qualityGate = computeQualityGate(norm, qualityContext, qaConfig);
     const baselineValidation = validateBodyTextBaselines(norm, assessment.profile, qaConfig);
@@ -1708,7 +1732,7 @@ const savePipelineOutputs = async (params: {
     dpiConfidence: params.analysisSummary.dpiConfidence,
   });
 
-  await writeSidecars(
+  const layoutSummaries = await writeSidecars(
     params.configToProcess,
     params.analysisSummary,
     params.normalizationResults,
@@ -1759,6 +1783,39 @@ const savePipelineOutputs = async (params: {
         norm.previews?.source?.path ? path.basename(norm.previews.source.path) : undefined,
         norm.previews?.normalized?.path ? path.basename(norm.previews.normalized.path) : undefined,
       ].filter(Boolean),
+      stages: {
+        preprocess: {
+          backgroundMean: norm.stats.backgroundMean,
+          backgroundStd: norm.stats.backgroundStd,
+          maskCoverage: norm.stats.maskCoverage,
+        },
+        deskew: {
+          angleDeg: norm.skewAngle,
+          confidence: norm.stats.skewConfidence,
+          applied: norm.corrections?.deskewApplied ?? true,
+          residualDeg: norm.corrections?.skewResidualAngle ?? 0,
+        },
+        dewarp: {
+          method: norm.corrections?.alignment?.applied ? "affine" : "none",
+          drift: norm.corrections?.alignment?.drift ?? 0,
+          applied: norm.corrections?.alignment?.applied ?? false,
+        },
+        shading: norm.shading
+          ? {
+              method: norm.shading.method,
+              confidence: norm.shading.confidence,
+              residual: norm.shading.residual ?? null,
+              applied: norm.shading.applied,
+            }
+          : { method: "none", confidence: 0, residual: null, applied: false },
+        layoutDetection: {
+          profile: layoutSummaries.get(norm.pageId)?.profile ?? "body",
+          confidence: layoutSummaries.get(norm.pageId)?.confidence ?? 0,
+          elementCount: layoutSummaries.get(norm.pageId)?.elementCount ?? 0,
+          source: layoutSummaries.get(norm.pageId)?.source ?? "unknown",
+        },
+        confidenceGate: norm.confidenceGate ?? { passed: true, reasons: [] },
+      },
     })),
   };
   await writeJsonAtomic(getRunManifestPath(params.runDir), manifest);
@@ -2150,6 +2207,13 @@ export async function runPipeline(options: PipelineRunnerOptions): Promise<Pipel
       priors,
       generatePreviews: true,
       skewRefinement: "on",
+      confidenceGate: {
+        deskewMin: qaConfig.skew_confidence_min,
+        shadingMin: qaConfig.shading_confidence_min,
+      },
+      shading: {
+        confidenceFloor: qaConfig.shading_confidence_min,
+      },
       bookPriors: {
         model: bookModel,
         maxTrimDriftPx: bookPriorsConfig.max_trim_drift_px,
@@ -2168,13 +2232,11 @@ export async function runPipeline(options: PipelineRunnerOptions): Promise<Pipel
         errors.push({ phase: "normalization", message: `[${pageId}] ${message}` });
       },
       control,
-      onProgress: (processed, total) => {
-        const elapsedSec = Math.max(0.001, (Date.now() - startTime) / 1000);
-        const throughput = processed / elapsedSec;
+      onStageProgress: (stage, processed, total, throughput) => {
         options.onProgress?.({
           runId,
           projectId: options.projectId,
-          stage: "normalize",
+          stage,
           processed,
           total,
           throughput,
@@ -2424,11 +2486,20 @@ const writeSidecars = async (
   native: PipelineCoreNative | null,
   bookModel?: BookModel,
   control?: RunControl
-): Promise<void> => {
+): Promise<
+  Map<
+    string,
+    { profile: LayoutProfile; confidence: number; elementCount: number; source: string }
+  >
+> => {
   const sidecarDir = getSidecarDir(runDir);
   await fs.mkdir(sidecarDir, { recursive: true });
 
   const estimatesById = new Map(analysis.estimates.map((e) => [e.pageId, e]));
+  const layoutSummaries = new Map<
+    string,
+    { profile: LayoutProfile; confidence: number; elementCount: number; source: string }
+  >();
 
   await Promise.all(
     config.pages.map(async (page, index) => {
@@ -2470,6 +2541,13 @@ const writeSidecars = async (
         ? null
         : await loadNativeLayoutElements(page.id, norm.normalizedPath, native);
       const elements = remoteElements ?? nativeElements ?? localElements;
+      const layoutSource = remoteElements ? "remote" : nativeElements ? "native" : "local";
+      layoutSummaries.set(page.id, {
+        profile: assessment.profile,
+        confidence: layoutConfidence,
+        elementCount: elements.length,
+        source: layoutSource,
+      });
 
       const baselineLineCount = norm.corrections?.baseline?.textLineCount ?? 0;
       const cropHeight = Math.max(1, norm.cropBox[3] - norm.cropBox[1] + 1);
@@ -2540,6 +2618,7 @@ const writeSidecars = async (
       }
     })
   );
+  return layoutSummaries;
 };
 
 const analyzeDimensions = (

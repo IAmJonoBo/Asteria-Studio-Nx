@@ -107,24 +107,27 @@ sequenceDiagram
 2. **Analysis**: Compute target dimensions from user config (mm/inches + DPI), detect aspect ratios, quality signals
 3. **Spread Split** (Optional): Detect two-page scans via center gutter analysis; split when confidence > threshold
 4. **Book Priors** (Optional): Sample first N pages to derive median trim/content boxes, running heads, baseline grid
-5. **Normalization**:
+5. **Preprocess**: Generate previews, denoise/contrast hints, estimate orientation
+6. **Deskew**: Estimate skew angle and gate low-confidence rotations
+7. **Dewarp**: Record warp metrics (no-op until CV model is wired)
+8. **Shading**: Estimate low-frequency illumination field and apply confidence-gated correction
+9. **Layout Detection**: Infer layout profile and element counts for QA gating + manifests
+10. **Normalization**:
    - Scale to target DPI
    - Crop with bleed/trim rules
    - Generate quality metrics (sharpness, contrast)
    - Create preview thumbnails (320px wide)
    - Create overlay annotations
-6. **Export**: Write normalized PNGs, previews, overlays to `pipeline-results/runs/{runId}`; generate run-scoped manifest JSON
+11. **Export**: Write normalized PNGs, previews, overlays to `pipeline-results/runs/{runId}`; generate run-scoped manifest JSON
 
 - Emit schema-compliant JSON sidecars per run in `pipeline-results/runs/{runId}/sidecars/`
 
 ### Planned Stages (Future)
 
-1. **Preprocess**: Denoise, contrast-normalize, binarize hint layers; estimate orientation
-2. **Deskew**: Hough/phase-correlation to detect angle; rotate to upright
-3. **Dewarp**: Page contour detection + UNet-based surface estimation; warp correction
-4. **Layout Detection**: Detect page bounds, text blocks, titles, ornaments, folios; compute confidence scores
-5. **Shading Correct**: Estimate low-frequency illumination field and correct spine shadow
-6. **QA**: Produce overlays, thumbnails, and metrics for reviewer queue
+1. **Dewarp (CV)**: Page contour detection + UNet-based surface estimation; full warp correction
+2. **Layout Detection (ML)**: YOLOv8/PP-PicoDet fine-tuned detectors and OCR-aware refinement
+3. **Shading Correct (Advanced)**: Learned illumination field + spine shadow model updates
+4. **QA**: Produce overlays, thumbnails, and metrics for reviewer queue
 
 ## Projects & Storage
 
