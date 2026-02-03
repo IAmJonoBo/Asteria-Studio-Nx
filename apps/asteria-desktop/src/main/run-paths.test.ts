@@ -13,6 +13,7 @@ import {
   getRunReviewQueuePath,
   getSidecarDir,
   getRunSidecarPath,
+  getTrainingDir,
 } from "./run-paths.js";
 
 describe("run-paths", () => {
@@ -26,6 +27,7 @@ describe("run-paths", () => {
     expect(getPreviewDir(runDir)).toBe(path.join(runDir, "previews"));
     expect(getOverlayDir(runDir)).toBe(path.join(runDir, "overlays"));
     expect(getSidecarDir(runDir)).toBe(path.join(runDir, "sidecars"));
+    expect(getTrainingDir(runDir)).toBe(path.join(runDir, "training"));
     expect(getRunSidecarPath(runDir, "page-1")).toBe(path.join(runDir, "sidecars", "page-1.json"));
     expect(getRunNormalizedPath(runDir, "page-1")).toBe(
       path.join(runDir, "normalized", "page-1.png")

@@ -41,6 +41,7 @@ import {
   getRunSidecarPath,
   getNormalizedDir,
   getSidecarDir,
+  getTrainingDir,
 } from "./run-paths.js";
 import { writeJsonAtomic } from "./file-utils.js";
 import { importCorpus, listProjects, normalizeCorpusPath } from "./projects.js";
@@ -78,6 +79,124 @@ const exportNormalizedByFormat = async (params: {
       }
     })
   );
+};
+
+type Box = [number, number, number, number];
+type ElementEdit = {
+  action: "add" | "update" | "remove";
+  elementId?: string;
+  before?: Record<string, unknown>;
+  after?: Record<string, unknown>;
+};
+type AdjustmentSummary = {
+  rotationDelta?: number;
+  cropOffsets?: Box;
+  trimOffsets?: Box;
+  elementEdits?: ElementEdit[];
+  appliedAt?: string;
+  source?: "review";
+};
+
+const isFiniteNumber = (value: unknown): value is number =>
+  typeof value === "number" && Number.isFinite(value);
+
+const isBox = (value: unknown): value is Box =>
+  Array.isArray(value) && value.length === 4 && value.every((entry) => isFiniteNumber(entry));
+
+const parseBox = (value: unknown): Box | null => (isBox(value) ? value : null);
+
+const buildOffsets = (base: Box | null, updated: Box | null): Box | null => {
+  if (!base || !updated) return null;
+  return [
+    Number((updated[0] - base[0]).toFixed(2)),
+    Number((updated[1] - base[1]).toFixed(2)),
+    Number((updated[2] - base[2]).toFixed(2)),
+    Number((updated[3] - base[3]).toFixed(2)),
+  ];
+};
+
+const buildElementEdits = (
+  baseElements: unknown,
+  overrideElements: unknown
+): ElementEdit[] | null => {
+  if (!Array.isArray(overrideElements)) return null;
+  const baseArray = Array.isArray(baseElements) ? baseElements : [];
+  const baseMap = new Map<string, Record<string, unknown>>();
+  for (const element of baseArray) {
+    if (element && typeof element === "object" && "id" in element && typeof element.id === "string") {
+      baseMap.set(element.id, element as Record<string, unknown>);
+    }
+  }
+  const overrideMap = new Map<string, Record<string, unknown>>();
+  for (const element of overrideElements) {
+    if (element && typeof element === "object" && "id" in element && typeof element.id === "string") {
+      overrideMap.set(element.id, element as Record<string, unknown>);
+    }
+  }
+
+  const edits: ElementEdit[] = [];
+  for (const [id, overrideElement] of overrideMap) {
+    const baseElement = baseMap.get(id);
+    if (!baseElement) {
+      edits.push({ action: "add", elementId: id, after: overrideElement });
+      continue;
+    }
+    if (JSON.stringify(baseElement) !== JSON.stringify(overrideElement)) {
+      edits.push({ action: "update", elementId: id, before: baseElement, after: overrideElement });
+    }
+  }
+  for (const [id, baseElement] of baseMap) {
+    if (!overrideMap.has(id)) {
+      edits.push({ action: "remove", elementId: id, before: baseElement });
+    }
+  }
+
+  return edits.length > 0 ? edits : null;
+};
+
+const buildAdjustmentSummary = (params: {
+  sidecar: Record<string, unknown> | null;
+  overrides: Record<string, unknown> | null;
+  appliedAt: string;
+}): AdjustmentSummary | null => {
+  if (!params.sidecar || !params.overrides) return null;
+  const normalization = params.overrides.normalization;
+  const sidecarNormalization =
+    params.sidecar.normalization && typeof params.sidecar.normalization === "object"
+      ? (params.sidecar.normalization as Record<string, unknown>)
+      : null;
+  const overrideNormalization =
+    normalization && typeof normalization === "object"
+      ? (normalization as Record<string, unknown>)
+      : null;
+  const rotationDelta = isFiniteNumber(overrideNormalization?.rotationDeg)
+    ? overrideNormalization.rotationDeg
+    : null;
+  const cropOffsets = buildOffsets(
+    parseBox(sidecarNormalization?.cropBox),
+    parseBox(overrideNormalization?.cropBox)
+  );
+  const trimOffsets = buildOffsets(
+    parseBox(sidecarNormalization?.trimBox),
+    parseBox(overrideNormalization?.trimBox)
+  );
+  const elementEdits = buildElementEdits(params.sidecar.elements, params.overrides.elements);
+
+  const adjustments: AdjustmentSummary = {
+    rotationDelta: rotationDelta ?? undefined,
+    cropOffsets: cropOffsets ?? undefined,
+    trimOffsets: trimOffsets ?? undefined,
+    elementEdits: elementEdits ?? undefined,
+    appliedAt: params.appliedAt,
+    source: "review",
+  };
+
+  const hasSignal =
+    adjustments.rotationDelta !== undefined ||
+    adjustments.cropOffsets !== undefined ||
+    adjustments.trimOffsets !== undefined ||
+    adjustments.elementEdits !== undefined;
+  return hasSignal ? adjustments : null;
 };
 
 /**
@@ -345,6 +464,20 @@ export function registerIpcHandlers(): void {
         // ignore missing sidecars
       }
 
+      const trainingDir = getTrainingDir(runDir);
+      const trainingExportDir = path.join(exportDir, "training");
+      try {
+        const trainingFiles = await fs.readdir(trainingDir);
+        await fs.mkdir(trainingExportDir, { recursive: true });
+        await Promise.all(
+          trainingFiles.map((file) =>
+            fs.copyFile(path.join(trainingDir, file), path.join(trainingExportDir, file))
+          )
+        );
+      } catch {
+        // ignore missing training signals
+      }
+
       const normalizedDir = getNormalizedDir(runDir);
       let normalizedFiles: string[] = [];
       try {
@@ -504,10 +637,78 @@ export function registerIpcHandlers(): void {
       const reviewDir = path.join(resolveOutputDir(), "reviews");
       await fs.mkdir(reviewDir, { recursive: true });
       const reviewPath = path.join(reviewDir, `${runId}.json`);
+      const submittedAt = new Date().toISOString();
       await writeJsonAtomic(reviewPath, {
         runId,
-        submittedAt: new Date().toISOString(),
+        submittedAt,
         decisions,
+      });
+
+      const outputDir = resolveOutputDir();
+      const runDir = await resolveRunDir(outputDir, runId);
+      const trainingDir = getTrainingDir(runDir);
+      await fs.mkdir(trainingDir, { recursive: true });
+
+      const trainingSignals: Array<Record<string, unknown>> = [];
+
+      for (const decision of decisions) {
+        const pageId = decision.pageId;
+        if (!pageId) continue;
+        const sidecarPath = getRunSidecarPath(runDir, pageId);
+        const overridePath = path.join(runDir, "overrides", `${pageId}.json`);
+
+        let sidecar: Record<string, unknown> | null = null;
+        try {
+          const raw = await fs.readFile(sidecarPath, "utf-8");
+          sidecar = JSON.parse(raw) as Record<string, unknown>;
+        } catch {
+          sidecar = null;
+        }
+
+        let overrideRecord: { overrides?: Record<string, unknown>; appliedAt?: string } | null = null;
+        try {
+          const raw = await fs.readFile(overridePath, "utf-8");
+          overrideRecord = JSON.parse(raw) as { overrides?: Record<string, unknown>; appliedAt?: string };
+        } catch {
+          overrideRecord = null;
+        }
+
+        const overrides =
+          (decision.overrides as Record<string, unknown> | undefined) ??
+          overrideRecord?.overrides ??
+          (sidecar?.overrides as Record<string, unknown> | undefined) ??
+          null;
+        const appliedAt = overrideRecord?.appliedAt ?? submittedAt;
+        const adjustments = buildAdjustmentSummary({ sidecar, overrides, appliedAt });
+
+        if (sidecar && adjustments) {
+          await writeJsonAtomic(sidecarPath, {
+            ...sidecar,
+            adjustments,
+          });
+        }
+
+        const safePageId = pageId.replace(/[\\/]/g, "_");
+        const trainingSignal = {
+          runId,
+          pageId,
+          decision: decision.decision,
+          notes: decision.notes,
+          submittedAt,
+          appliedAt,
+          adjustments: adjustments ?? undefined,
+          overrides: overrides ?? undefined,
+          sidecarPath: `sidecars/${pageId}.json`,
+        };
+        trainingSignals.push(trainingSignal);
+        await writeJsonAtomic(path.join(trainingDir, `${safePageId}.json`), trainingSignal);
+      }
+
+      await writeJsonAtomic(path.join(trainingDir, "manifest.json"), {
+        runId,
+        submittedAt,
+        count: trainingSignals.length,
+        signals: trainingSignals,
       });
     }
   );

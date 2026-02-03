@@ -294,6 +294,7 @@ describe("IPC handler registration", () => {
 
     readdir
       .mockResolvedValueOnce(["page-1.json"])
+      .mockResolvedValueOnce(["signal-1.json"])
       .mockResolvedValueOnce(["page1.png", "page2.png", "notes.txt"]);
 
     await (
@@ -309,6 +310,7 @@ describe("IPC handler registration", () => {
     const exportDir = path.join(runDir, "exports", "2024-01-01T00-00-00-000Z");
     const normalizedDir = path.join(runDir, "normalized");
     const sidecarDir = path.join(runDir, "sidecars");
+    const trainingDir = path.join(runDir, "training");
 
     expect(copyFile).toHaveBeenCalledWith(
       path.join(runDir, "manifest.json"),
@@ -329,6 +331,10 @@ describe("IPC handler registration", () => {
     expect(copyFile).toHaveBeenCalledWith(
       path.join(sidecarDir, "page-1.json"),
       path.join(exportDir, "sidecars", "page-1.json")
+    );
+    expect(copyFile).toHaveBeenCalledWith(
+      path.join(trainingDir, "signal-1.json"),
+      path.join(exportDir, "training", "signal-1.json")
     );
     expect(sharpCall.tiff).toHaveBeenCalledTimes(2);
     expect(sharpCall.toFormat).toHaveBeenCalledTimes(2);
@@ -613,7 +619,10 @@ describe("IPC handler registration", () => {
     registerIpcHandlers();
     const handler = handlers.get("asteria:export-run");
     expect(handler).toBeDefined();
-    readdir.mockResolvedValueOnce([]).mockRejectedValueOnce(new Error("missing"));
+    readdir
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockRejectedValueOnce(new Error("missing"));
 
     const result = await (
       handler as (event: unknown, runId: string, formats: Array<"png">) => Promise<unknown>

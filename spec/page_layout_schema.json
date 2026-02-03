@@ -258,6 +258,75 @@
         "overrideAppliedAt": { "type": "string", "format": "date-time" }
       }
     },
+    "adjustments": {
+      "type": "object",
+      "description": "User adjustments captured during review",
+      "properties": {
+        "rotationDelta": { "type": "number", "description": "Degrees clockwise applied by reviewer" },
+        "cropOffsets": {
+          "type": "array",
+          "items": { "type": "number" },
+          "minItems": 4,
+          "maxItems": 4,
+          "description": "[dx0,dy0,dx1,dy1] crop offsets in output pixels"
+        },
+        "trimOffsets": {
+          "type": "array",
+          "items": { "type": "number" },
+          "minItems": 4,
+          "maxItems": 4,
+          "description": "[dx0,dy0,dx1,dy1] trim offsets in output pixels"
+        },
+        "elementEdits": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "action": { "type": "string", "enum": ["add", "update", "remove"] },
+              "elementId": { "type": "string" },
+              "before": {
+                "type": "object",
+                "properties": {
+                  "id": { "type": "string" },
+                  "type": { "type": "string" },
+                  "bbox": {
+                    "type": "array",
+                    "items": { "type": "number" },
+                    "minItems": 4,
+                    "maxItems": 4
+                  },
+                  "confidence": { "type": "number" },
+                  "text": { "type": "string" },
+                  "notes": { "type": "string" },
+                  "flags": { "type": "array", "items": { "type": "string" } },
+                  "source": { "type": "string" }
+                }
+              },
+              "after": {
+                "type": "object",
+                "properties": {
+                  "id": { "type": "string" },
+                  "type": { "type": "string" },
+                  "bbox": {
+                    "type": "array",
+                    "items": { "type": "number" },
+                    "minItems": 4,
+                    "maxItems": 4
+                  },
+                  "confidence": { "type": "number" },
+                  "text": { "type": "string" },
+                  "notes": { "type": "string" },
+                  "flags": { "type": "array", "items": { "type": "string" } },
+                  "source": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "appliedAt": { "type": "string", "format": "date-time" },
+        "source": { "type": "string", "enum": ["review"] }
+      }
+    },
     "overrides": {
       "type": "object",
       "description": "Per-page override values that replace pipeline outputs"

@@ -149,6 +149,7 @@ pipeline-results/               # Working directory (gitignored)
         ├── previews/            # 320px width thumbnails for UI
         ├── overlays/            # Annotated visualization (crop boxes, grids)
         ├── sidecars/            # JSON layout metadata (schema-compliant)
+        ├── training/            # Review-derived training signal manifests
         ├── priors-sample/       # Book model from sampled pages
         ├── report.json          # Run report with config snapshot + metrics
         ├── review-queue.json    # Review queue for that run

@@ -221,6 +221,19 @@ export interface PageLayoutSidecar {
     overrides?: string[];
     overrideAppliedAt?: string;
   };
+  adjustments?: {
+    rotationDelta?: number;
+    cropOffsets?: [number, number, number, number];
+    trimOffsets?: [number, number, number, number];
+    elementEdits?: Array<{
+      action: "add" | "update" | "remove";
+      elementId?: string;
+      before?: PageLayoutElement;
+      after?: PageLayoutElement;
+    }>;
+    appliedAt?: string;
+    source?: "review";
+  };
   overrides?: Record<string, unknown>;
   bookModel?: BookModel;
   version?: string;

@@ -265,6 +265,21 @@ pub struct LayoutDetectionResult {
 
 🎯 **Planned** — Model selection, dataset curation, training pipeline pending
 
+### Training Signals from Review
+
+Reviewer adjustments are captured as structured training signals to bootstrap future model
+iterations. When a review is submitted, the system writes:
+
+- **Sidecar adjustments**: per-page `adjustments` with rotation deltas, crop offsets, and element
+  edit diffs (when present).
+- **Training manifests**: JSON signals under
+  `pipeline-results/runs/{runId}/training/`, including a `manifest.json` index plus one file per
+  reviewed page.
+
+These signals become the labeled deltas for supervised training (e.g., deskew/rotation correction,
+crop refinement, and element bounding box updates). They can be aggregated to build curated
+datasets and to score model drift over time.
+
 ## Spread Split (Implemented)
 
 **Objective**: Detect two-page scans and split at gutter when confidence is high
