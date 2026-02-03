@@ -1,7 +1,9 @@
 import type { JSX, KeyboardEvent, MouseEvent, WheelEvent, MutableRefObject, PointerEvent } from "react";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { useKeyboardShortcuts } from "../hooks/useKeyboardShortcut.js";
 import type { ReviewQueue, PageLayoutSidecar } from "../../ipc/contracts.js";
+import { snapBoxWithSources, getBoxSnapCandidates } from "../utils/snapping.js";
+import type { SnapEdge } from "../utils/snapping.js";
 
 type PreviewRef = {
   path: string;
@@ -101,6 +103,24 @@ type OverlayHandleEdge =
 type OverlayHandle = {
   boxType: "crop" | "trim";
   edge: OverlayHandleEdge;
+};
+
+type SnapGuideLine = {
+  axis: "x" | "y";
+  value: number;
+  edge: "left" | "right" | "top" | "bottom";
+  label?: string;
+};
+
+const handleSnapEdges: Record<OverlayHandleEdge, SnapEdge[]> = {
+  left: ["left"],
+  right: ["right"],
+  top: ["top"],
+  bottom: ["bottom"],
+  "top-left": ["top", "left"],
+  "top-right": ["top", "right"],
+  "bottom-left": ["bottom", "left"],
+  "bottom-right": ["bottom", "right"],
 };
 
 const getDecisionBadgeClass = (decisionValue: DecisionValue): string => {
@@ -262,15 +282,10 @@ const applyHandleDrag = (box: Box, handle: OverlayHandleEdge, deltaX: number, de
   }
 };
 
-const snapBoxToPrior = (box: Box, prior: Box | null | undefined, threshold = 6): Box => {
-  if (!prior) return box;
-  const snapped: Box = [...box];
-  for (let i = 0; i < 4; i += 1) {
-    if (Math.abs(box[i] - prior[i]) <= threshold) {
-      snapped[i] = prior[i];
-    }
-  }
-  return snapped;
+type SnapGuidesState = {
+  guides: Array<{ axis: "x" | "y"; value: number; edge: "left" | "right" | "top" | "bottom"; label?: string }>;
+  active: boolean;
+  tooltip: string | null;
 };
 
 const isSameBox = (a: Box | null, b: Box | null): boolean => {
@@ -291,6 +306,13 @@ const buildTrimBoxFromCrop = (cropBox: Box | null, trimMm?: number, dpi?: number
     cropBox[2] - usedTrimPx,
     cropBox[3] - usedTrimPx,
   ];
+};
+
+const formatSnapTooltip = (guides: SnapGuideLine[]): string | null => {
+  if (guides.length === 0) return null;
+  const labels = Array.from(new Set(guides.map((guide) => guide.label).filter(Boolean)));
+  if (labels.length === 0) return "Snapped";
+  return `Snapped: ${labels.join(", ")}`;
 };
 
 const createDecisionHandler =
@@ -688,6 +710,9 @@ type OverlayRenderParams = {
   cropBox: Box | null;
   trimBox: Box | null;
   adjustmentMode: AdjustmentMode;
+  snapGuides: SnapGuideLine[];
+  showSnapGuides: boolean;
+  snapTooltip: string | null;
   overlaySvgRef: MutableRefObject<globalThis.SVGSVGElement | null>;
   onHandlePointerDown: (event: PointerEvent<globalThis.SVGCircleElement>, handle: OverlayHandle) => void;
 };
@@ -702,6 +727,9 @@ const buildOverlaySvg = ({
   cropBox,
   trimBox,
   adjustmentMode,
+  snapGuides,
+  showSnapGuides,
+  snapTooltip,
   overlaySvgRef,
   onHandlePointerDown,
 }: OverlayRenderParams): JSX.Element | null => {
@@ -761,6 +789,62 @@ const buildOverlaySvg = ({
       style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }}
       viewBox={`0 0 ${normalizedPreview.width} ${normalizedPreview.height}`}
     >
+      {showSnapGuides &&
+        snapGuides.map((guide, index) => {
+          const isVertical = guide.axis === "x";
+          const scaledValue = guide.value * (isVertical ? overlayScaleX : overlayScaleY);
+          const glowId = `snap-glow-${index}`;
+          return (
+            <g key={`${guide.axis}-${guide.value}-${guide.edge}-${index}`} pointerEvents="none">
+              <defs>
+                <filter id={glowId} x="-50%" y="-50%" width="200%" height="200%">
+                  <feGaussianBlur stdDeviation="3" result="blur" />
+                  <feMerge>
+                    <feMergeNode in="blur" />
+                    <feMergeNode in="SourceGraphic" />
+                  </feMerge>
+                </filter>
+              </defs>
+              {isVertical ? (
+                <line
+                  x1={scaledValue}
+                  x2={scaledValue}
+                  y1={0}
+                  y2={normalizedPreview.height}
+                  stroke="rgba(250, 204, 21, 0.9)"
+                  strokeWidth={2}
+                  filter={`url(#${glowId})`}
+                />
+              ) : (
+                <line
+                  x1={0}
+                  x2={normalizedPreview.width}
+                  y1={scaledValue}
+                  y2={scaledValue}
+                  stroke="rgba(250, 204, 21, 0.9)"
+                  strokeWidth={2}
+                  filter={`url(#${glowId})`}
+                />
+              )}
+            </g>
+          );
+        })}
+      {showSnapGuides && snapTooltip && (
+        <g pointerEvents="none">
+          <rect
+            x={12}
+            y={12}
+            width={Math.min(320, snapTooltip.length * 7 + 24)}
+            height={30}
+            rx={8}
+            fill="rgba(15, 23, 42, 0.85)"
+            stroke="rgba(148, 163, 184, 0.7)"
+          />
+          <text x={24} y={32} fill="white" fontSize={12} fontFamily="var(--font-body)">
+            {snapTooltip}
+          </text>
+        </g>
+      )}
       {overlayLayers.cropBox && cropBox && (
         <rect
           x={cropBox[0] * overlayScaleX}
@@ -1513,6 +1597,13 @@ export function ReviewQueueScreen({ runId }: Readonly<ReviewQueueScreenProps>): 
   const [overrideError, setOverrideError] = useState<string | null>(null);
   const [lastOverrideAppliedAt, setLastOverrideAppliedAt] = useState<string | null>(null);
   const overlaySvgRef = useRef<globalThis.SVGSVGElement | null>(null);
+  const [snapGuidesState, setSnapGuidesState] = useState<SnapGuidesState>({
+    guides: [],
+    active: false,
+    tooltip: null,
+  });
+  const [isDraggingHandle, setIsDraggingHandle] = useState(false);
+  const [snapTemporarilyDisabled, setSnapTemporarilyDisabled] = useState(false);
   const dragHandleRef = useRef<{
     handle: OverlayHandle;
     start: { x: number; y: number };
@@ -1536,6 +1627,75 @@ export function ReviewQueueScreen({ runId }: Readonly<ReviewQueueScreenProps>): 
     folios: true,
     ornaments: true,
   });
+  const snapSources = useMemo(() => {
+    const sources = [];
+    const templateCandidates = [
+      ...(sidecar?.bookModel?.runningHeadTemplates?.flatMap((template) =>
+        getBoxSnapCandidates(template.bbox, template.confidence ?? 1, "Template: running head", "templates")
+      ) ?? []),
+      ...(sidecar?.bookModel?.ornamentLibrary?.flatMap((ornament) =>
+        getBoxSnapCandidates(ornament.bbox, ornament.confidence ?? 1, "Template: ornament", "templates")
+      ) ?? []),
+    ];
+    sources.push({
+      id: "templates",
+      priority: 4,
+      minConfidence: 0.4,
+      weight: 1.2,
+      radius: 10,
+      label: "Templates",
+      candidates: templateCandidates,
+    });
+
+    const detectedCandidates =
+      sidecar?.elements?.flatMap((element) =>
+        getBoxSnapCandidates(
+          element.bbox,
+          element.confidence ?? 1,
+          `Detected: ${element.type.replace("_", " ")}`,
+          "detected"
+        )
+      ) ?? [];
+    sources.push({
+      id: "detected",
+      priority: 3,
+      minConfidence: 0.5,
+      weight: 1,
+      radius: 8,
+      label: "Detected elements",
+      candidates: detectedCandidates,
+    });
+
+    const baselineCandidates = [
+      ...(baselineBoxesRef.current.crop
+        ? getBoxSnapCandidates(baselineBoxesRef.current.crop, 1, "Baseline: crop", "baseline")
+        : []),
+      ...(baselineBoxesRef.current.trim
+        ? getBoxSnapCandidates(baselineBoxesRef.current.trim, 1, "Baseline: trim", "baseline")
+        : []),
+    ];
+    sources.push({
+      id: "baseline",
+      priority: 2,
+      minConfidence: 0.1,
+      weight: 0.9,
+      radius: 12,
+      label: "Baseline",
+      candidates: baselineCandidates,
+    });
+
+    sources.push({
+      id: "user-guides",
+      priority: 5,
+      minConfidence: 0,
+      weight: 1.5,
+      radius: 14,
+      label: "User guides",
+      candidates: [],
+    });
+
+    return sources;
+  }, [sidecar]);
 
   const toggleSelected = createToggleSelected(setSelectedIds);
   const applyDecisionToSelection = createApplyDecisionToSelection(selectedIds, setDecisions);
@@ -1579,6 +1739,20 @@ export function ReviewQueueScreen({ runId }: Readonly<ReviewQueueScreenProps>): 
     setRotationDeg(baselineRotationRef.current);
     setAdjustmentMode(null);
   };
+
+  useEffect(() => {
+    const handleKeyChange = (event: globalThis.KeyboardEvent): void => {
+      if (event.key === "Control" || event.key === "Meta") {
+        setSnapTemporarilyDisabled(event.type === "keydown");
+      }
+    };
+    globalThis.addEventListener?.("keydown", handleKeyChange);
+    globalThis.addEventListener?.("keyup", handleKeyChange);
+    return () => {
+      globalThis.removeEventListener?.("keydown", handleKeyChange);
+      globalThis.removeEventListener?.("keyup", handleKeyChange);
+    };
+  }, []);
 
   const handleSetAdjustmentMode = (mode: AdjustmentMode): void => {
     if (mode === "crop" && !cropBox) {
@@ -1681,6 +1855,8 @@ export function ReviewQueueScreen({ runId }: Readonly<ReviewQueueScreenProps>): 
       target: event.currentTarget,
       pointerId: event.pointerId,
     };
+    setIsDraggingHandle(true);
+    setSnapGuidesState((prev) => ({ ...prev, active: true }));
     event.currentTarget.setPointerCapture?.(event.pointerId);
   };
 
@@ -1699,22 +1875,22 @@ export function ReviewQueueScreen({ runId }: Readonly<ReviewQueueScreenProps>): 
         ? sidecar.normalization.cropBox[3] + 1
         : normalizedPreview.height;
       const bounds: Box = [0, 0, outputWidth - 1, outputHeight - 1];
-      const prior =
-        handle.boxType === "trim"
-          ? sidecar?.bookModel?.trimBoxPx?.median
-          : sidecar?.bookModel?.contentBoxPx?.median;
-      
-      // Scale snap threshold based on output dimensions to provide consistent snapping
-      // at different zoom levels and image sizes. Uses 1% of average dimension with
-      // bounds of 4-12px to ensure reasonable snapping across image sizes.
-      const avgDimension = (outputWidth + outputHeight) / 2;
-      const scaledThreshold = Math.max(4, Math.min(12, avgDimension * 0.01));
-      
-      const snapped = snapBoxToPrior(
-        clampBox(applyHandleDrag(box, handle.edge, deltaX, deltaY), bounds),
-        prior,
-        scaledThreshold
-      );
+      const dragged = clampBox(applyHandleDrag(box, handle.edge, deltaX, deltaY), bounds);
+      const snapDisabled = snapTemporarilyDisabled || event.ctrlKey || event.metaKey;
+      const snapEdges = handleSnapEdges[handle.edge];
+      const snapResult = snapDisabled
+        ? { box: dragged, guides: [], applied: false }
+        : snapBoxWithSources({
+            box: dragged,
+            edges: snapEdges,
+            sources: snapSources,
+          });
+      setSnapGuidesState({
+        guides: snapResult.guides,
+        active: true,
+        tooltip: formatSnapTooltip(snapResult.guides),
+      });
+      const snapped = snapResult.box;
       if (handle.boxType === "trim") {
         setTrimBox(snapped);
       } else {
@@ -1728,6 +1904,8 @@ export function ReviewQueueScreen({ runId }: Readonly<ReviewQueueScreenProps>): 
         target.releasePointerCapture(pointerId);
         dragHandleRef.current = null;
       }
+      setIsDraggingHandle(false);
+      setSnapGuidesState({ guides: [], active: false, tooltip: null });
     };
 
     globalThis.addEventListener?.("pointermove", handlePointerMove);
@@ -1738,9 +1916,9 @@ export function ReviewQueueScreen({ runId }: Readonly<ReviewQueueScreenProps>): 
     };
   }, [
     normalizedPreview,
-    sidecar?.bookModel?.trimBoxPx?.median,
-    sidecar?.bookModel?.contentBoxPx?.median,
     sidecar?.normalization?.cropBox,
+    snapSources,
+    snapTemporarilyDisabled,
   ]);
 
   const handleSubmitReview = async (): Promise<void> => {
@@ -1969,6 +2147,9 @@ export function ReviewQueueScreen({ runId }: Readonly<ReviewQueueScreenProps>): 
     cropBox: activeCropBox,
     trimBox: activeTrimBox,
     adjustmentMode,
+    snapGuides: snapGuidesState.guides,
+    showSnapGuides: isDraggingHandle && snapGuidesState.active,
+    snapTooltip: snapGuidesState.tooltip,
     overlaySvgRef,
     onHandlePointerDown: handleHandlePointerDown,
   });
