@@ -40,10 +40,18 @@ pnpm golden:test
 3) Run `pnpm golden:bless` to capture new expected outputs.
 4) Commit the updated fixtures and expected outputs.
 
+### Current case expectations
+
+- **Rotation**: `p13_rotation_only` isolates skew handling without perspective warps.
+- **Gutter splits**: `p14_spread_light_gutter` validates split confidence with a lighter gutter.
+- **Crop adjustments**: `p15_crop_adjustment` stresses trim/crop alignment by pushing content toward the edges.
+- **Overlay element classes**: `p16_overlay_elements` ensures overlay classes (title, drop cap, marginalia, footnotes, ornament) are present in review overlays.
+
 ## SSIM thresholds
 
 - Default threshold is `0.99`.
-- Lower thresholds only when a deterministic change is expected.
+- Lower thresholds only when a deterministic change is expected (warps, gutter blends, crop stress cases).
+- The lighter gutter split case (`p14_spread_light_gutter`) uses `0.98` because the gutter blend can produce slightly more variance.
 - When adjusting thresholds, update `tests/fixtures/golden_corpus/v1/manifest.json` and document the rationale in the commit message.
 
 ## Failure diagnostics

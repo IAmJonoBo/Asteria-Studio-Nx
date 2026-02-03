@@ -36,6 +36,11 @@ jobs:
         env:
           CI: true
 
+      - name: Golden corpus regression
+        run: pnpm golden:test
+        env:
+          CI: true
+
       - name: Upload coverage
         uses: actions/upload-artifact@v6
         with:

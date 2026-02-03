@@ -150,6 +150,15 @@ def apply_rotation_perspective(img: Image.Image, angle: float) -> Image.Image:
     return Image.fromarray(warped, mode="RGB")
 
 
+def apply_rotation(img: Image.Image, angle: float) -> Image.Image:
+    arr = np.array(img)
+    h, w = arr.shape[:2]
+    center = (w / 2.0, h / 2.0)
+    rot = cv2.getRotationMatrix2D(center, angle, 1.0)
+    rotated = cv2.warpAffine(arr, rot, (w, h), flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT, borderValue=(255, 255, 255))
+    return Image.fromarray(rotated, mode="RGB")
+
+
 def draw_ornament(draw: ImageDraw.ImageDraw, center: Tuple[int, int], size: int) -> Tuple[int, int, int, int]:
     cx, cy = center
     radius = size // 2
@@ -158,6 +167,16 @@ def draw_ornament(draw: ImageDraw.ImageDraw, center: Tuple[int, int], size: int)
     draw.line([cx - radius, cy, cx + radius, cy], fill=(20, 20, 20), width=3)
     draw.line([cx, cy - radius, cx, cy + radius], fill=(20, 20, 20), width=3)
     return bbox[0], bbox[1], bbox[2], bbox[3]
+
+
+def draw_title_block(draw: ImageDraw.ImageDraw, box: Tuple[int, int, int, int]) -> None:
+    x0, y0, x1, y1 = box
+    draw.rectangle([x0, y0, x1, y1], fill=(30, 30, 30))
+
+
+def draw_drop_cap(draw: ImageDraw.ImageDraw, box: Tuple[int, int, int, int]) -> None:
+    x0, y0, x1, y1 = box
+    draw.rectangle([x0, y0, x1, y1], fill=(35, 35, 35))
 
 
 def spread_confidence(image: Image.Image) -> float:
@@ -605,6 +624,150 @@ def build_rotation_perspective(rng: np.random.Generator) -> Tuple[Image.Image, T
     return img, truth, manifest
 
 
+def build_rotation_only(rng: np.random.Generator) -> Tuple[Image.Image, TruthPage, ManifestEntry]:
+    img = new_canvas(WIDTH, HEIGHT)
+    img = add_paper_texture(img, rng, strength=1.6)
+    draw = ImageDraw.Draw(img)
+    content = (MARGIN, MARGIN + 40, WIDTH - MARGIN, HEIGHT - MARGIN)
+    add_text_block(draw, content, 40, rng)
+    img = apply_rotation(img, angle=-2.8)
+    truth = TruthPage(
+        pageId="p13_rotation_only",
+        pageBoundsPx=[0, 0, WIDTH - 1, HEIGHT - 1],
+        contentBoxPx=list(content),
+        gutter=Gutter(side="none", widthPx=0),
+        baselineGrid=BaselineGrid(medianSpacingPx=24.11),
+        ornaments=[],
+        shouldSplit=False,
+        expectedReviewReasons=["low-shading-confidence", "residual-skew-*"],
+    )
+    manifest = ManifestEntry(
+        id="p13_rotation_only",
+        description="rotation only",
+        tags=["rotation", "skew"],
+        truthFile="p13_rotation_only.json",
+        ssimThreshold=0.985,
+    )
+    return img, truth, manifest
+
+
+def build_spread_light_gutter(rng: np.random.Generator) -> Tuple[Image.Image, TruthPage, ManifestEntry]:
+    width = WIDTH * 2
+    height = HEIGHT
+    img = new_canvas(width, height)
+    img = add_paper_texture(img, rng, strength=1.5)
+    draw = ImageDraw.Draw(img)
+    gutter_width = 160
+    left_box = (MARGIN, MARGIN + 40, WIDTH - MARGIN - gutter_width // 2, height - MARGIN)
+    right_box = (WIDTH + gutter_width // 2 + MARGIN, MARGIN + 40, width - MARGIN, height - MARGIN)
+    add_text_block(draw, left_box, 40, rng)
+    add_text_block(draw, right_box, 40, rng)
+
+    gutter_start = WIDTH - gutter_width // 2
+    gutter_end = WIDTH + gutter_width // 2
+    gutter_color = 232
+    for _attempt in range(5):
+        overlay = Image.new("RGB", (width, height), (BACKGROUND, BACKGROUND, BACKGROUND))
+        overlay_arr = np.array(overlay)
+        overlay_arr[:, gutter_start:gutter_end, :] = gutter_color
+        overlay = Image.fromarray(overlay_arr, mode="RGB")
+        composite = Image.blend(img, overlay, alpha=0.3)
+        confidence = spread_confidence(composite)
+        img = composite
+        if 0.45 <= confidence < 0.58:
+            break
+        gutter_color = max(210, min(240, gutter_color + (2 if confidence < 0.45 else -2)))
+
+    truth = TruthPage(
+        pageId="p14_spread_light_gutter",
+        pageBoundsPx=[0, 0, width - 1, height - 1],
+        contentBoxPx=[MARGIN, MARGIN, width - MARGIN, height - MARGIN],
+        gutter=Gutter(side="center", widthPx=gutter_width),
+        baselineGrid=BaselineGrid(medianSpacingPx=21.44),
+        ornaments=[],
+        shouldSplit=True,
+        expectedReviewReasons=[
+            "low-shading-confidence",
+            "residual-skew-*",
+            "spread-split-low-confidence",
+        ],
+    )
+    manifest = ManifestEntry(
+        id="p14_spread_light_gutter",
+        description="two-page spread with light gutter",
+        tags=["spread", "gutter", "split"],
+        truthFile="p14_spread_light_gutter.json",
+        ssimThreshold=0.98,
+    )
+    return img, truth, manifest
+
+
+def build_crop_adjustment(rng: np.random.Generator) -> Tuple[Image.Image, TruthPage, ManifestEntry]:
+    img = new_canvas(WIDTH, HEIGHT)
+    img = add_paper_texture(img, rng, strength=1.9)
+    draw = ImageDraw.Draw(img)
+    content = (MARGIN - 40, MARGIN + 10, WIDTH - MARGIN + 30, HEIGHT - MARGIN + 10)
+    add_text_block(draw, content, 38, rng)
+    trim_box = (MARGIN - 70, MARGIN - 30, WIDTH - MARGIN + 60, HEIGHT - MARGIN + 60)
+    draw.rectangle(trim_box, outline=(15, 15, 15), width=4)
+    img = apply_linear_illumination(img, "y", 1.02, 0.92)
+    truth = TruthPage(
+        pageId="p15_crop_adjustment",
+        pageBoundsPx=[0, 0, WIDTH - 1, HEIGHT - 1],
+        contentBoxPx=[MARGIN - 70, MARGIN - 30, WIDTH - MARGIN + 60, HEIGHT - MARGIN + 60],
+        gutter=Gutter(side="none", widthPx=0),
+        baselineGrid=BaselineGrid(medianSpacingPx=27.35),
+        ornaments=[],
+        shouldSplit=False,
+        expectedReviewReasons=["low-shading-confidence", "residual-skew-*"],
+    )
+    manifest = ManifestEntry(
+        id="p15_crop_adjustment",
+        description="crop adjustment stress",
+        tags=["crop", "adjustment"],
+        truthFile="p15_crop_adjustment.json",
+        ssimThreshold=0.985,
+    )
+    return img, truth, manifest
+
+
+def build_overlay_element_classes(rng: np.random.Generator) -> Tuple[Image.Image, TruthPage, ManifestEntry]:
+    img = new_canvas(WIDTH, HEIGHT)
+    img = add_paper_texture(img, rng, strength=1.6)
+    draw = ImageDraw.Draw(img)
+    draw_running_head(draw, WIDTH, 50)
+    draw_folio(draw, WIDTH, HEIGHT - 80, "247")
+    draw_ornament(draw, (WIDTH // 2, MARGIN + 140), 110)
+    title_box = (MARGIN + 120, MARGIN + 40, WIDTH - MARGIN - 120, MARGIN + 120)
+    draw_title_block(draw, title_box)
+    drop_cap_box = (MARGIN + 30, MARGIN + 200, MARGIN + 120, MARGIN + 320)
+    draw_drop_cap(draw, drop_cap_box)
+    content = (MARGIN + 140, MARGIN + 180, WIDTH - MARGIN, HEIGHT - MARGIN - 200)
+    add_text_block(draw, content, 36, rng)
+    footnotes = (MARGIN + 120, HEIGHT - MARGIN - 170, WIDTH - MARGIN, HEIGHT - MARGIN)
+    add_text_block(draw, footnotes, 26, rng)
+    marginalia = (MARGIN - 90, MARGIN + 260, MARGIN + 20, HEIGHT - MARGIN - 320)
+    add_text_block(draw, marginalia, 28, rng)
+    truth = TruthPage(
+        pageId="p16_overlay_elements",
+        pageBoundsPx=[0, 0, WIDTH - 1, HEIGHT - 1],
+        contentBoxPx=[MARGIN - 90, MARGIN + 40, WIDTH - MARGIN, HEIGHT - MARGIN],
+        gutter=Gutter(side="none", widthPx=0),
+        baselineGrid=BaselineGrid(medianSpacingPx=23.02),
+        ornaments=[],
+        shouldSplit=False,
+        expectedReviewReasons=["low-shading-confidence", "residual-skew-*"],
+    )
+    manifest = ManifestEntry(
+        id="p16_overlay_elements",
+        description="overlay element class showcase",
+        tags=["overlay", "elements", "title", "drop-cap", "marginalia", "footnotes", "ornament"],
+        truthFile="p16_overlay_elements.json",
+        ssimThreshold=0.985,
+    )
+    return img, truth, manifest
+
+
 def build_pages(rng: np.random.Generator) -> List[Tuple[Image.Image, TruthPage, ManifestEntry]]:
     pages: List[Tuple[Image.Image, TruthPage, ManifestEntry]] = []
     img, truth, manifest = build_clean_single(rng, WIDTH, HEIGHT)
@@ -644,6 +807,14 @@ def build_pages(rng: np.random.Generator) -> List[Tuple[Image.Image, TruthPage, 
     img, truth, manifest = build_curved_warp(rng)
     pages.append((img, truth, manifest))
     img, truth, manifest = build_rotation_perspective(rng)
+    pages.append((img, truth, manifest))
+    img, truth, manifest = build_rotation_only(rng)
+    pages.append((img, truth, manifest))
+    img, truth, manifest = build_spread_light_gutter(rng)
+    pages.append((img, truth, manifest))
+    img, truth, manifest = build_crop_adjustment(rng)
+    pages.append((img, truth, manifest))
+    img, truth, manifest = build_overlay_element_classes(rng)
     pages.append((img, truth, manifest))
 
     return pages

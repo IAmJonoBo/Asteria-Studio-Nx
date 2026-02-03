@@ -125,6 +125,52 @@
       ],
       "truthFile": "p12_rot_perspective.json",
       "ssimThreshold": 0.985
+    },
+    {
+      "id": "p13_rotation_only",
+      "description": "rotation only",
+      "tags": [
+        "rotation",
+        "skew"
+      ],
+      "truthFile": "p13_rotation_only.json",
+      "ssimThreshold": 0.985
+    },
+    {
+      "id": "p14_spread_light_gutter",
+      "description": "two-page spread with light gutter",
+      "tags": [
+        "spread",
+        "gutter",
+        "split"
+      ],
+      "truthFile": "p14_spread_light_gutter.json",
+      "ssimThreshold": 0.98
+    },
+    {
+      "id": "p15_crop_adjustment",
+      "description": "crop adjustment stress",
+      "tags": [
+        "crop",
+        "adjustment"
+      ],
+      "truthFile": "p15_crop_adjustment.json",
+      "ssimThreshold": 0.985
+    },
+    {
+      "id": "p16_overlay_elements",
+      "description": "overlay element class showcase",
+      "tags": [
+        "overlay",
+        "elements",
+        "title",
+        "drop-cap",
+        "marginalia",
+        "footnotes",
+        "ornament"
+      ],
+      "truthFile": "p16_overlay_elements.json",
+      "ssimThreshold": 0.985
     }
   ]
 }
