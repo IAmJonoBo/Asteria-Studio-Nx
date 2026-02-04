@@ -19,7 +19,7 @@ jobs:
       NX_CACHE_MODE: ${{ vars.NX_CACHE_MODE }}
       NX_REMOTE_CACHE_URL: ${{ vars.NX_REMOTE_CACHE_URL }}
       NX_REMOTE_CACHE_ACCESS_TOKEN: ${{ secrets.NX_REMOTE_CACHE_ACCESS_TOKEN }}
-      NX_CLOUD_ACCESS_TOKEN: ${{ secrets.NX_CLOUD_ACCESS_TOKEN }}
+      NX_CLOUD_ACCESS_TOKEN: ${{ github.event_name == 'pull_request' && secrets.NX_CLOUD_ACCESS_TOKEN_RO || secrets.NX_CLOUD_ACCESS_TOKEN_RW }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -58,19 +58,14 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Set Nx SHAs
+        uses: nrwl/nx-set-shas@v4
+        with:
+          main-branch-name: main
+
       - name: Nx Cloud start (self-healing)
         if: ${{ env.NX_CLOUD_ACCESS_TOKEN != '' }}
         run: pnpm exec nx start-ci-run --no-distribution
-
-      - name: Set Nx base/head
-        run: |
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            echo "NX_BASE=${{ github.event.pull_request.base.sha }}" >> $GITHUB_ENV
-            echo "NX_HEAD=${{ github.event.pull_request.head.sha }}" >> $GITHUB_ENV
-          else
-            echo "NX_BASE=origin/main" >> $GITHUB_ENV
-            echo "NX_HEAD=HEAD" >> $GITHUB_ENV
-          fi
 
       - name: Lint (affected)
         run: pnpm ci:lint
@@ -98,6 +93,8 @@ jobs:
 
   e2e-smoke:
     runs-on: ubuntu-latest
+    env:
+      NX_CLOUD_ACCESS_TOKEN: ${{ github.event_name == 'pull_request' && secrets.NX_CLOUD_ACCESS_TOKEN_RO || secrets.NX_CLOUD_ACCESS_TOKEN_RW }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -127,18 +124,13 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Set Nx SHAs
+        uses: nrwl/nx-set-shas@v4
+        with:
+          main-branch-name: main
+
       - name: Install Playwright browsers
         run: pnpm -C apps/asteria-desktop exec playwright install --with-deps
-
-      - name: Set Nx base/head
-        run: |
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            echo "NX_BASE=${{ github.event.pull_request.base.sha }}" >> $GITHUB_ENV
-            echo "NX_HEAD=${{ github.event.pull_request.head.sha }}" >> $GITHUB_ENV
-          else
-            echo "NX_BASE=origin/main" >> $GITHUB_ENV
-            echo "NX_HEAD=HEAD" >> $GITHUB_ENV
-          fi
 
       - name: Run E2E tests (affected)
         run: pnpm nx -- affected -t e2e
