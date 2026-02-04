@@ -67,7 +67,10 @@ jobs:
 
       - name: Nx Cloud start (self-healing)
         if: ${{ env.NX_CLOUD_ACCESS_TOKEN != '' }}
-        run: pnpm exec nx start-ci-run --no-distribution --fix-tasks="*lint*,*test*,*build*" --auto-apply-fixes="*lint*,*format*"
+        run: pnpm exec nx start-ci-run --no-distribution --fix-tasks="*lint*,*test*,*build*,*format*" --auto-apply-fixes="*lint*,*format*"
+
+      - name: Format check (affected)
+        run: pnpm exec nx format:check --base=$NX_BASE --head=$NX_HEAD
 
       - name: Lint (affected)
         run: pnpm ci:lint
@@ -95,6 +98,7 @@ jobs:
 
   e2e-smoke:
     runs-on: ubuntu-latest
+    if: ${{ (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch' }}
     env:
       NX_CLOUD_ACCESS_TOKEN: ${{ github.event_name == 'pull_request' && secrets.NX_CLOUD_ACCESS_TOKEN_RO || secrets.NX_CLOUD_ACCESS_TOKEN_RW }}
     steps:
