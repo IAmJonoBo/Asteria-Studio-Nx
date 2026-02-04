@@ -22,7 +22,11 @@
       "{workspaceRoot}/pnpm-lock.yaml",
       "{workspaceRoot}/package.json",
       "{workspaceRoot}/pnpm-workspace.yaml",
-      "{workspaceRoot}/.node-version"
+      "{workspaceRoot}/.node-version",
+      "{workspaceRoot}/.editorconfig",
+      "{workspaceRoot}/.prettierrc.json",
+      "{workspaceRoot}/.eslintrc.json",
+      "{workspaceRoot}/eslint.config.js"
     ]
   },
   "targetDefaults": {
