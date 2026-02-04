@@ -58,6 +58,10 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Nx Cloud start (self-healing)
+        if: ${{ env.NX_CLOUD_ACCESS_TOKEN != '' }}
+        run: pnpm exec nx start-ci-run --no-distribution
+
       - name: Set Nx base/head
         run: |
           if [ "${{ github.event_name }}" = "pull_request" ]; then
@@ -87,6 +91,10 @@ jobs:
         with:
           name: coverage
           path: apps/asteria-desktop/coverage/
+
+      - name: Nx Cloud fix (self-healing)
+        if: ${{ always() && env.NX_CLOUD_ACCESS_TOKEN != '' }}
+        run: pnpm exec nx fix-ci
 
   e2e-smoke:
     runs-on: ubuntu-latest
