@@ -65,7 +65,7 @@ jobs:
 
       - name: Nx Cloud start (self-healing)
         if: ${{ env.NX_CLOUD_ACCESS_TOKEN != '' }}
-        run: pnpm exec nx start-ci-run --no-distribution
+        run: pnpm exec nx start-ci-run --no-distribution --fix-tasks="*lint*,*test*,*build*" --auto-apply-fixes="*lint*,*format*"
 
       - name: Lint (affected)
         run: pnpm ci:lint
