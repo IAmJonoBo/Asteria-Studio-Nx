@@ -12,12 +12,12 @@ const attachLoadLogging = (win: BrowserWindow): void => {
   const { webContents } = win;
 
   webContents.on("did-start-loading", () => {
-    console.log("[renderer] loading start");
+    console.warn("[renderer] loading start");
     win.setTitle("Asteria Studio — Loading…");
   });
 
   webContents.on("did-stop-loading", () => {
-    console.log("[renderer] loading complete");
+    console.warn("[renderer] loading complete");
     win.setTitle("Asteria Studio");
   });
 
@@ -36,7 +36,7 @@ const attachLoadLogging = (win: BrowserWindow): void => {
   });
 
   webContents.on("console-message", (_event, level, message, line, sourceId) => {
-    console.log(`[renderer][${level}] ${message} (${sourceId}:${line})`);
+    console.warn(`[renderer][${level}] ${message} (${sourceId}:${line})`);
   });
 };
 

@@ -1,4 +1,5 @@
 import type { ReactElement } from "react";
+import { Children } from "react";
 import { describe, expect, it } from "vitest";
 import type { PipelineConfig } from "../../ipc/contracts.js";
 import type { GuideLayout } from "../../ipc/contracts.js";
@@ -21,6 +22,14 @@ describe("guide registry LOD thresholds", () => {
     expect(getGuideLod(zoom, strictConfig)).toEqual({
       showMinorGuides: false,
       labelVisibility: "none",
+    });
+  });
+
+  it("shows all labels when zoom is high", () => {
+    const zoom = 2.5;
+    expect(getGuideLod(zoom)).toEqual({
+      showMinorGuides: true,
+      labelVisibility: "all",
     });
   });
 });
@@ -146,5 +155,42 @@ describe("guide registry rendering", () => {
       "gutter-bands",
       "header-footer-bands",
     ]);
+  });
+
+  it("renders labels for hovered guides at hover zoom", () => {
+    const guideLayout: GuideLayout = {
+      layers: [
+        {
+          id: "baseline-grid",
+          guides: [
+            {
+              id: "label-guide",
+              axis: "x",
+              position: 24,
+              kind: "major",
+              label: "Baseline",
+            },
+          ],
+        },
+      ],
+    };
+
+    const renderedLayers = renderGuideLayers({
+      guideLayout,
+      zoom: 1.0,
+      canvasWidth: 200,
+      canvasHeight: 200,
+      visibleLayers: { "baseline-grid": true },
+      hoveredGuideId: "label-guide",
+    });
+
+    const children = Children.toArray(
+      getLayerProps(renderedLayers[0]).children as ReactElement | ReactElement[]
+    );
+    const labels = children.filter(
+      (child) =>
+        typeof child === "object" && child !== null && (child as ReactElement).type === "text"
+    );
+    expect(labels).toHaveLength(1);
   });
 });

@@ -57,7 +57,7 @@ describe("run-manager", () => {
 
     const runId = await startRun(config, "/tmp/project", "/tmp/output");
 
-    expect(runId).toBe("run-1704067200000");
+    expect(runId).toMatch(/^run-1704067200000-/);
     expect(updateRunIndex).toHaveBeenCalledWith(
       "/tmp/output",
       expect.objectContaining({

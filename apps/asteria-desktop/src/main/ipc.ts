@@ -49,10 +49,14 @@ import {
   getSidecarDir,
   getTrainingDir,
 } from "./run-paths.js";
-import { writeJsonAtomic } from "./file-utils.js";
+import { resolveConcurrency, runWithConcurrency, writeJsonAtomic } from "./file-utils.js";
 import { importCorpus, listProjects, normalizeCorpusPath } from "./projects.js";
 
 type ExportFormat = "png" | "tiff" | "pdf";
+
+const DEFAULT_IO_CONCURRENCY = 6;
+const getIoConcurrency = (): number =>
+  resolveConcurrency(process.env.ASTERIA_IO_CONCURRENCY, DEFAULT_IO_CONCURRENCY, 32);
 
 export const buildBundleFileUrl = (filePath: string, pathModule: typeof path = path): string =>
   pathToFileURL(pathModule.resolve(filePath)).toString();
@@ -91,24 +95,22 @@ const exportNormalizedByFormat = async (params: {
   await fs.mkdir(formatDir, { recursive: true });
   const sourceFiles = listFilesByExtension(params.normalizedFiles, [".png"]);
 
-  await Promise.all(
-    sourceFiles.map(async (file) => {
-      const src = path.join(params.normalizedDir, file);
-      if (params.format === "png") {
-        await fs.copyFile(src, path.join(formatDir, file));
-        return;
-      }
-      if (params.format === "tiff") {
-        const dest = path.join(formatDir, file.replace(/\.png$/i, ".tiff"));
-        await sharp(src).tiff({ compression: "lzw" }).toFile(dest);
-        return;
-      }
-      if (params.format === "pdf") {
-        const dest = path.join(formatDir, file.replace(/\.png$/i, ".pdf"));
-        await sharp(src).toFormat("pdf").toFile(dest);
-      }
-    })
-  );
+  await runWithConcurrency(sourceFiles, getIoConcurrency(), async (file) => {
+    const src = path.join(params.normalizedDir, file);
+    if (params.format === "png") {
+      await fs.copyFile(src, path.join(formatDir, file));
+      return;
+    }
+    if (params.format === "tiff") {
+      const dest = path.join(formatDir, file.replace(/\.png$/i, ".tiff"));
+      await sharp(src).tiff({ compression: "lzw" }).toFile(dest);
+      return;
+    }
+    if (params.format === "pdf") {
+      const dest = path.join(formatDir, file.replace(/\.png$/i, ".pdf"));
+      await sharp(src).toFormat("pdf").toFile(dest);
+    }
+  });
 };
 
 const sanitizeTrainingId = (value: string): string => value.replaceAll(/[\\/]/g, "_");
@@ -648,18 +650,16 @@ export function registerIpcHandlers(): void {
       try {
         const sidecarFiles = await fs.readdir(sidecarDir);
         await fs.mkdir(sidecarExportDir, { recursive: true });
-        await Promise.all(
-          sidecarFiles.map((file) =>
-            fs
-              .copyFile(
-                path.join(sidecarDir, path.basename(file)),
-                path.join(sidecarExportDir, path.basename(file))
-              )
-              .catch((err) => {
-                warnings.push(`Failed to copy sidecar ${file}: ${err}`);
-              })
-          )
-        );
+        await runWithConcurrency(sidecarFiles, getIoConcurrency(), async (file) => {
+          await fs
+            .copyFile(
+              path.join(sidecarDir, path.basename(file)),
+              path.join(sidecarExportDir, path.basename(file))
+            )
+            .catch((err) => {
+              warnings.push(`Failed to copy sidecar ${file}: ${err}`);
+            });
+        });
       } catch (err) {
         warnings.push(`Failed to read sidecar directory: ${err}`);
       }
@@ -682,15 +682,16 @@ export function registerIpcHandlers(): void {
       }
 
       try {
-        await Promise.all(
-          formats.map((format) =>
-            exportNormalizedByFormat({ format, exportDir, normalizedDir, normalizedFiles }).catch(
-              (err) => {
-                warnings.push(`Failed to export format ${format}: ${err}`);
-              }
-            )
-          )
-        );
+        await runWithConcurrency(formats, getIoConcurrency(), async (format) => {
+          await exportNormalizedByFormat({
+            format,
+            exportDir,
+            normalizedDir,
+            normalizedFiles,
+          }).catch((err) => {
+            warnings.push(`Failed to export format ${format}: ${err}`);
+          });
+        });
       } catch (err) {
         warnings.push(`Format export failed: ${err}`);
       }

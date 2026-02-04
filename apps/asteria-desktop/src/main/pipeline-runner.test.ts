@@ -547,6 +547,7 @@ describe("Pipeline Runner", () => {
         projectId: "cleanup-test",
         outputDir,
         sampleCount: 1,
+        runId,
       });
 
       expect(result.success).toBe(true);

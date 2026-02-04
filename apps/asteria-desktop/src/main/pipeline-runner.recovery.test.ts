@@ -5,6 +5,10 @@ import type { NormalizationResult } from "./normalization.js";
 const scanCorpus = vi.hoisted(() => vi.fn());
 const analyzeCorpus = vi.hoisted(() => vi.fn());
 const normalizePage = vi.hoisted(() => vi.fn());
+const applyDimensionInference = vi.hoisted(() => vi.fn((config: PipelineRunConfig) => config));
+const estimatePageBounds = vi.hoisted(() =>
+  vi.fn(async () => ({ bounds: [], targetPx: { width: 0, height: 0 } }))
+);
 
 vi.mock("../ipc/corpusScanner", (): { scanCorpus: typeof scanCorpus } => ({ scanCorpus }));
 vi.mock(
@@ -18,6 +22,8 @@ vi.mock(
       width: number;
       height: number;
     };
+    applyDimensionInference: typeof applyDimensionInference;
+    estimatePageBounds: typeof estimatePageBounds;
   } => ({
     analyzeCorpus,
     computeTargetDimensionsPx: (
@@ -27,6 +33,8 @@ vi.mock(
       width: Math.round((dims.width / 25.4) * dpi),
       height: Math.round((dims.height / 25.4) * dpi),
     }),
+    applyDimensionInference,
+    estimatePageBounds,
   })
 );
 vi.mock("./normalization.ts", (): { normalizePage: typeof normalizePage } => ({ normalizePage }));

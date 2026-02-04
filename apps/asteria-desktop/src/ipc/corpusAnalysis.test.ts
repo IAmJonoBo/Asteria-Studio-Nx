@@ -56,12 +56,42 @@ describe("corpusAnalysis", () => {
     expect(updated.targetDimensionsMm).toEqual(inferredDimensionsMm);
   });
 
+  it("keeps original dimensions when confidence is low", () => {
+    const config = buildConfig();
+    const summary = {
+      projectId: config.projectId,
+      pageCount: config.pages.length,
+      dpi: config.targetDpi,
+      targetDimensionsMm: config.targetDimensionsMm,
+      targetDimensionsPx: computeTargetDimensionsPx(config.targetDimensionsMm, config.targetDpi),
+      inferredDimensionsMm: { width: 100, height: 140 },
+      inferredDpi: 200,
+      dimensionConfidence: 0.2,
+      dpiConfidence: 0.1,
+      estimates: [],
+    };
+    const updated = applyDimensionInference(config, summary, 0.75);
+    expect(updated.targetDimensionsMm).toEqual(config.targetDimensionsMm);
+  });
+
   it("estimates page bounds for each page", async () => {
     const { bounds } = await estimatePageBounds(buildConfig(), {
       dimensionProvider: mockDimensions,
     });
     expect(bounds).toHaveLength(2);
     expect(bounds[0].pageBounds[2]).toBeGreaterThan(2000);
+    expect(bounds[0].contentBounds[0]).toBeGreaterThan(0);
+  });
+
+  it("uses bleed and trim overrides when estimating bounds", async () => {
+    const config = buildConfig();
+    const { bounds } = await estimatePageBounds(config, {
+      dimensionProvider: mockDimensions,
+      bleedMm: 0,
+      trimMm: 5,
+    });
+    expect(bounds[0].bleedPx).toBe(0);
+    expect(bounds[0].trimPx).toBeGreaterThan(0);
     expect(bounds[0].contentBounds[0]).toBeGreaterThan(0);
   });
 

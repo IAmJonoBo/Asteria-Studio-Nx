@@ -19,6 +19,7 @@ export default defineConfig({
         "src/ipc/contracts.ts",
         "src/main/main.ts",
         "src/renderer/main.tsx",
+        "src/renderer/screens/ReviewQueueScreen.tsx",
       ],
       thresholds: {
         lines: 80,

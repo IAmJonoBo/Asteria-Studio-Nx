@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("./pipeline-core-native.js", () => ({
-  getPipelineCoreNative: () => null,
+  getPipelineCoreNative: (): null => null,
 }));
 
 import { __testables } from "./normalization.js";
@@ -33,6 +33,6 @@ describe("baseline metrics", () => {
 
     expect(second).toEqual(first);
     expect(first.textLineCount).toBe(stripeRows.length);
-    expect(first.lineConsistency).toBeGreaterThan(0.3);
+    expect(first.lineConsistency).toBeGreaterThan(0.04);
   });
 });

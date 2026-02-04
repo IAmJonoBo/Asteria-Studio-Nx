@@ -1,9 +1,11 @@
 {
   "version": "1.0.0",
   "pageId": "p07_plate",
+  "pageType": "illustration",
+  "templateConfidence": 0,
   "source": {
-    "path": "/Users/jonathanbotha/GitHub/Asteria-Studio/tests/fixtures/golden_corpus/v1/inputs/p07_plate.png",
-    "checksum": "ae6ec27ad0b290ce00591faa63b1c8f209f92abbe589f048da76d822055e3070"
+    "path": "/Volumes/APFS Space/GitHub/Asteria-Studio-NX/tests/fixtures/golden_corpus/v1/inputs/p07_plate.png",
+    "checksum": "18cc5e802167c3dcf364e010a1f7be00e6c62c9239f7bc5fae01d263410b8a86"
   },
   "dimensions": {
     "width": 767.2916666666666,
@@ -12,13 +14,23 @@
   },
   "dpi": 72,
   "normalization": {
-    "cropBox": [0, 0, 2174, 3074],
-    "pageMask": [1, 1, 2173, 3073],
+    "cropBox": [
+      0,
+      0,
+      2174,
+      3074
+    ],
+    "pageMask": [
+      1,
+      1,
+      2173,
+      3073
+    ],
     "dpiSource": "metadata",
     "bleed": 12.499975,
     "trim": 0,
     "scale": 1,
-    "skewAngle": 0.0015773471219826488,
+    "skewAngle": 0,
     "warp": {
       "method": "affine",
       "residual": 0
@@ -27,8 +39,8 @@
       "present": false,
       "side": "none",
       "widthPx": 0,
-      "confidence": -0.06404856111915888,
-      "darkness": -14.72220256050835
+      "confidence": -0.0640458274920582,
+      "darkness": -14.721590430800859
     },
     "shading": {
       "method": "border-regression",
@@ -38,98 +50,216 @@
         "fieldWidth": 96,
         "fieldHeight": 96
       },
-      "confidence": 0.027583003608294396
+      "confidence": 0.027583960377779635
     }
   },
   "elements": [
     {
       "id": "p07_plate-page-bounds",
       "type": "page_bounds",
-      "bbox": [0, 0, 2174, 3074],
+      "bbox": [
+        0,
+        0,
+        2174,
+        3074
+      ],
       "confidence": 0.6,
       "source": "local",
-      "flags": ["derived"]
+      "flags": [
+        "derived"
+      ]
     },
     {
       "id": "p07_plate-text-block",
       "type": "text_block",
-      "bbox": [1, 1, 2173, 3073],
+      "bbox": [
+        1,
+        1,
+        2173,
+        3073
+      ],
       "confidence": 0.55,
       "source": "local",
-      "flags": ["mask-derived"]
+      "flags": [
+        "mask-derived"
+      ]
     },
     {
       "id": "p07_plate-title",
       "type": "title",
-      "bbox": [262, 62, 1912, 431],
+      "bbox": [
+        262,
+        62,
+        1912,
+        431
+      ],
       "confidence": 0.28,
       "source": "local",
-      "flags": ["heuristic"]
+      "flags": [
+        "heuristic"
+      ]
     },
     {
       "id": "p07_plate-running-head",
       "type": "running_head",
-      "bbox": [218, 1, 1956, 247],
+      "bbox": [
+        218,
+        1,
+        1956,
+        247
+      ],
       "confidence": 0.25,
       "source": "local",
-      "flags": ["heuristic"]
+      "flags": [
+        "heuristic"
+      ]
     },
     {
       "id": "p07_plate-folio",
       "type": "folio",
-      "bbox": [913, 2766, 1261, 3012],
+      "bbox": [
+        913,
+        2766,
+        1261,
+        3012
+      ],
       "confidence": 0.22,
       "source": "local",
-      "flags": ["heuristic"]
+      "flags": [
+        "heuristic"
+      ]
     },
     {
       "id": "p07_plate-ornament",
       "type": "ornament",
-      "bbox": [913, 554, 1261, 738],
+      "bbox": [
+        913,
+        554,
+        1261,
+        738
+      ],
       "confidence": 0.2,
       "source": "local",
-      "flags": ["heuristic"]
+      "flags": [
+        "heuristic"
+      ]
     },
     {
       "id": "p07_plate-drop-cap",
       "type": "drop_cap",
-      "bbox": [44, 554, 218, 984],
+      "bbox": [
+        44,
+        554,
+        218,
+        984
+      ],
       "confidence": 0.18,
       "source": "local",
-      "flags": ["heuristic"]
+      "flags": [
+        "heuristic"
+      ]
     },
     {
       "id": "p07_plate-footnote",
       "type": "footnote",
-      "bbox": [110, 2643, 2064, 3012],
+      "bbox": [
+        110,
+        2643,
+        2064,
+        3012
+      ],
       "confidence": 0.2,
       "source": "local",
-      "flags": ["heuristic"]
+      "flags": [
+        "heuristic"
+      ]
     },
     {
       "id": "p07_plate-marginalia",
       "type": "marginalia",
-      "bbox": [1, 769, 175, 2305],
+      "bbox": [
+        1,
+        769,
+        175,
+        2305
+      ],
       "confidence": 0.18,
       "source": "local",
-      "flags": ["heuristic"]
+      "flags": [
+        "heuristic"
+      ]
     }
   ],
+  "overrides": {},
   "metrics": {
     "processingMs": 0,
     "deskewConfidence": 0.46272175052657905,
-    "shadowScore": -14.72220256050835,
+    "shadowScore": -14.721590430800859,
     "maskCoverage": 1,
-    "backgroundStd": 1.0595281185035086,
-    "backgroundMean": 244.58369918758478,
+    "backgroundStd": 1.0601814811639707,
+    "backgroundMean": 244.58207563337757,
     "illuminationResidual": 1,
     "spineShadowScore": 0,
-    "layoutScore": 0.8233494945870348,
+    "layoutScore": 0.8233468403012265,
     "baseline": {
       "medianSpacingPx": 3075,
-      "lineStraightnessResidual": 0.0001200475199196818,
-      "confidence": 0.8211347252387942
+      "lineStraightnessResidual": 0.000999603327048164,
+      "confidence": 0.35,
+      "peaksY": [
+        0.8571893298633702
+      ]
     }
   },
-  "overrides": {}
+  "bookModel": {
+    "pageTemplates": [
+      {
+        "id": "template-02",
+        "pageType": "body",
+        "pageIds": [
+          "p02_clean_double",
+          "p03_running_head_folio",
+          "p04_ornament",
+          "p05_footnotes_marginalia",
+          "p06_blank_verso",
+          "p08_shadow_left",
+          "p09_shadow_right",
+          "p10_spread_dark_gutter",
+          "p11_curved_warp",
+          "p12_rot_perspective"
+        ],
+        "margins": {
+          "top": 0.0023739837398373985,
+          "right": 0.0026206896551724135,
+          "bottom": 0.002113821138211382,
+          "left": 0.0031724137931034486
+        },
+        "columns": {
+          "count": 1,
+          "valleyRatio": 0
+        },
+        "headBand": {
+          "ratio": 0.2308647387299418
+        },
+        "footerBand": {
+          "ratio": 0.1949532746240595
+        },
+        "baseline": {
+          "spacingPx": 3.811030493155021,
+          "consistency": 0.7582162798554125
+        },
+        "gutter": {},
+        "ornamentHashes": [
+          "69b3cde47e66b03e",
+          "974816a094126d92",
+          "1448d7bc70630fbf",
+          "e1cf3f68f0116d49",
+          "d0c3ccc9c8c8c8c4",
+          "ba75e3c3c5bd53af"
+        ],
+        "textDensity": 1,
+        "whitespaceRatio": 0,
+        "confidence": 0.9853344881568418
+      }
+    ]
+  }
 }

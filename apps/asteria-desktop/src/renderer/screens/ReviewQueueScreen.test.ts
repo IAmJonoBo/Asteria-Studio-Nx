@@ -26,7 +26,7 @@ describe("ReviewQueueScreen geometry helpers", () => {
       scaleY: 2,
     });
 
-    expect(point).toEqual({ x: 50, y: 50 });
+    expect(point).toEqual({ x: 50, y: 25 });
   });
 
   it("snaps box edges to priors within threshold", () => {

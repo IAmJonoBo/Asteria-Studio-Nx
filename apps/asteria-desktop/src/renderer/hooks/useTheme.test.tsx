@@ -16,13 +16,38 @@ function ThemeProbe(): JSX.Element {
 
 describe("useTheme", () => {
   const originalMatchMedia = globalThis.matchMedia;
+  const originalLocalStorage = globalThis.localStorage;
 
   beforeEach(() => {
-    globalThis.localStorage?.clear();
+    const store = new Map<string, string>();
+    const localStorageMock = {
+      getItem: (key: string) => (store.has(key) ? store.get(key)! : null),
+      setItem: (key: string, value: string) => {
+        store.set(key, String(value));
+      },
+      removeItem: (key: string) => {
+        store.delete(key);
+      },
+      clear: () => {
+        store.clear();
+      },
+      key: (index: number) => Array.from(store.keys())[index] ?? null,
+      get length() {
+        return store.size;
+      },
+    } as Storage;
+    Object.defineProperty(globalThis, "localStorage", {
+      value: localStorageMock,
+      writable: true,
+    });
   });
 
   afterEach(() => {
     globalThis.matchMedia = originalMatchMedia;
+    Object.defineProperty(globalThis, "localStorage", {
+      value: originalLocalStorage,
+      writable: true,
+    });
     cleanup();
   });
 

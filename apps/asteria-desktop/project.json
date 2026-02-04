@@ -45,6 +45,14 @@
         "command": "pnpm build"
       }
     },
+    "build:main": {
+      "executor": "nx:run-commands",
+      "outputs": ["{workspaceRoot}/apps/asteria-desktop/dist/main"],
+      "options": {
+        "cwd": "apps/asteria-desktop",
+        "command": "pnpm build:main"
+      }
+    },
     "build:verify": {
       "executor": "nx:run-commands",
       "options": {
@@ -57,6 +65,14 @@
       "options": {
         "cwd": "apps/asteria-desktop",
         "command": "pnpm test:e2e"
+      }
+    },
+    "golden": {
+      "executor": "nx:run-commands",
+      "outputs": ["{workspaceRoot}/.golden-artifacts"],
+      "options": {
+        "cwd": "apps/asteria-desktop",
+        "command": "pnpm golden:test"
       }
     },
     "package": {

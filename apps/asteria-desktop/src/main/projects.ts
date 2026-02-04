@@ -59,6 +59,23 @@ const readProjectConfig = async (projectDir: string): Promise<ProjectConfig | nu
   }
 };
 
+const findProjectConfigPath = async (projectDir: string): Promise<string | undefined> => {
+  const candidates = [
+    path.join(projectDir, "pipeline.config.json"),
+    path.join(projectDir, "pipeline.config.yaml"),
+    path.join(projectDir, "pipeline.config.yml"),
+  ];
+  for (const candidate of candidates) {
+    try {
+      const stats = await fs.stat(candidate);
+      if (stats.isFile()) return candidate;
+    } catch {
+      // ignore missing files
+    }
+  }
+  return undefined;
+};
+
 const formatProjectName = (id: string): string =>
   id
     .split("-")
@@ -107,21 +124,14 @@ export const listProjects = async (): Promise<ProjectSummary[]> => {
       const id = config?.id ?? entry;
       const name = config?.name ?? formatProjectName(entry);
       const inputPath = resolveInputPath(projectDir, config?.inputPath);
-      const configPath = path.join(projectDir, "pipeline.config.json");
-      let configExists = false;
-      try {
-        const configStats = await fs.stat(configPath);
-        configExists = configStats.isFile();
-      } catch {
-        configExists = false;
-      }
+      const configPath = await findProjectConfigPath(projectDir);
       const latestRun = latestRunByProject.get(id);
       return {
         id,
         name,
         path: projectDir,
         inputPath,
-        configPath: configExists ? configPath : undefined,
+        configPath,
         lastRun: latestRun?.updatedAt,
         status: resolveProjectStatus(latestRun?.status),
       } satisfies ProjectSummary;

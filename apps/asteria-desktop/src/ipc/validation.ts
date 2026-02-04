@@ -21,7 +21,7 @@ const assertOptionalRange = (value: unknown, label: string, min: number, max?: n
 };
 
 const isJsonSafe = (value: unknown, depth = 0): boolean => {
-  if (depth > 5) return false;
+  if (depth > 8) return false;
   if (value === null) return true;
 
   const valueType = typeof value;
