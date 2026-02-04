@@ -17,7 +17,7 @@ jobs:
         working-directory: packages/pipeline-core
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
 
       - name: Install toolchain
         uses: dtolnay/rust-toolchain@stable

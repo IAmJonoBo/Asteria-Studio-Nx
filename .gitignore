@@ -13,6 +13,8 @@ coverage/
 .turbo/
 .parcel-cache/
 package-lock.json
+.pnpm-store/
+pnpm-debug.log*
 
 # App build outputs
 apps/asteria-desktop/dist/
@@ -39,6 +41,7 @@ projects/mind-myth-and-magick/input/**/Pages/
 
 # Golden corpus artifacts
 .golden-artifacts/
+artifacts/
 
 
 

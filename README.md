@@ -64,6 +64,10 @@ asteria-studio/
 └── projects/                      # Local corpus storage (input, work, output)
 ```
 
+## Architecture
+
+See `docs/architecture.md` for the system design and data flow.
+
 ## Quick Start
 
 ### Bootstrap
@@ -139,6 +143,18 @@ pnpm package:verify
 
 # Package + verify in one go
 pnpm package:full
+```
+
+### Nx (Monorepo Orchestration)
+
+```bash
+# Graph
+pnpm nx -- graph
+
+# Affected targets (CI-style)
+pnpm affected:lint
+pnpm affected:test
+pnpm affected:build
 ```
 
 ### CI Helpers
@@ -230,6 +246,7 @@ issues before CI.
 
 ## Documentation
 
+- `docs/README.md` — documentation index
 - [Architecture](docs/architecture.md) — System design, data flow, tech stack
 - [Product Brief](docs/product_brief.md) — Vision, capabilities, success criteria
 - [UI/UX](docs/ui_ux.md) — Screens, interactions, keyboard shortcuts, accessibility
@@ -293,6 +310,23 @@ stateDiagram-v2
 4. **Performance** — Review queue worker + virtualization (done); add web workers for previews
 5. **Remote Models** — Optional inference endpoint with local fallback
    - Config keys: `models.endpoints.remote_layout_endpoint`, `remote_layout_token_env`, `remote_layout_timeout_ms`
+
+## Release
+
+Packaging uses Electron Builder via:
+
+```bash
+pnpm package:full
+```
+
+Tagged releases should be built from `main` and accompanied by release notes.
+
+## Contributing & Support
+
+- `CONTRIBUTING.md` — local setup, workflows, and PR guidance
+- `CODE_OF_CONDUCT.md` — community expectations
+- `SUPPORT.md` — support channels
+- `SECURITY.md` — responsible disclosure
 
 ## License
 

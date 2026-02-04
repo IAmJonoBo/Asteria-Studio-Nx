@@ -1,0 +1,62 @@
+name: Air-Gapped CI (Example)
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+env:
+  PNPM_STORE_DIR: .pnpm-store
+  NX_CACHE_MODE: local
+  OFFLINE_DEPS_ARCHIVE: artifacts/offline-deps.tgz
+
+jobs:
+  air-gapped:
+    runs-on: [self-hosted, air-gapped]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify Node and pnpm
+        run: |
+          command -v node >/dev/null 2>&1 || { echo "Node.js is required on the runner image."; exit 1; }
+          command -v pnpm >/dev/null 2>&1 || { echo "pnpm is required on the runner image."; exit 1; }
+          node -v
+          pnpm -v
+
+      - name: Verify offline archive exists
+        run: |
+          if [ ! -f "${OFFLINE_DEPS_ARCHIVE}" ]; then
+            echo "Offline dependency archive not found: ${OFFLINE_DEPS_ARCHIVE}"
+            echo "Provide it via your internal artefact store and rerun."
+            exit 1
+          fi
+
+      - name: Restore dependencies (offline)
+        run: ./tools/offline/restore-deps.sh "${OFFLINE_DEPS_ARCHIVE}"
+
+      - name: Set Nx base/head
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "NX_BASE=${{ github.event.pull_request.base.sha }}" >> $GITHUB_ENV
+            echo "NX_HEAD=${{ github.event.pull_request.head.sha }}" >> $GITHUB_ENV
+          else
+            echo "NX_BASE=origin/main" >> $GITHUB_ENV
+            echo "NX_HEAD=HEAD" >> $GITHUB_ENV
+          fi
+
+      - name: Lint (affected)
+        run: pnpm ci:lint
+
+      - name: Test (affected)
+        run: pnpm ci:test
+
+      - name: Build (affected)
+        run: pnpm ci:build

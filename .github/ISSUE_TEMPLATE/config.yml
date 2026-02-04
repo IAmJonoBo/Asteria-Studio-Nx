@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Support
+    url: https://github.com/IAmJonoBo/Asteria-Studio-Nx/blob/main/SUPPORT.md
+    about: Read support options and how to request help.
+  - name: Security
+    url: https://github.com/IAmJonoBo/Asteria-Studio-Nx/blob/main/SECURITY.md
+    about: Report security issues responsibly.

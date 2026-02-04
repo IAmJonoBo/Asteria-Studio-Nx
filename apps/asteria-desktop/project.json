@@ -1,0 +1,77 @@
+{
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "name": "asteria-desktop",
+  "projectType": "application",
+  "sourceRoot": "apps/asteria-desktop/src",
+  "tags": ["scope:desktop", "type:app"],
+  "targets": {
+    "lint": {
+      "executor": "nx:run-commands",
+      "options": {
+        "cwd": "apps/asteria-desktop",
+        "command": "pnpm lint"
+      }
+    },
+    "format": {
+      "executor": "nx:run-commands",
+      "options": {
+        "cwd": "apps/asteria-desktop",
+        "command": "pnpm format"
+      }
+    },
+    "typecheck": {
+      "executor": "nx:run-commands",
+      "options": {
+        "cwd": "apps/asteria-desktop",
+        "command": "pnpm typecheck"
+      }
+    },
+    "test": {
+      "executor": "nx:run-commands",
+      "outputs": ["{workspaceRoot}/apps/asteria-desktop/coverage"],
+      "options": {
+        "cwd": "apps/asteria-desktop",
+        "command": "pnpm test"
+      }
+    },
+    "build": {
+      "executor": "nx:run-commands",
+      "outputs": [
+        "{workspaceRoot}/apps/asteria-desktop/dist",
+        "{workspaceRoot}/apps/asteria-desktop/dist-app"
+      ],
+      "options": {
+        "cwd": "apps/asteria-desktop",
+        "command": "pnpm build"
+      }
+    },
+    "build:verify": {
+      "executor": "nx:run-commands",
+      "options": {
+        "cwd": "apps/asteria-desktop",
+        "command": "pnpm build:verify"
+      }
+    },
+    "e2e": {
+      "executor": "nx:run-commands",
+      "options": {
+        "cwd": "apps/asteria-desktop",
+        "command": "pnpm test:e2e"
+      }
+    },
+    "package": {
+      "executor": "nx:run-commands",
+      "options": {
+        "cwd": "apps/asteria-desktop",
+        "command": "pnpm package"
+      }
+    },
+    "package:verify": {
+      "executor": "nx:run-commands",
+      "options": {
+        "cwd": "apps/asteria-desktop",
+        "command": "pnpm package:verify"
+      }
+    }
+  }
+}

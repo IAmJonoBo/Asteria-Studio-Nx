@@ -9,6 +9,8 @@
     "dist"
   ],
   "scripts": {
-    "build": "echo 'todo: build ui-kit'"
+    "build": "echo 'todo: build ui-kit'",
+    "lint": "pnpm exec eslint \"src/**/*.{ts,tsx}\"",
+    "test": "node -e \"console.log('No tests configured for @asteria/ui-kit');\""
   }
 }
