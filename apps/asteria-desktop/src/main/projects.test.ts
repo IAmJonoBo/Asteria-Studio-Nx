@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import os from "node:os";
 import path from "node:path";
 
 type MockStat = {
@@ -24,7 +25,7 @@ vi.mock("node:fs/promises", () => ({
 const readRunIndex = vi.hoisted(() => vi.fn());
 vi.mock("./run-index", () => ({ readRunIndex }));
 
-import { importCorpus, listProjects } from "./projects.js";
+import { importCorpus, listProjects, normalizeCorpusPath } from "./projects.js";
 
 describe("projects", () => {
   beforeEach(() => {
@@ -73,6 +74,35 @@ describe("projects", () => {
         status: "processing",
       },
     ]);
+  });
+
+  it("listProjects ignores non-directory entries and picks latest run timestamp", async () => {
+    const entry = "delta-project";
+    const projectsRoot = path.join(process.cwd(), "projects");
+    const projectDir = path.join(projectsRoot, entry);
+
+    readdir.mockResolvedValueOnce([entry, "not-a-dir"]);
+    readRunIndex.mockResolvedValueOnce([
+      { runId: "r1", projectId: entry, generatedAt: "2024-01-01", status: "queued" },
+      { runId: "r2", projectId: entry, updatedAt: "2024-03-01", status: "success" },
+      { runId: "r3", status: "failed" },
+    ]);
+    readFile.mockResolvedValueOnce(JSON.stringify({ id: entry, inputPath: "input/raw" }));
+
+    stat.mockImplementation(async (target: string): Promise<MockStat> => {
+      if (target === projectDir) {
+        return { isDirectory: () => true };
+      }
+      if (target.endsWith("not-a-dir")) {
+        return { isDirectory: () => false };
+      }
+      throw new Error("missing");
+    });
+
+    const result = await listProjects();
+    expect(result).toHaveLength(1);
+    expect(result[0]?.lastRun).toBe("2024-03-01");
+    expect(result[0]?.status).toBe("completed");
   });
 
   it("listProjects uses defaults when config missing", async () => {
@@ -141,6 +171,24 @@ describe("projects", () => {
     });
   });
 
+  it("importCorpus falls back to default slug for non-alphanumeric names", async () => {
+    const inputPath = "/tmp/corpus";
+    const projectsRoot = path.join(process.cwd(), "projects");
+    const projectDir = path.join(projectsRoot, "project");
+
+    stat.mockImplementation(async (target: string): Promise<MockStat> => {
+      if (target === inputPath) {
+        return { isDirectory: () => true };
+      }
+      throw new Error("missing");
+    });
+
+    const result = await importCorpus({ inputPath, name: "!!!" });
+
+    expect(mkdir).toHaveBeenCalledWith(projectDir, { recursive: true });
+    expect(result.id).toBe("project");
+  });
+
   it("listProjects resolves absolute input paths and success/error statuses", async () => {
     const entries = ["alpha-project", "beta-project"];
     const projectsRoot = path.join(process.cwd(), "projects");
@@ -192,5 +240,50 @@ describe("projects", () => {
         status: "error",
       },
     ]);
+  });
+
+  it("listProjects detects yaml config paths", async () => {
+    const entry = "gamma-project";
+    const projectsRoot = path.join(process.cwd(), "projects");
+    const projectDir = path.join(projectsRoot, entry);
+    const yamlPath = path.join(projectDir, "pipeline.config.yaml");
+
+    readdir.mockResolvedValueOnce([entry]);
+    readRunIndex.mockResolvedValueOnce([]);
+    readFile.mockResolvedValueOnce(JSON.stringify({ id: "gamma", inputPath: "input/raw" }));
+
+    stat.mockImplementation(async (target: string): Promise<MockStat> => {
+      if (target === projectDir) {
+        return { isDirectory: () => true };
+      }
+      if (target === yamlPath) {
+        return { isFile: () => true };
+      }
+      throw new Error("missing");
+    });
+
+    const result = await listProjects();
+    expect(result[0]?.configPath).toBe(yamlPath);
+  });
+
+  it("importCorpus rejects non-directory input", async () => {
+    stat.mockResolvedValueOnce({ isDirectory: () => false });
+
+    await expect(importCorpus({ inputPath: "/tmp/file.txt" })).rejects.toThrow(
+      /must be a directory/i
+    );
+  });
+
+  it("listProjects returns empty array on readdir failure", async () => {
+    readdir.mockRejectedValueOnce(new Error("missing"));
+
+    const result = await listProjects();
+
+    expect(result).toEqual([]);
+  });
+
+  it("normalizeCorpusPath expands home shortcuts", () => {
+    const normalized = normalizeCorpusPath("~/corpus");
+    expect(normalized).toContain(path.join(os.homedir(), "corpus"));
   });
 });

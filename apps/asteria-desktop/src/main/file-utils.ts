@@ -10,3 +10,34 @@ export const writeJsonAtomic = async (filePath: string, payload: unknown): Promi
   await fs.writeFile(tempPath, data);
   await fs.rename(tempPath, filePath);
 };
+
+export const resolveConcurrency = (value: unknown, fallback: number, max = 32): number => {
+  const numeric = typeof value === "string" ? Number(value) : Number(value);
+  if (Number.isFinite(numeric) && numeric > 0) {
+    return Math.min(max, Math.floor(numeric));
+  }
+  return fallback;
+};
+
+export const runWithConcurrency = async <T, R>(
+  items: T[],
+  concurrency: number,
+  worker: (item: T, index: number) => Promise<R>
+): Promise<R[]> => {
+  if (items.length === 0) return [];
+  const results = new Array<R>(items.length);
+  let nextIndex = 0;
+  const workerCount = Math.max(1, Math.min(concurrency, items.length));
+
+  const runners = Array.from({ length: workerCount }, async () => {
+    while (true) {
+      const current = nextIndex;
+      nextIndex += 1;
+      if (current >= items.length) break;
+      results[current] = await worker(items[current], current);
+    }
+  });
+
+  await Promise.all(runners);
+  return results;
+};

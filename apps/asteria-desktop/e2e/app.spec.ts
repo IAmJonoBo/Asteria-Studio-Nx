@@ -126,6 +126,7 @@ test.describe("Asteria Desktop App", () => {
           "asteria:list-runs": async () => [
             {
               runId: "run-1",
+              runDir: "/tmp/runs/run-1",
               projectId: "project-1",
               generatedAt: "2026-02-02",
               reviewCount: 1,
@@ -191,7 +192,7 @@ test.describe("Asteria Desktop App", () => {
     await expect(overlaysButton).toHaveText(/Show Overlays|Hide Overlays/);
 
     await page.getByRole("button", { name: /⟳/ }).click();
-    await page.getByRole("button", { name: /apply override/i }).click();
+    await page.getByRole("button", { name: /apply override/i }).first().click();
 
     await page.waitForFunction(() => {
       const globalRef = globalThis as typeof globalThis & {

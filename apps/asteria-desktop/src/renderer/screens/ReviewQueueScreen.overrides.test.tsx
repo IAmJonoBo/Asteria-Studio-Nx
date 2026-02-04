@@ -52,15 +52,17 @@ describe("ReviewQueueScreen overrides", () => {
       },
     };
 
-    render(<ReviewQueueScreen runId="run-1" />);
+    render(<ReviewQueueScreen runId="run-1" runDir="/tmp/runs/run-1" />);
 
-    await screen.findByRole("button", { name: /apply override/i });
+    const applyButtons = await screen.findAllByRole("button", { name: /apply override/i });
     await user.click(screen.getByRole("button", { name: /⟳/ }));
-    await user.click(screen.getByRole("button", { name: /apply override/i }));
+    await user.click(applyButtons[0]);
 
-    expect(await screen.findByText(/Applied/i)).toBeInTheDocument();
+    const appliedLabels = await screen.findAllByText(/Applied/i);
+    expect(appliedLabels.length).toBeGreaterThan(0);
     expect(applyOverride).toHaveBeenCalledWith(
       "run-1",
+      "/tmp/runs/run-1",
       "page-1",
       expect.objectContaining({
         normalization: expect.objectContaining({ rotationDeg: 0.5 }),

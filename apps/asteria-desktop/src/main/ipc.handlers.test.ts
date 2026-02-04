@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { getRunDir, getRunReviewQueuePath, getRunSidecarPath } from "./run-paths.js";
@@ -68,6 +68,8 @@ vi.mock("./projects", () => ({ listProjects, importCorpus }));
 import { buildBundleFileUrl, registerIpcHandlers } from "./ipc.js";
 
 describe("IPC handler registration", () => {
+  let warnSpy: ReturnType<typeof vi.spyOn> | null = null;
+
   beforeEach(() => {
     handlers.clear();
     readFile.mockReset();
@@ -95,6 +97,14 @@ describe("IPC handler registration", () => {
     resolvePipelineConfig.mockReset();
     listProjects.mockReset();
     importCorpus.mockReset();
+    copyFile.mockResolvedValue(undefined);
+    cp.mockResolvedValue(undefined);
+    warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    warnSpy?.mockRestore();
+    warnSpy = null;
   });
 
   it("list-projects delegates to projects module", async () => {
@@ -349,6 +359,32 @@ describe("IPC handler registration", () => {
     vi.useRealTimers();
   });
 
+  it("export-run reports warnings when IO fails", async () => {
+    registerIpcHandlers();
+    const handler = handlers.get("asteria:export-run");
+    expect(handler).toBeDefined();
+
+    copyFile.mockRejectedValue(new Error("copy-fail"));
+    readdir.mockRejectedValue(new Error("readdir-fail"));
+    cp.mockRejectedValue(new Error("cp-fail"));
+    sharpCall.sharpFn.mockImplementation(() => {
+      throw new Error("sharp-fail");
+    });
+
+    const outputDir = path.join(process.cwd(), "pipeline-results");
+    const runDir = getRunDir(outputDir, "run-warn");
+    await (
+      handler as (
+        event: unknown,
+        runId: string,
+        runDir: string,
+        formats: Array<"tiff">
+      ) => Promise<unknown>
+    )({}, "run-warn", runDir, ["tiff"]);
+
+    expect(warnSpy).toHaveBeenCalled();
+  });
+
   it("fetch-page returns default page shape", async () => {
     registerIpcHandlers();
     const handler = handlers.get("asteria:fetch-page");
@@ -383,12 +419,12 @@ describe("IPC handler registration", () => {
     expect(handler).toBeDefined();
     readFile.mockResolvedValueOnce(JSON.stringify({ pageId: "p9" }));
 
+    const runDir = getRunDir(path.join(process.cwd(), "pipeline-results"), "run-9");
     const result = await (
-      handler as (event: unknown, runId: string, pageId: string) => Promise<unknown>
-    )({}, "run-9", "p9");
+      handler as (event: unknown, runId: string, runDir: string, pageId: string) => Promise<unknown>
+    )({}, "run-9", runDir, "p9");
 
     expect(result).toMatchObject({ pageId: "p9" });
-    const runDir = getRunDir(path.join(process.cwd(), "pipeline-results"), "run-9");
     expect(readFile).toHaveBeenCalledWith(getRunSidecarPath(runDir, "p9"), "utf-8");
   });
 
@@ -887,6 +923,98 @@ describe("IPC handler registration", () => {
     expect(written.final).toHaveProperty("normalization");
   });
 
+  it("submit-review captures baseline grid deltas and element edits", async () => {
+    registerIpcHandlers();
+    const handler = handlers.get("asteria:submit-review");
+    expect(handler).toBeDefined();
+
+    const sidecar = {
+      pageId: "page-10",
+      normalization: {
+        cropBox: [0, 0, 100, 100],
+        trimBox: [0, 0, 100, 100],
+        skewAngle: -0.2,
+      },
+      elements: [
+        { id: "el-1", type: "text", bbox: [0, 0, 10, 10] },
+        { id: "el-2", type: "title", bbox: [10, 0, 20, 10] },
+      ],
+      bookModel: {
+        baselineGrid: { dominantSpacingPx: 12 },
+      },
+      metrics: {
+        baseline: { medianSpacingPx: 10 },
+      },
+    };
+
+    readFile
+      .mockResolvedValueOnce(
+        JSON.stringify({ determinism: { appVersion: "1.0.0", configHash: "hash-10" } })
+      )
+      .mockResolvedValueOnce(JSON.stringify(sidecar))
+      .mockRejectedValueOnce(new Error("no override"));
+
+    const overrides = {
+      normalization: {
+        rotationDeg: 1.5,
+        cropBox: [1, 2, 110, 120],
+        trimBox: [1, 1, 95, 96],
+      },
+      elements: [
+        { id: "el-1", type: "text", bbox: [0, 0, 10, 10], confidence: 0.9 },
+        { id: "el-3", type: "title", bbox: [20, 20, 30, 30] },
+      ],
+      guides: {
+        baselineGrid: {
+          spacingPx: 14,
+          offsetPx: 2,
+          angleDeg: -0.1,
+          snapToPeaks: true,
+          markCorrect: false,
+        },
+      },
+    };
+
+    const outputDir = path.join(process.cwd(), "pipeline-results");
+    const runDir = getRunDir(outputDir, "run-grid");
+    await (
+      handler as (
+        event: unknown,
+        runId: string,
+        runDir: string,
+        decisions: unknown[]
+      ) => Promise<void>
+    )({}, "run-grid", runDir, [{ pageId: "page-10", decision: "adjust", overrides }]);
+
+    const sidecarWrite = writeFile.mock.calls.find(
+      (call) =>
+        String(call[0]).includes(path.join(runDir, "sidecars")) &&
+        String(call[0]).includes("page-10.json")
+    );
+    expect(sidecarWrite).toBeDefined();
+    if (!sidecarWrite) throw new Error("sidecarWrite not found");
+    const sidecarPayload = JSON.parse(sidecarWrite[1] as string);
+    expect(sidecarPayload.adjustments).toBeDefined();
+    expect(sidecarPayload.adjustments.cropOffsets).toEqual([1, 2, 10, 20]);
+    expect(sidecarPayload.adjustments.trimOffsets).toEqual([1, 1, -5, -4]);
+    expect(sidecarPayload.adjustments.elementEdits).toHaveLength(3);
+
+    const trainingWrite = writeFile.mock.calls.find(
+      (call) =>
+        String(call[0]).includes(path.join(runDir, "training", "page")) &&
+        String(call[0]).includes("page-10.json")
+    );
+    expect(trainingWrite).toBeDefined();
+    if (!trainingWrite) throw new Error("trainingWrite not found");
+    const trainingPayload = JSON.parse(trainingWrite[1] as string);
+    expect(trainingPayload.delta?.guides?.baselineGrid).toMatchObject({
+      spacingPx: 2,
+      angleDeg: 0.1,
+      snapToPeaks: true,
+      markCorrect: false,
+    });
+  });
+
   it("submit-review writes per-template training records with page linkage", async () => {
     registerIpcHandlers();
     const handler = handlers.get("asteria:submit-review");
@@ -1108,22 +1236,27 @@ describe("IPC handler registration", () => {
     expect(handler).toBeDefined();
     readFile.mockRejectedValueOnce(new Error("missing-sidecar"));
 
-    await (handler as (event: unknown, runId: string, decisions: unknown[]) => Promise<void>)(
-      {},
-      "run-training",
-      [
-        {
-          pageId: "page-7",
-          decision: "accept",
-          overrides: { normalization: { rotationDeg: 0.5 } },
-        },
-      ]
-    );
+    const runDir = getRunDir(path.join(process.cwd(), "pipeline-results"), "run-training");
+    await (
+      handler as (
+        event: unknown,
+        runId: string,
+        runDir: string,
+        decisions: unknown[]
+      ) => Promise<void>
+    )({}, "run-training", runDir, [
+      {
+        pageId: "page-7",
+        decision: "accept",
+        overrides: { normalization: { rotationDeg: 0.5 } },
+      },
+    ]);
 
-    const outputDir = path.join(process.cwd(), "pipeline-results");
-    const runDir = getRunDir(outputDir, "run-training");
     const trainingDir = path.join(runDir, "training");
-    expect(rename).toHaveBeenCalledWith(expect.any(String), path.join(trainingDir, "page-7.json"));
+    expect(rename).toHaveBeenCalledWith(
+      expect.any(String),
+      path.join(trainingDir, "page", "page-7.json")
+    );
     expect(rename).toHaveBeenCalledWith(
       expect.any(String),
       path.join(trainingDir, "manifest.json")

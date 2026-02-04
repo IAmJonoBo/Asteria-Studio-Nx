@@ -27,6 +27,8 @@ const defaultConfig: PipelineConfig = {
       remote_layout_endpoint: null,
       remote_layout_token_env: "ASTERIA_REMOTE_LAYOUT_TOKEN",
       remote_layout_timeout_ms: 5000,
+      remote_layout_max_payload_mb: 8,
+      remote_layout_max_dimension_px: 2048,
     },
     ocr: { engine: "tesseract", languages: ["eng"] },
     detector: { name: "layout-detector", version: "0.1.0" },

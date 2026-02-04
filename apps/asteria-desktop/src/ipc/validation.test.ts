@@ -1,11 +1,15 @@
 import { describe, expect, it } from "vitest";
 import {
   validateExportFormat,
+  validateExportFormats,
+  validateImportCorpusRequest,
   validateOverrides,
   validatePageId,
   validatePageLayoutSidecar,
   validatePipelineRunConfig,
+  validateReviewDecisions,
   validateRunId,
+  validateRunDir,
   validateTemplateTrainingSignal,
 } from "./validation.js";
 import type { PageLayoutSidecar, PipelineRunConfig, TemplateTrainingSignal } from "./contracts.js";
@@ -86,10 +90,58 @@ describe("IPC validation", () => {
     expect(() => validateOverrides({ fn: () => null })).toThrow(/overrides/);
   });
 
+  it("rejects overly deep overrides", () => {
+    const deep = { a: { b: { c: { d: { e: { f: { g: { h: { i: { j: 1 } } } } } } } } } };
+    expect(() => validateOverrides(deep)).toThrow(/JSON-safe/);
+  });
+
   it("rejects invalid ids and formats", () => {
     expect(() => validateRunId("")).toThrow(/run id/);
     expect(() => validatePageId("")).toThrow(/page id/);
     expect(() => validateExportFormat("jpeg" as never)).toThrow(/format/);
+  });
+
+  it("validates run directory shape and runId", () => {
+    expect(() => validateRunDir("/tmp/pipeline-results/runs/run-1", "run-1")).not.toThrow();
+    expect(() => validateRunDir("/tmp/pipeline-results/run-1", "run-1")).toThrow(/runs/);
+    expect(() => validateRunDir("/tmp/pipeline-results/runs/run-1", "run-2")).toThrow(/mismatch/);
+  });
+
+  it("rejects invalid export formats arrays", () => {
+    expect(() => validateExportFormats([] as Array<"png">)).toThrow(/non-empty array/);
+    expect(() =>
+      validateExportFormats(["png", "jpg"] as unknown as Array<"png" | "tiff" | "pdf">)
+    ).toThrow(/Invalid export format/);
+  });
+
+  it("validates import corpus requests", () => {
+    expect(() => validateImportCorpusRequest("nope" as unknown as { inputPath: string })).toThrow(
+      /expected object/
+    );
+    expect(() => validateImportCorpusRequest({ inputPath: "" })).toThrow(/inputPath required/);
+    expect(() => validateImportCorpusRequest({ inputPath: "/tmp/corpus", name: "" })).toThrow(
+      /name must be a non-empty string/
+    );
+    expect(() => validateImportCorpusRequest({ inputPath: "/tmp/corpus" })).not.toThrow();
+  });
+
+  it("rejects invalid review decision payloads", () => {
+    expect(() => validateReviewDecisions([])).toThrow(/non-empty array/);
+    expect(() => validateReviewDecisions([{ pageId: "", decision: "accept" }])).toThrow(/pageId/);
+    expect(() => validateReviewDecisions([{ pageId: "p1", decision: "invalid" }])).toThrow(
+      /decision/
+    );
+    expect(() =>
+      validateReviewDecisions([{ pageId: "p1", decision: "accept", notes: 123 }])
+    ).toThrow(/notes/);
+    expect(() =>
+      validateReviewDecisions([{ pageId: "p1", decision: "accept", overrides: "bad" }])
+    ).toThrow(/overrides must be an object/);
+    expect(() =>
+      validateReviewDecisions([
+        { pageId: "p1", decision: "accept", overrides: { fn: (): null => null } },
+      ])
+    ).toThrow(/JSON-safe/);
   });
 
   it("accepts valid page layout sidecars", () => {
@@ -121,6 +173,24 @@ describe("IPC validation", () => {
     expect(() => validatePageLayoutSidecar(roundTripped)).not.toThrow();
     expect(roundTripped.normalization.guides?.baselineGrid?.snapToPeaks).toBe(true);
     expect(roundTripped.normalization.guides?.baselineGrid?.markCorrect).toBe(false);
+  });
+
+  it("rejects invalid baseline and guide values", () => {
+    const invalidBaseline = buildValidSidecar();
+    invalidBaseline.metrics.baseline = {
+      medianSpacingPx: 12,
+      spacingMAD: 1.2,
+      lineStraightnessResidual: 0.03,
+      confidence: 0.8,
+      peaksY: "bad" as unknown as number[],
+    };
+    expect(() => validatePageLayoutSidecar(invalidBaseline)).toThrow(/peaksY/);
+
+    const invalidGuide = buildValidSidecar();
+    invalidGuide.normalization.guides = {
+      baselineGrid: { snapToPeaks: "yes" as unknown as boolean },
+    };
+    expect(() => validatePageLayoutSidecar(invalidGuide)).toThrow(/snapToPeaks/);
   });
 });
 
@@ -187,7 +257,7 @@ describe("validateTemplateTrainingSignal", () => {
 
   it("validates nested overrides", () => {
     const invalid = buildValidSignal();
-    invalid.overrides = { normalization: { fn: () => null } };
+    invalid.overrides = { normalization: { fn: (): null => null } };
     expect(() => validateTemplateTrainingSignal(invalid as TemplateTrainingSignal)).toThrow(
       /overrides/
     );

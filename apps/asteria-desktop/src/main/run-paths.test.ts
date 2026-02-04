@@ -7,6 +7,9 @@ import {
   getRunNormalizedDir,
   getRunNormalizedPath,
   getRunOverlayPath,
+  getRunLogDir,
+  getRunLogPath,
+  getRunPageLogPath,
   getRunPreviewDir,
   getRunPreviewPath,
   getRunReportPath,
@@ -28,6 +31,11 @@ describe("run-paths", () => {
     expect(getOverlayDir(runDir)).toBe(path.join(runDir, "overlays"));
     expect(getSidecarDir(runDir)).toBe(path.join(runDir, "sidecars"));
     expect(getTrainingDir(runDir)).toBe(path.join(runDir, "training"));
+    expect(getRunLogDir(runDir)).toBe(path.join(runDir, "logs"));
+    expect(getRunLogPath(runDir)).toBe(path.join(runDir, "logs", "run.log"));
+    expect(getRunPageLogPath(runDir, "page-1")).toBe(
+      path.join(runDir, "logs", "pages", "page-1.log")
+    );
     expect(getRunSidecarPath(runDir, "page-1")).toBe(path.join(runDir, "sidecars", "page-1.json"));
     expect(getRunNormalizedPath(runDir, "page-1")).toBe(
       path.join(runDir, "normalized", "page-1.png")

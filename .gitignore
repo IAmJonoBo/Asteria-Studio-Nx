@@ -22,6 +22,7 @@ apps/asteria-desktop/dist-app/
 apps/asteria-desktop/.vite/
 apps/asteria-desktop/node_modules/
 apps/asteria-desktop/pipeline-results/
+pipeline-results/
 apps/asteria-desktop/playwright-report/
 apps/asteria-desktop/test-results/
 apps/asteria-desktop/.cache/golden/

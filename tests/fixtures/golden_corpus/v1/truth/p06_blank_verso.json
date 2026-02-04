@@ -11,5 +11,5 @@
   },
   "ornaments": [],
   "shouldSplit": false,
-  "expectedReviewReasons": ["low-skew-confidence", "low-shading-confidence", "residual-skew-*"]
+  "expectedReviewReasons": ["low-skew-confidence", "low-shading-confidence"]
 }

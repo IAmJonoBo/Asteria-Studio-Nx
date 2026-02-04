@@ -15,6 +15,13 @@ export const getOverlayDir = (runDir: string): string => path.join(runDir, "over
 
 export const getTrainingDir = (runDir: string): string => path.join(runDir, "training");
 
+export const getRunLogDir = (runDir: string): string => path.join(runDir, "logs");
+
+export const getRunLogPath = (runDir: string): string => path.join(getRunLogDir(runDir), "run.log");
+
+export const getRunPageLogPath = (runDir: string, pageId: string): string =>
+  path.join(getRunLogDir(runDir), "pages", `${pageId}.log`);
+
 export const getRunManifestPath = (runDir: string): string => path.join(runDir, "manifest.json");
 
 export const getRunReportPath = (runDir: string): string => path.join(runDir, "report.json");

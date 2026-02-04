@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import { randomUUID } from "node:crypto";
 import type { PipelineRunConfig, RunProgressEvent } from "../ipc/contracts.js";
 import { runPipeline } from "./pipeline-runner.js";
 import { getRunDir, getRunManifestPath, getRunReportPath } from "./run-paths.js";
@@ -141,7 +142,7 @@ export const startRun = async (
   projectRoot: string,
   outputDir: string
 ): Promise<string> => {
-  const runId = `run-${Date.now()}`;
+  const runId = `run-${Date.now()}-${randomUUID().split("-")[0] ?? "seed"}`;
   const controller = createAbortController();
   const pauseController = createPauseController();
   const runDir = getRunDir(outputDir, runId);

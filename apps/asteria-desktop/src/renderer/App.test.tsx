@@ -98,6 +98,72 @@ describe("App", () => {
     windowRef.asteria = previousAsteria;
   });
 
+  it("prompts for overrides when inferred settings are rejected", async () => {
+    const user = userEvent.setup();
+    const windowRef = globalThis as typeof globalThis & {
+      asteria?: {
+        ipc: Record<string, unknown>;
+      };
+    };
+    const previousAsteria = windowRef.asteria;
+    const scanCorpus = vi.fn().mockResolvedValue({
+      projectId: "mind-myth-magick",
+      pages: [
+        { id: "p1", filename: "page.png", originalPath: "/tmp/page.png", confidenceScores: {} },
+      ],
+      targetDpi: 300,
+      targetDimensionsMm: { width: 210, height: 297 },
+    });
+    const analyzeCorpus = vi.fn().mockResolvedValue({
+      targetDimensionsMm: { width: 210, height: 297 },
+      dpi: 300,
+      inferredDimensionsMm: { width: 220, height: 310 },
+      inferredDpi: 320,
+      dimensionConfidence: 0.9,
+      dpiConfidence: 0.85,
+    });
+    const startRun = vi.fn().mockResolvedValue({ runId: "run-43", runDir: "/tmp/runs/run-43" });
+    const confirmMock = vi.spyOn(globalThis, "confirm").mockReturnValue(false);
+    const promptMock = vi
+      .spyOn(globalThis, "prompt")
+      .mockReturnValueOnce("bad")
+      .mockReturnValueOnce("305")
+      .mockReturnValueOnce("");
+
+    windowRef.asteria = {
+      ipc: {
+        "asteria:list-projects": vi.fn().mockResolvedValue([
+          {
+            id: "mind-myth-magick",
+            name: "Mind, Myth and Magick",
+            path: "/projects/mind-myth-and-magick",
+            inputPath: "/projects/mind-myth-and-magick/input/raw",
+            status: "completed",
+          },
+        ]),
+        "asteria:scan-corpus": scanCorpus,
+        "asteria:analyze-corpus": analyzeCorpus,
+        "asteria:start-run": startRun,
+      },
+    };
+
+    render(<App />);
+
+    const startRunButton = await screen.findByRole("button", { name: /start run/i });
+    await user.click(startRunButton);
+
+    expect(startRun).toHaveBeenCalledWith(
+      expect.objectContaining({
+        targetDimensionsMm: expect.objectContaining({ width: 210, height: 305 }),
+        targetDpi: 300,
+      })
+    );
+
+    confirmMock.mockRestore();
+    promptMock.mockRestore();
+    windowRef.asteria = previousAsteria;
+  });
+
   it("selects a project and navigates to runs", async () => {
     const user = userEvent.setup();
     const windowRef = globalThis as typeof globalThis & {
@@ -278,6 +344,7 @@ describe("App", () => {
     windowRef.asteria = {
       ipc: {
         "asteria:list-projects": listProjects,
+        "asteria:pick-corpus-dir": vi.fn().mockResolvedValue("/tmp/corpus"),
         "asteria:import-corpus": importCorpus,
       },
     };
@@ -287,10 +354,7 @@ describe("App", () => {
       globalThis as typeof globalThis & {
         prompt: ((message?: string) => string | null) | undefined;
       }
-    ).prompt = vi
-      .fn()
-      .mockImplementationOnce(() => "/tmp/corpus")
-      .mockImplementationOnce(() => "New Project");
+    ).prompt = vi.fn().mockImplementationOnce(() => "New Project");
 
     render(<App />);
 
@@ -322,6 +386,7 @@ describe("App", () => {
     windowRef.asteria = {
       ipc: {
         "asteria:list-projects": vi.fn().mockResolvedValue([]),
+        "asteria:pick-corpus-dir": vi.fn().mockResolvedValue("/tmp/corpus"),
         "asteria:import-corpus": importCorpus,
       },
     };
@@ -331,10 +396,7 @@ describe("App", () => {
       globalThis as typeof globalThis & {
         prompt: ((message?: string) => string | null) | undefined;
       }
-    ).prompt = vi
-      .fn()
-      .mockImplementationOnce(() => "/tmp/corpus")
-      .mockImplementationOnce(() => "Broken Project");
+    ).prompt = vi.fn().mockImplementationOnce(() => "Broken Project");
 
     render(<App />);
 
@@ -571,7 +633,7 @@ describe("App", () => {
     windowRef.asteria = previousAsteria;
   });
 
-  it("aborts import when prompt is empty", async () => {
+  it("imports with no name when prompt is empty", async () => {
     const user = userEvent.setup();
     const windowRef = globalThis as typeof globalThis & {
       asteria?: { ipc: Record<string, unknown> };
@@ -581,6 +643,7 @@ describe("App", () => {
     windowRef.asteria = {
       ipc: {
         "asteria:list-projects": vi.fn().mockResolvedValue([]),
+        "asteria:pick-corpus-dir": vi.fn().mockResolvedValue("/tmp/corpus"),
         "asteria:import-corpus": importCorpus,
       },
     };
@@ -597,13 +660,38 @@ describe("App", () => {
     const importButton = await screen.findByRole("button", { name: /import corpus/i });
     await user.click(importButton);
 
-    expect(importCorpus).not.toHaveBeenCalled();
+    expect(importCorpus).toHaveBeenCalledWith({ inputPath: "/tmp/corpus", name: undefined });
 
     (
       globalThis as typeof globalThis & {
         prompt: ((message?: string) => string | null) | undefined;
       }
     ).prompt = originalPrompt;
+    windowRef.asteria = previousAsteria;
+  });
+
+  it("does not import when picker is cancelled", async () => {
+    const user = userEvent.setup();
+    const windowRef = globalThis as typeof globalThis & {
+      asteria?: { ipc: Record<string, unknown> };
+    };
+    const previousAsteria = windowRef.asteria;
+    const pickCorpusDir = vi.fn().mockResolvedValue(null);
+    const importCorpus = vi.fn();
+
+    windowRef.asteria = {
+      ipc: {
+        "asteria:list-projects": vi.fn().mockResolvedValue([]),
+        "asteria:pick-corpus-dir": pickCorpusDir,
+        "asteria:import-corpus": importCorpus,
+      },
+    };
+
+    render(<App />);
+    await user.click(await screen.findByRole("button", { name: /Import Corpus/i }));
+
+    expect(importCorpus).not.toHaveBeenCalled();
+
     windowRef.asteria = previousAsteria;
   });
 });

@@ -59,7 +59,8 @@ import {
   type PipelineConfig,
 } from "./pipeline-config.js";
 import { updateRunIndex, type RunIndexStatus } from "./run-index.js";
-import { writeJsonAtomic } from "./file-utils.js";
+import { resolveConcurrency, runWithConcurrency, writeJsonAtomic } from "./file-utils.js";
+import { createNullLogger, createRunLogger } from "./logger.js";
 
 const sleep = async (ms: number): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, ms));
@@ -103,11 +104,34 @@ const getAppVersion = async (): Promise<string> => {
   return pkg?.version ?? "unknown";
 };
 
+const stableStringify = (value: unknown): string => {
+  if (value === null) return "null";
+  if (typeof value === "number" || typeof value === "boolean") return JSON.stringify(value);
+  if (typeof value === "string") return JSON.stringify(value);
+  if (Array.isArray(value)) {
+    return `[${value.map((entry) => stableStringify(entry)).join(",")}]`;
+  }
+  if (typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    const keys = Object.keys(record)
+      .filter((key) => record[key] !== undefined)
+      .sort();
+    const entries = keys.map((key) => `${JSON.stringify(key)}:${stableStringify(record[key])}`);
+    return `{${entries.join(",")}}`;
+  }
+  if (value === undefined) return "null";
+  return JSON.stringify(value);
+};
+
 const hashConfig = (config: unknown): string => {
   const hash = crypto.createHash("sha256");
-  hash.update(JSON.stringify(config));
+  hash.update(stableStringify(config));
   return hash.digest("hex");
 };
+
+const DEFAULT_IO_CONCURRENCY = 6;
+const getIoConcurrency = (): number =>
+  resolveConcurrency(process.env.ASTERIA_IO_CONCURRENCY, DEFAULT_IO_CONCURRENCY, 32);
 
 class RunCancelledError extends Error {
   constructor() {
@@ -730,7 +754,11 @@ const computeTemplateSimilarity = (
   let totalWeight = 0;
   let distance = 0;
 
-  const addDistance = (value: number | undefined, mean: number | undefined, weight: number) => {
+  const addDistance = (
+    value: number | undefined,
+    mean: number | undefined,
+    weight: number
+  ): void => {
     if (value === undefined || mean === undefined) return;
     totalWeight += weight;
     distance += weight * Math.min(1, Math.abs(value - mean));
@@ -741,7 +769,7 @@ const computeTemplateSimilarity = (
     mean: number | undefined,
     weight: number,
     scale: number
-  ) => {
+  ): void => {
     if (value === undefined || mean === undefined) return;
     totalWeight += weight;
     distance += weight * Math.min(1, Math.abs(value - mean) / Math.max(0.001, scale));
@@ -786,7 +814,7 @@ type NumericTemplateMeanKey = Exclude<keyof TemplateBuilder["mean"], "margins">;
 
 const updateTemplateMeans = (template: TemplateBuilder, page: PageTemplateFeatures): void => {
   const count = template.count + 1;
-  const update = (key: NumericTemplateMeanKey, value: number | undefined) => {
+  const update = (key: NumericTemplateMeanKey, value: number | undefined): void => {
     if (value === undefined) return;
     const current = template.mean[key] as number | undefined;
     template.mean[key] = current === undefined ? value : (current * template.count + value) / count;
@@ -1115,7 +1143,12 @@ const normalizePagesConcurrent = async (
       const page = queue.shift();
       if (!page) continue;
       const estimate = estimateById.get(page.id);
-      if (!estimate) continue;
+      if (!estimate) {
+        onError(page.id, "Missing analysis estimate");
+        processed += 1;
+        onProgress?.(processed, total);
+        continue;
+      }
       try {
         const normalized = await normalizePage(page, estimate, analysis, runDir, options);
         if (!normalized) {
@@ -1225,15 +1258,13 @@ const cleanupNormalizedOutput = async (runDir: string, pages: PageData[]): Promi
       }
     }
 
-    await Promise.all(
-      deletions.map(async (filePath) => {
-        try {
-          await fs.unlink(filePath);
-        } catch {
-          // ignore missing files
-        }
-      })
-    );
+    await runWithConcurrency(deletions, getIoConcurrency(), async (filePath) => {
+      try {
+        await fs.unlink(filePath);
+      } catch {
+        // ignore missing files
+      }
+    });
   } catch {
     // no manifest to clean
   }
@@ -1879,62 +1910,60 @@ const attachOverlays = async (
   const overlayDir = getOverlayDir(runDir);
   await fs.mkdir(overlayDir, { recursive: true });
 
-  await Promise.all(
-    reviewQueue.items.map(async (item) => {
-      await waitForControl(control);
-      const norm = normalization.get(item.pageId);
-      if (!norm) return;
-      try {
-        const meta = await sharp(norm.normalizedPath).metadata();
-        const width = meta.width ?? 0;
-        const height = meta.height ?? 0;
-        if (!width || !height) return;
+  await runWithConcurrency(reviewQueue.items, getIoConcurrency(), async (item) => {
+    await waitForControl(control);
+    const norm = normalization.get(item.pageId);
+    if (!norm) return;
+    try {
+      const meta = await sharp(norm.normalizedPath).metadata();
+      const width = meta.width ?? 0;
+      const height = meta.height ?? 0;
+      if (!width || !height) return;
 
-        const maskBox = mapBoxToOutput(norm.maskBox, norm.cropBox, width, height);
-        const overlayBoxes = [
-          {
-            box: [0, 0, width - 1, height - 1] as [number, number, number, number],
-            color: "#3b82f6",
-            label: "page",
-          },
-          { box: maskBox, color: "#22c55e", label: "content" },
-        ];
+      const maskBox = mapBoxToOutput(norm.maskBox, norm.cropBox, width, height);
+      const overlayBoxes = [
+        {
+          box: [0, 0, width - 1, height - 1] as [number, number, number, number],
+          color: "#3b82f6",
+          label: "page",
+        },
+        { box: maskBox, color: "#22c55e", label: "content" },
+      ];
 
-        const elements = buildElementBoxes(item.pageId, width, height, maskBox, bookModel);
-        elements.forEach((element) => {
-          overlayBoxes.push({
-            box: element.bbox,
-            color: elementColor(element.type),
-            label: element.type.replace("_", " "),
-          });
+      const elements = buildElementBoxes(item.pageId, width, height, maskBox, bookModel);
+      elements.forEach((element) => {
+        overlayBoxes.push({
+          box: element.bbox,
+          color: elementColor(element.type),
+          label: element.type.replace("_", " "),
         });
+      });
 
-        const gutter = gutterByPageId?.get(item.pageId);
-        if (gutter) {
-          const gx0 = Math.max(0, Math.round(width * gutter.startRatio));
-          const gx1 = Math.min(width - 1, Math.round(width * gutter.endRatio));
-          overlayBoxes.push({
-            box: [gx0, 0, gx1, height - 1],
-            color: "#facc15",
-            label: "gutter",
-          });
-        }
-
-        const svg = buildOverlaySvg(width, height, overlayBoxes);
-        const overlayPath = getRunOverlayPath(runDir, item.pageId);
-        await sharp({
-          create: { width, height, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } },
-        })
-          .composite([{ input: Buffer.from(svg) }])
-          .png({ compressionLevel: 6 })
-          .toFile(overlayPath);
-
-        item.previews.push({ kind: "overlay", path: overlayPath, width, height });
-      } catch {
-        // ignore overlay errors
+      const gutter = gutterByPageId?.get(item.pageId);
+      if (gutter) {
+        const gx0 = Math.max(0, Math.round(width * gutter.startRatio));
+        const gx1 = Math.min(width - 1, Math.round(width * gutter.endRatio));
+        overlayBoxes.push({
+          box: [gx0, 0, gx1, height - 1],
+          color: "#facc15",
+          label: "gutter",
+        });
       }
-    })
-  );
+
+      const svg = buildOverlaySvg(width, height, overlayBoxes);
+      const overlayPath = getRunOverlayPath(runDir, item.pageId);
+      await sharp({
+        create: { width, height, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } },
+      })
+        .composite([{ input: Buffer.from(svg) }])
+        .png({ compressionLevel: 6 })
+        .toFile(overlayPath);
+
+      item.previews.push({ kind: "overlay", path: overlayPath, width, height });
+    } catch {
+      // ignore overlay errors
+    }
+  });
 };
 
 export interface PipelineRunnerOptions {
@@ -2280,11 +2309,13 @@ const savePipelineOutputs = async (params: {
   const checksumById = new Map(
     params.configToProcess.pages.map((page) => [page.id, page.checksum])
   );
-  const dhashEntries = await Promise.all(
-    Array.from(params.normalizationResults.values()).map(async (norm) => ({
+  const dhashEntries = await runWithConcurrency(
+    Array.from(params.normalizationResults.values()),
+    getIoConcurrency(),
+    async (norm) => ({
       pageId: norm.pageId,
       dhash: await computePageDhash(norm.normalizedPath, params.native),
-    }))
+    })
   );
   const dhashById = new Map(dhashEntries.map((entry) => [entry.pageId, entry.dhash]));
   const manifest = {
@@ -2572,7 +2603,7 @@ const applySecondPassCorrections = async (params: {
  */
 export async function runPipeline(options: PipelineRunnerOptions): Promise<PipelineRunnerResult> {
   const startTime = Date.now();
-  const runId = options.runId ?? `run-${Date.now()}`;
+  const runId = options.runId ?? `run-${Date.now()}-${crypto.randomUUID().split("-")[0] ?? "seed"}`;
   const errors: Array<{ phase: string; message: string }> = [];
   const outputDir = options.outputDir ?? path.join(process.cwd(), "pipeline-results");
   const runDir = getRunDir(outputDir, runId);
@@ -2586,6 +2617,7 @@ export async function runPipeline(options: PipelineRunnerOptions): Promise<Pipel
   let scanConfig: PipelineRunConfig | null = null;
   let analysisSummary: CorpusSummary | null = null;
   let normalizationResults: Map<string, NormalizationResult> = new Map();
+  let logger = createNullLogger();
   let reviewQueue: ReviewQueue = {
     runId,
     projectId: options.projectId,
@@ -2643,6 +2675,15 @@ export async function runPipeline(options: PipelineRunnerOptions): Promise<Pipel
       projectOverrides: projectOverrides.overrides,
     });
 
+    logger = createRunLogger(runDir, resolvedConfig.logging);
+    logger.info("Pipeline config resolved", {
+      runId,
+      projectId: options.projectId,
+      configPath: sources.configPath,
+      loadedFromFile: sources.loadedFromFile,
+      projectConfigPath: sources.projectConfigPath ?? null,
+    });
+
     configSnapshot = { resolved: resolvedConfig, sources };
     const targetDimensionsMm = {
       width: resolvedConfig.project.target_dimensions.width,
@@ -2656,6 +2697,7 @@ export async function runPipeline(options: PipelineRunnerOptions): Promise<Pipel
 
     await waitForControl(control);
     scanConfig = await scanCorpusWithRetries(optionsWithConfig, runId, errors, control);
+    logger.info("Corpus scan complete", { runId, pages: scanConfig.pages.length });
     emitProgress({
       runId,
       projectId: options.projectId,
@@ -2682,6 +2724,11 @@ export async function runPipeline(options: PipelineRunnerOptions): Promise<Pipel
       total: configToProcess.pages.length,
     });
     analysisSummary = await analyzeCorpusSafe(configToProcess, runId, errors);
+    logger.info("Corpus analysis complete", {
+      runId,
+      pageCount: analysisSummary.pageCount,
+      dpi: analysisSummary.dpi,
+    });
     const inferredConfig = applyDimensionInference(
       configToProcess,
       analysisSummary,
@@ -2768,6 +2815,7 @@ export async function runPipeline(options: PipelineRunnerOptions): Promise<Pipel
       concurrency,
       onError: (pageId, message) => {
         errors.push({ phase: "normalization", message: `[${pageId}] ${message}` });
+        logger.page(pageId, "error", "Normalization error", { runId, message });
       },
       control,
       onStageProgress: (stage, processed, total, throughput) => {
@@ -2884,6 +2932,12 @@ export async function runPipeline(options: PipelineRunnerOptions): Promise<Pipel
       },
     };
     console.log(`[${runId}] Pipeline complete in ${pipelineResult.metrics.durationMs}ms`);
+    logger.info("Pipeline complete", {
+      runId,
+      durationMs: pipelineResult.metrics.durationMs,
+      normalizedPages: normalizationResults.size,
+      reviewQueueCount: reviewQueue.items.length,
+    });
 
     // Phase 4: Save results
     if (options.outputDir) {
@@ -2908,6 +2962,7 @@ export async function runPipeline(options: PipelineRunnerOptions): Promise<Pipel
         spreadMetaByPageId: spreadSplitResult.spreadMetaByPageId,
         control,
       });
+      logger.info("Pipeline outputs saved", { runId, runDir });
     }
 
     emitProgress({
@@ -2935,6 +2990,7 @@ export async function runPipeline(options: PipelineRunnerOptions): Promise<Pipel
     if (isCancelled) {
       errors.push({ phase: "pipeline", message: "Run cancelled" });
       console.warn(`[${runId}] Pipeline cancelled by user.`);
+      logger.warn("Pipeline cancelled", { runId });
       emitProgress({
         runId,
         projectId: options.projectId,
@@ -2945,6 +3001,7 @@ export async function runPipeline(options: PipelineRunnerOptions): Promise<Pipel
     } else {
       errors.push({ phase: "pipeline", message });
       console.error(`[${runId}] Pipeline failed:`, message);
+      logger.error("Pipeline failed", { runId, message });
       emitProgress({
         runId,
         projectId: options.projectId,
@@ -3018,6 +3075,8 @@ export async function runPipeline(options: PipelineRunnerOptions): Promise<Pipel
       pipelineResult,
       errors,
     };
+  } finally {
+    await logger.finalize();
   }
 }
 
@@ -3050,154 +3109,150 @@ const writeSidecars = async (
   const ornamentVarianceMin = 120;
 
   const sidecarEntries = (
-    await Promise.all(
-      config.pages.map(async (page, index) => {
-        await waitForControl(control);
-        const estimate = estimatesById.get(page.id);
-        const norm = normalization.get(page.id);
-        if (!estimate || !norm) return;
+    await runWithConcurrency(config.pages, getIoConcurrency(), async (page, index) => {
+      await waitForControl(control);
+      const estimate = estimatesById.get(page.id);
+      const norm = normalization.get(page.id);
+      if (!estimate || !norm) return;
 
-        const bleedMm = norm.bleedMm;
-        const trimMm = norm.trimMm;
-        const assessment = inferLayoutProfile(page, index, norm, config.pages.length);
-        const layoutConfidence = computeLayoutConfidence(assessment, norm);
-        const deskewConfidence = Math.min(1, norm.stats.skewConfidence + 0.25);
-        const maskBoxOut = mapBoxToOutput(norm.maskBox, norm.cropBox, outputWidth, outputHeight);
-        const cropBoxOut: [number, number, number, number] = [
-          0,
-          0,
-          outputWidth - 1,
-          outputHeight - 1,
-        ];
-        const cropWidth = Math.max(1, norm.cropBox[2] - norm.cropBox[0] + 1);
-        const scale = outputWidth / cropWidth;
-        const localElements = buildElementBoxes(
-          page.id,
-          outputWidth,
-          outputHeight,
-          maskBoxOut,
-          bookModel
-        );
-        const remoteElements = await requestRemoteLayout(
-          page.id,
-          norm.normalizedPath,
-          outputWidth,
-          outputHeight
-        );
-        const nativeElements = remoteElements
-          ? null
-          : await loadNativeLayoutElements(page.id, norm.normalizedPath, native);
-        const elements = remoteElements ?? nativeElements ?? localElements;
-        let layoutSource: "remote" | "native" | "local" = "local";
-        if (remoteElements) {
-          layoutSource = "remote";
-        } else if (nativeElements) {
-          layoutSource = "native";
-        }
-        layoutSummaries.set(page.id, {
-          profile: assessment.profile,
-          confidence: layoutConfidence,
-          elementCount: elements.length,
-          source: layoutSource,
-        });
+      const bleedMm = norm.bleedMm;
+      const trimMm = norm.trimMm;
+      const assessment = inferLayoutProfile(page, index, norm, config.pages.length);
+      const layoutConfidence = computeLayoutConfidence(assessment, norm);
+      const deskewConfidence = Math.min(1, norm.stats.skewConfidence + 0.25);
+      const maskBoxOut = mapBoxToOutput(norm.maskBox, norm.cropBox, outputWidth, outputHeight);
+      const cropBoxOut: [number, number, number, number] = [
+        0,
+        0,
+        outputWidth - 1,
+        outputHeight - 1,
+      ];
+      const cropWidth = Math.max(1, norm.cropBox[2] - norm.cropBox[0] + 1);
+      const scale = outputWidth / cropWidth;
+      const localElements = buildElementBoxes(
+        page.id,
+        outputWidth,
+        outputHeight,
+        maskBoxOut,
+        bookModel
+      );
+      const remoteElements = await requestRemoteLayout(
+        page.id,
+        norm.normalizedPath,
+        outputWidth,
+        outputHeight
+      );
+      const nativeElements = remoteElements
+        ? null
+        : await loadNativeLayoutElements(page.id, norm.normalizedPath, native);
+      const elements = remoteElements ?? nativeElements ?? localElements;
+      let layoutSource: "remote" | "native" | "local" = "local";
+      if (remoteElements) {
+        layoutSource = "remote";
+      } else if (nativeElements) {
+        layoutSource = "native";
+      }
+      layoutSummaries.set(page.id, {
+        profile: assessment.profile,
+        confidence: layoutConfidence,
+        elementCount: elements.length,
+        source: layoutSource,
+      });
 
-        const baselineLineCount = norm.corrections?.baseline?.textLineCount ?? 0;
-        const baselineData = computeBaselineGridData(norm.corrections?.baseline, outputHeight);
-        const cropHeight = Math.max(1, norm.cropBox[3] - norm.cropBox[1] + 1);
-        const fallbackSpacingPx =
-          baselineLineCount > 0 ? cropHeight / baselineLineCount : undefined;
-        const medianSpacingPx = baselineData.spacingPx ?? fallbackSpacingPx;
-        const lineStraightnessResidual = Math.abs(norm.corrections?.baseline?.residualAngle ?? 0);
-        const baselineSummary = {
-          medianSpacingPx,
-          spacingMAD: baselineData.spacingMADPx,
-          lineStraightnessResidual,
-          confidence:
-            norm.corrections?.baseline?.confidence ?? norm.stats.baselineConsistency ?? 0.5,
-          peaksY: baselineData.peaksY,
-        };
-        const baselineGridGuide: BaselineGridGuide | undefined = shouldRenderBaselineGrid(
-          assessment.profile,
-          baselineData
-        )
-          ? {
-              spacingPx: baselineData.spacingPx,
-              offsetPx: baselineData.offsetPx,
-              angleDeg: baselineData.angleDeg,
-              confidence: baselineData.confidence,
-              source: "auto",
-            }
+      const baselineLineCount = norm.corrections?.baseline?.textLineCount ?? 0;
+      const baselineData = computeBaselineGridData(norm.corrections?.baseline, outputHeight);
+      const cropHeight = Math.max(1, norm.cropBox[3] - norm.cropBox[1] + 1);
+      const fallbackSpacingPx = baselineLineCount > 0 ? cropHeight / baselineLineCount : undefined;
+      const medianSpacingPx = baselineData.spacingPx ?? fallbackSpacingPx;
+      const lineStraightnessResidual = Math.abs(norm.corrections?.baseline?.residualAngle ?? 0);
+      const baselineSummary = {
+        medianSpacingPx,
+        spacingMAD: baselineData.spacingMADPx,
+        lineStraightnessResidual,
+        confidence: norm.corrections?.baseline?.confidence ?? norm.stats.baselineConsistency ?? 0.5,
+        peaksY: baselineData.peaksY,
+      };
+      const baselineGridGuide: BaselineGridGuide | undefined = shouldRenderBaselineGrid(
+        assessment.profile,
+        baselineData
+      )
+        ? {
+            spacingPx: baselineData.spacingPx,
+            offsetPx: baselineData.offsetPx,
+            angleDeg: baselineData.angleDeg,
+            confidence: baselineData.confidence,
+            source: "auto",
+          }
+        : undefined;
+      const spread = resolveSpreadMetadata(page.id, spreadMetaByPageId, gutterByPageId);
+
+      const textFeatures = computeTextFeatures({
+        elements,
+        maskBox: maskBoxOut,
+        width: outputWidth,
+        height: outputHeight,
+      });
+      const folioBandScore = computeFolioBandScore(elements, bookModel?.folioModel, outputHeight);
+      const ornamentHash = norm.normalizedPath
+        ? await hashBand(norm.normalizedPath, ORNAMENT_BAND)
+        : null;
+      const ornamentHashes =
+        ornamentHash && ornamentHash.variance >= ornamentVarianceMin ? [ornamentHash.hash] : [];
+      const gutterSignature =
+        spread?.gutter?.startRatio !== undefined && spread?.gutter?.endRatio !== undefined
+          ? (spread.gutter.startRatio + spread.gutter.endRatio) / 2
           : undefined;
-        const spread = resolveSpreadMetadata(page.id, spreadMetaByPageId, gutterByPageId);
+      const baselineSpacingRatio =
+        baselineSummary.medianSpacingPx !== undefined
+          ? baselineSummary.medianSpacingPx / Math.max(1, outputHeight)
+          : undefined;
+      const margins = {
+        top: clamp01(textFeatures.contentBox[1] / Math.max(1, outputHeight)),
+        right: clamp01((outputWidth - 1 - textFeatures.contentBox[2]) / Math.max(1, outputWidth)),
+        bottom: clamp01(
+          (outputHeight - 1 - textFeatures.contentBox[3]) / Math.max(1, outputHeight)
+        ),
+        left: clamp01(textFeatures.contentBox[0] / Math.max(1, outputWidth)),
+      };
 
-        const textFeatures = computeTextFeatures({
-          elements,
-          maskBox: maskBoxOut,
-          width: outputWidth,
-          height: outputHeight,
-        });
-        const folioBandScore = computeFolioBandScore(elements, bookModel?.folioModel, outputHeight);
-        const ornamentHash = norm.normalizedPath
-          ? await hashBand(norm.normalizedPath, ORNAMENT_BAND)
-          : null;
-        const ornamentHashes =
-          ornamentHash && ornamentHash.variance >= ornamentVarianceMin ? [ornamentHash.hash] : [];
-        const gutterSignature =
-          spread?.gutter?.startRatio !== undefined && spread?.gutter?.endRatio !== undefined
-            ? (spread.gutter.startRatio + spread.gutter.endRatio) / 2
-            : undefined;
-        const baselineSpacingRatio =
-          baselineSummary.medianSpacingPx !== undefined
-            ? baselineSummary.medianSpacingPx / Math.max(1, outputHeight)
-            : undefined;
-        const margins = {
-          top: clamp01(textFeatures.contentBox[1] / Math.max(1, outputHeight)),
-          right: clamp01((outputWidth - 1 - textFeatures.contentBox[2]) / Math.max(1, outputWidth)),
-          bottom: clamp01(
-            (outputHeight - 1 - textFeatures.contentBox[3]) / Math.max(1, outputHeight)
-          ),
-          left: clamp01(textFeatures.contentBox[0] / Math.max(1, outputWidth)),
-        };
+      const templateFeatures: PageTemplateFeatures = {
+        pageId: page.id,
+        pageType: assessment.profile,
+        margins,
+        columnCount: textFeatures.columnCount,
+        columnValleyRatio: textFeatures.columnValleyRatio,
+        headBandRatio: textFeatures.headBandRatio,
+        footerBandRatio: textFeatures.footerBandRatio,
+        folioBandScore,
+        ornamentHashes,
+        textDensity: textFeatures.textDensity,
+        whitespaceRatio: textFeatures.whitespaceRatio,
+        baselineConsistency: norm.stats.baselineConsistency,
+        baselineSpacingPx: baselineSummary.medianSpacingPx,
+        baselineSpacingRatio,
+        gutterSignature,
+      };
 
-        const templateFeatures: PageTemplateFeatures = {
-          pageId: page.id,
-          pageType: assessment.profile,
-          margins,
-          columnCount: textFeatures.columnCount,
-          columnValleyRatio: textFeatures.columnValleyRatio,
-          headBandRatio: textFeatures.headBandRatio,
-          footerBandRatio: textFeatures.footerBandRatio,
-          folioBandScore,
-          ornamentHashes,
-          textDensity: textFeatures.textDensity,
-          whitespaceRatio: textFeatures.whitespaceRatio,
-          baselineConsistency: norm.stats.baselineConsistency,
-          baselineSpacingPx: baselineSummary.medianSpacingPx,
-          baselineSpacingRatio,
-          gutterSignature,
-        };
-
-        return {
-          page,
-          norm,
-          assessment,
-          layoutConfidence,
-          deskewConfidence,
-          outputWidth,
-          outputHeight,
-          maskBoxOut,
-          cropBoxOut,
-          scale,
-          bleedMm,
-          trimMm,
-          elements,
-          baselineSummary,
-          baselineGridGuide,
-          spread,
-          templateFeatures,
-        };
-      })
-    )
+      return {
+        page,
+        norm,
+        assessment,
+        layoutConfidence,
+        deskewConfidence,
+        outputWidth,
+        outputHeight,
+        maskBoxOut,
+        cropBoxOut,
+        scale,
+        bleedMm,
+        trimMm,
+        elements,
+        baselineSummary,
+        baselineGridGuide,
+        spread,
+        templateFeatures,
+      };
+    })
   ).filter((entry): entry is NonNullable<typeof entry> => Boolean(entry));
 
   const templateConfig = pipelineConfig?.templates?.clustering ?? {
@@ -3220,73 +3275,71 @@ const writeSidecars = async (
       ? { ...(bookModel ?? {}), pageTemplates: templateResult.templates }
       : bookModel;
 
-  await Promise.all(
-    sidecarEntries.map(async (entry) => {
-      const assignment = assignmentByPageId.get(entry.page.id);
-      const sidecar = {
-        version: "1.0.0",
-        pageId: entry.page.id,
-        pageType: entry.assessment.profile,
-        templateId: assignment?.templateId,
-        templateConfidence: assignment?.confidence,
-        source: {
-          path: entry.page.originalPath,
-          checksum: entry.page.checksum ?? "",
-        },
-        spread: entry.spread,
-        dimensions: {
-          width: entry.norm.dimensionsMm.width,
-          height: entry.norm.dimensionsMm.height,
-          unit: "mm",
-        },
-        dpi: Math.round(entry.norm.dpi),
-        normalization: {
-          cropBox: entry.cropBoxOut,
-          pageMask: entry.maskBoxOut,
-          dpiSource: entry.norm.dpiSource,
-          bleed: entry.bleedMm,
-          trim: entry.trimMm,
-          scale: entry.scale,
-          skewAngle: entry.norm.skewAngle,
-          warp: { method: "affine", residual: 0 },
-          shadow: entry.norm.shadow,
-          shading: entry.norm.shading
-            ? {
-                method: entry.norm.shading.method,
-                backgroundModel: entry.norm.shading.backgroundModel,
-                spineShadowModel: entry.norm.shading.spineShadowModel,
-                params: entry.norm.shading.params,
-                confidence: entry.norm.shading.confidence,
-              }
-            : undefined,
-          guides: entry.baselineGridGuide ? { baselineGrid: entry.baselineGridGuide } : undefined,
-        },
-        elements: entry.elements,
-        overrides: {},
-        metrics: {
-          processingMs: (analysis as unknown as { processingMs?: number }).processingMs ?? 0,
-          deskewConfidence: entry.deskewConfidence,
-          shadowScore: entry.norm.stats.shadowScore,
-          maskCoverage: entry.norm.stats.maskCoverage,
-          backgroundStd: entry.norm.stats.backgroundStd,
-          backgroundMean: entry.norm.stats.backgroundMean,
-          illuminationResidual: entry.norm.stats.illuminationResidual,
-          spineShadowScore: entry.norm.stats.spineShadowScore,
-          layoutScore: entry.layoutConfidence,
-          baseline: entry.baselineSummary,
-        },
-        bookModel: enrichedBookModel,
-      };
+  await runWithConcurrency(sidecarEntries, getIoConcurrency(), async (entry) => {
+    const assignment = assignmentByPageId.get(entry.page.id);
+    const sidecar = {
+      version: "1.0.0",
+      pageId: entry.page.id,
+      pageType: entry.assessment.profile,
+      templateId: assignment?.templateId,
+      templateConfidence: assignment?.confidence,
+      source: {
+        path: entry.page.originalPath,
+        checksum: entry.page.checksum ?? "",
+      },
+      spread: entry.spread,
+      dimensions: {
+        width: entry.norm.dimensionsMm.width,
+        height: entry.norm.dimensionsMm.height,
+        unit: "mm",
+      },
+      dpi: Math.round(entry.norm.dpi),
+      normalization: {
+        cropBox: entry.cropBoxOut,
+        pageMask: entry.maskBoxOut,
+        dpiSource: entry.norm.dpiSource,
+        bleed: entry.bleedMm,
+        trim: entry.trimMm,
+        scale: entry.scale,
+        skewAngle: entry.norm.skewAngle,
+        warp: { method: "affine", residual: 0 },
+        shadow: entry.norm.shadow,
+        shading: entry.norm.shading
+          ? {
+              method: entry.norm.shading.method,
+              backgroundModel: entry.norm.shading.backgroundModel,
+              spineShadowModel: entry.norm.shading.spineShadowModel,
+              params: entry.norm.shading.params,
+              confidence: entry.norm.shading.confidence,
+            }
+          : undefined,
+        guides: entry.baselineGridGuide ? { baselineGrid: entry.baselineGridGuide } : undefined,
+      },
+      elements: entry.elements,
+      overrides: {},
+      metrics: {
+        processingMs: (analysis as unknown as { processingMs?: number }).processingMs ?? 0,
+        deskewConfidence: entry.deskewConfidence,
+        shadowScore: entry.norm.stats.shadowScore,
+        maskCoverage: entry.norm.stats.maskCoverage,
+        backgroundStd: entry.norm.stats.backgroundStd,
+        backgroundMean: entry.norm.stats.backgroundMean,
+        illuminationResidual: entry.norm.stats.illuminationResidual,
+        spineShadowScore: entry.norm.stats.spineShadowScore,
+        layoutScore: entry.layoutConfidence,
+        baseline: entry.baselineSummary,
+      },
+      bookModel: enrichedBookModel,
+    };
 
-      const outPath = getRunSidecarPath(runDir, entry.page.id);
-      try {
-        await writeJsonAtomic(outPath, sidecar);
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        console.warn(`[${runId}] Failed to write sidecar for ${entry.page.id}: ${message}`);
-      }
-    })
-  );
+    const outPath = getRunSidecarPath(runDir, entry.page.id);
+    try {
+      await writeJsonAtomic(outPath, sidecar);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.warn(`[${runId}] Failed to write sidecar for ${entry.page.id}: ${message}`);
+    }
+  });
   return layoutSummaries;
 };
 

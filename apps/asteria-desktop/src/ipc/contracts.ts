@@ -382,6 +382,8 @@ export interface PipelineConfig {
       remote_layout_endpoint: string | null;
       remote_layout_token_env: string;
       remote_layout_timeout_ms: number;
+      remote_layout_max_payload_mb: number;
+      remote_layout_max_dimension_px: number;
     };
     ocr: { engine: string; languages: string[] };
     detector: { name: string; version: string };

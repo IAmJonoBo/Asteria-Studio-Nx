@@ -36,7 +36,7 @@ graph LR
 - **Image Processing**: Sharp 0.34 (TypeScript), OpenCV (planned Rust)
 - **Pipeline**: Node orchestrator with async queue and recovery
 - **Native**: Rust + N-API bindings (via `napi-rs`, projection + dHash utilities integrated)
-- **Runtime**: Node 24 LTS + pnpm 10.28 (see `.node-version`)
+- **Runtime**: Node 25.5.0 + pnpm 10.28 (see `.node-version`, `.nvmrc`, `.tool-versions`)
 
 ## Project Structure
 
@@ -106,7 +106,7 @@ Then an Electron window should open with the Asteria Studio shell.
 ### Development Commands
 
 ```bash
-# Use Node 24 LTS (see .node-version) + pnpm 10.28
+# Use Node 25.5.0 (see .node-version) + pnpm 10.28
 
 # Start dev server (renderer + main process)
 pnpm dev
@@ -207,9 +207,12 @@ Common settings:
 - `ASTERIA_OUTPUT_DIR` — override pipeline results directory
 - `ASTERIA_PIPELINE_CONFIG_PATH` — override `spec/pipeline_config.yaml`
 - `ASTERIA_NORMALIZE_CONCURRENCY` — tune normalization parallelism
+- `ASTERIA_IO_CONCURRENCY` — cap concurrent IO (overlays, sidecars, exports)
 - `ASTERIA_REMOTE_LAYOUT_ENDPOINT` — optional remote layout inference URL
 - `ASTERIA_REMOTE_LAYOUT_TOKEN` — optional auth token for remote inference
 - `ASTERIA_REMOTE_LAYOUT_TIMEOUT_MS` — request timeout in milliseconds
+- `ASTERIA_REMOTE_LAYOUT_MAX_PAYLOAD_MB` — cap remote layout payload size
+- `ASTERIA_REMOTE_LAYOUT_MAX_DIMENSION_PX` — max image dimension for remote layout payloads
 
 ### Rust (Optional)
 
