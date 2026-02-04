@@ -8,6 +8,8 @@ on:
 
 permissions:
   contents: read
+  actions: read
+  pull-requests: read
 
 env:
   PNPM_STORE_DIR: .pnpm-store
