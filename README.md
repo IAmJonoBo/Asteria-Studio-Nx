@@ -36,7 +36,7 @@ graph LR
 - **Image Processing**: Sharp 0.34 (TypeScript), OpenCV (planned Rust)
 - **Pipeline**: Node orchestrator with async queue and recovery
 - **Native**: Rust + N-API bindings (via `napi-rs`, projection + dHash utilities integrated)
-- **Runtime**: Node 25.5.0 + pnpm 10.28 (see `.node-version`, `.nvmrc`, `.tool-versions`)
+- **Runtime**: Node 24.11.1 + pnpm 10.28 (see `.node-version`, `.nvmrc`, `.tool-versions`)
 
 ## Project Structure
 
@@ -160,7 +160,7 @@ pnpm affected:build
 ### CI Helpers
 
 ```bash
-# Local CI-style quality gate (format, lint, typecheck, build, coverage)
+# Local CI-style quality gate (trunk fmt/check, format, lint, typecheck, build, coverage)
 pnpm ci:quality
 
 # E2E smoke tests

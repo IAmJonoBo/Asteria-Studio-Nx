@@ -9,6 +9,7 @@ pnpm typecheck
 pnpm test
 pnpm test:e2e
 pnpm build
+pnpm validate
 ```
 
 ## Nx Usage
@@ -30,12 +31,22 @@ pnpm nx -- run-many -t lint,test,build
 
 - Check formatting: `pnpm format`
 - Apply formatting: `pnpm format:write`
+- Trunk format check: `pnpm trunk:fmt`
 
 ## Golden Corpus Tests
 
 ```bash
 pnpm golden:test
 ```
+
+## Tooling Upgrades
+
+```bash
+pnpm upgrade:stack
+```
+
+This updates workspace dependencies, upgrades Trunk-managed linters, and syncs
+the Node version metadata from the current runtime.
 
 ## Rust (Pipeline Core)
 
