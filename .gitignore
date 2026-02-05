@@ -55,6 +55,10 @@ projects/mind-myth-and-magick/output/
 projects/mind-myth-and-magick/work/
 projects/mind-myth-and-magick/input/**/Pages/
 
+# Stray compiled JS artifacts in TS source tree
+apps/asteria-desktop/src/ipc/corpusAnalysis.js
+apps/asteria-desktop/src/ipc/corpusScanner.js
+
 # Golden corpus artifacts
 .golden-artifacts/
 artifacts/
