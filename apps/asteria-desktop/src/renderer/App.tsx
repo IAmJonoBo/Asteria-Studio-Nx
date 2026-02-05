@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { JSX } from "react";
 import { Navigation, type NavItem } from "./components/Navigation.js";
 import { CommandPalette } from "./components/CommandPalette.js";
@@ -7,7 +7,14 @@ import { ReviewQueueScreen } from "./screens/ReviewQueueScreen.js";
 import { RunsScreen, MonitorScreen, ExportsScreen, SettingsScreen } from "./screens/index.js";
 import { useTheme } from "./hooks/useTheme.js";
 import { useKeyboardShortcut, useKeyboardShortcuts } from "./hooks/useKeyboardShortcut.js";
-import type { ProjectSummary, PipelineRunConfig, RunSummary } from "../ipc/contracts.js";
+import { unwrapIpcResult, unwrapIpcResultOr } from "./utils/ipc.js";
+import type {
+  AppPreferences,
+  IpcResult,
+  ProjectSummary,
+  PipelineRunConfig,
+  RunSummary,
+} from "../ipc/contracts.js";
 
 export function App(): JSX.Element {
   const [theme, setTheme] = useTheme();
@@ -19,6 +26,10 @@ export function App(): JSX.Element {
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [projectsLoading, setProjectsLoading] = useState(true);
   const [projectsError, setProjectsError] = useState<string | null>(null);
+  const [appPreferences, setAppPreferences] = useState<AppPreferences | null>(null);
+  const [onboardingVisible, setOnboardingVisible] = useState(false);
+  const [onboardingBusy, setOnboardingBusy] = useState(false);
+  const [onboardingError, setOnboardingError] = useState<string | null>(null);
 
   useKeyboardShortcut({
     key: "k",
@@ -39,33 +50,83 @@ export function App(): JSX.Element {
     })
   );
 
-  const loadProjects = async (): Promise<void> => {
+  const loadProjects = useCallback(async (): Promise<ProjectSummary[]> => {
     const windowRef: typeof globalThis & { asteria?: { ipc?: Record<string, unknown> } } =
       globalThis;
     if (!windowRef.asteria?.ipc) {
       setProjects([]);
       setProjectsLoading(false);
-      return;
+      return [];
     }
     try {
       setProjectsLoading(true);
       const listProjects = windowRef.asteria.ipc["asteria:list-projects"] as
-        | (() => Promise<ProjectSummary[]>)
+        | (() => Promise<import("../ipc/contracts.js").IpcResult<ProjectSummary[]>>)
         | undefined;
-      const data = listProjects ? await listProjects() : [];
-      setProjects(data);
+      const data: IpcResult<ProjectSummary[]> = listProjects
+        ? await listProjects()
+        : { ok: true, value: [] };
+      if (!data.ok) {
+        setProjects([]);
+        setProjectsError(data.error.message);
+        return [];
+      }
+      setProjects(data.value);
       setProjectsError(null);
+      return data.value;
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to load projects";
       setProjectsError(message);
+      return [];
     } finally {
       setProjectsLoading(false);
     }
-  };
+  }, []);
+
+  const loadPreferences = useCallback(async (): Promise<void> => {
+    const windowRef: typeof globalThis & { asteria?: { ipc?: Record<string, unknown> } } =
+      globalThis;
+    if (!windowRef.asteria?.ipc) return;
+    const getPreferences = windowRef.asteria.ipc["asteria:get-app-preferences"] as
+      | (() => Promise<import("../ipc/contracts.js").IpcResult<AppPreferences>>)
+      | undefined;
+    if (!getPreferences) return;
+    try {
+      const prefsResult = await getPreferences();
+      if (!prefsResult.ok) return;
+      setAppPreferences(prefsResult.value);
+      setOnboardingVisible(!prefsResult.value.firstRunComplete);
+    } catch (error) {
+      console.warn("Failed to load preferences", error);
+    }
+  }, []);
+
+  const updatePreferences = useCallback(
+    async (partial: Partial<AppPreferences>): Promise<AppPreferences | null> => {
+      const windowRef: typeof globalThis & { asteria?: { ipc?: Record<string, unknown> } } =
+        globalThis;
+      if (!windowRef.asteria?.ipc) return null;
+      const setPreferences = windowRef.asteria.ipc["asteria:set-app-preferences"] as
+        | ((
+            prefs: Partial<AppPreferences>
+          ) => Promise<import("../ipc/contracts.js").IpcResult<AppPreferences>>)
+        | undefined;
+      if (!setPreferences) return null;
+      const updatedResult = await setPreferences(partial);
+      if (!updatedResult.ok) {
+        throw new Error(updatedResult.error.message);
+      }
+      setAppPreferences(updatedResult.value);
+      setOnboardingVisible(!updatedResult.value.firstRunComplete);
+      return updatedResult.value;
+    },
+    []
+  );
 
   useEffect(() => {
     void loadProjects();
-  }, []);
+    void loadPreferences();
+  }, [loadPreferences, loadProjects]);
 
   useEffect((): void | (() => void) => {
     const windowRef: typeof globalThis & {
@@ -80,11 +141,11 @@ export function App(): JSX.Element {
         setSelectedRunId(event.runId);
         setSelectedRunDir(undefined);
         const listRuns = windowRef.asteria?.ipc?.["asteria:list-runs"] as
-          | (() => Promise<RunSummary[]>)
+          | (() => Promise<import("../ipc/contracts.js").IpcResult<RunSummary[]>>)
           | undefined;
         if (listRuns) {
           void listRuns()
-            .then((runs) => runs.find((run) => run.runId === event.runId))
+            .then((runs) => unwrapIpcResultOr(runs, []).find((run) => run.runId === event.runId))
             .then((match) => {
               if (match?.runDir) {
                 setSelectedRunDir(match.runDir);
@@ -102,29 +163,193 @@ export function App(): JSX.Element {
     };
   }, []);
 
-  const handleImportCorpus = async (): Promise<void> => {
+  const handleImportCorpus = useCallback(
+    async (options?: { markFirstRunComplete?: boolean }): Promise<ProjectSummary | null> => {
+      const windowRef: typeof globalThis & { asteria?: { ipc?: Record<string, unknown> } } =
+        globalThis;
+      if (!windowRef.asteria?.ipc) return null;
+      const pickCorpusDir = windowRef.asteria.ipc["asteria:pick-corpus-dir"] as
+        | (() => Promise<import("../ipc/contracts.js").IpcResult<string | null>>)
+        | undefined;
+      if (!pickCorpusDir) return null;
+      const importCorpus = windowRef.asteria.ipc["asteria:import-corpus"] as
+        | ((request: {
+            inputPath: string;
+            name?: string;
+          }) => Promise<import("../ipc/contracts.js").IpcResult<ProjectSummary>>)
+        | undefined;
+      if (!importCorpus) return null;
+      try {
+        const inputPathResult = await pickCorpusDir();
+        const inputPath = unwrapIpcResult(inputPathResult, "Pick corpus");
+        if (!inputPath) return null;
+        const rawName = globalThis.prompt("Project name (optional)") ?? "";
+        const trimmedName = rawName.trim();
+        const name = trimmedName.length > 0 ? trimmedName : undefined;
+        const summary = await importCorpus({ inputPath, name });
+        const resolved = unwrapIpcResult(summary, "Import corpus");
+        await loadProjects();
+        if (options?.markFirstRunComplete) {
+          await updatePreferences({ firstRunComplete: true });
+        }
+        return resolved;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Failed to import corpus";
+        globalThis.alert(message);
+        return null;
+      }
+    },
+    [loadProjects, updatePreferences]
+  );
+
+  const handleRevealPath = useCallback(async (targetPath: string): Promise<void> => {
     const windowRef: typeof globalThis & { asteria?: { ipc?: Record<string, unknown> } } =
       globalThis;
     if (!windowRef.asteria?.ipc) return;
-    const pickCorpusDir = windowRef.asteria.ipc["asteria:pick-corpus-dir"] as
-      | (() => Promise<string | null>)
+    const revealPath = windowRef.asteria.ipc["asteria:reveal-path"] as
+      | ((path: string) => Promise<import("../ipc/contracts.js").IpcResult<void>>)
       | undefined;
-    if (!pickCorpusDir) return;
-    const importCorpus = windowRef.asteria.ipc["asteria:import-corpus"] as
-      | ((request: { inputPath: string; name?: string }) => Promise<ProjectSummary>)
+    if (!revealPath) return;
+    const result = await revealPath(targetPath);
+    if (!result.ok) throw new Error(result.error.message);
+  }, []);
+
+  const handleCreateDiagnosticsBundle = useCallback(async (): Promise<void> => {
+    const windowRef: typeof globalThis & { asteria?: { ipc?: Record<string, unknown> } } =
+      globalThis;
+    if (!windowRef.asteria?.ipc) return;
+    const createBundle = windowRef.asteria.ipc["asteria:create-diagnostics-bundle"] as
+      | (() => Promise<import("../ipc/contracts.js").IpcResult<{ bundlePath: string }>>)
       | undefined;
-    if (!importCorpus) return;
+    if (!createBundle) return;
     try {
-      const inputPath = await pickCorpusDir();
-      if (!inputPath) return;
-      const name = globalThis.prompt("Project name (optional)") ?? undefined;
-      await importCorpus({ inputPath, name });
-      await loadProjects();
+      const bundleResult = await createBundle();
+      const { bundlePath } = unwrapIpcResult(bundleResult, "Create diagnostics bundle");
+      const clipboard = globalThis.navigator?.clipboard;
+      if (clipboard?.writeText) {
+        await clipboard.writeText(bundlePath);
+      }
+      await handleRevealPath(bundlePath);
+      globalThis.alert("Diagnostics bundle created. Path copied to clipboard.");
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Failed to import corpus";
+      const message = error instanceof Error ? error.message : "Failed to create diagnostics";
       globalThis.alert(message);
     }
+  }, [handleRevealPath]);
+
+  const handleProvisionSampleCorpus = async (): Promise<void> => {
+    const windowRef: typeof globalThis & { asteria?: { ipc?: Record<string, unknown> } } =
+      globalThis;
+    if (!windowRef.asteria?.ipc) return;
+    const provisionSample = windowRef.asteria.ipc["asteria:provision-sample-corpus"] as
+      | (() => Promise<
+          import("../ipc/contracts.js").IpcResult<{ projectId: string; inputPath: string }>
+        >)
+      | undefined;
+    if (!provisionSample) return;
+    setOnboardingBusy(true);
+    setOnboardingError(null);
+    try {
+      const provisionedResult = await provisionSample();
+      const provisioned = unwrapIpcResult(provisionedResult, "Provision sample corpus");
+      const updatedProjects = await loadProjects();
+      const project =
+        updatedProjects.find((item) => item.id === provisioned.projectId) ?? updatedProjects[0];
+      await updatePreferences({ firstRunComplete: true, sampleCorpusInstalled: true });
+      setOnboardingVisible(false);
+      if (project) {
+        setActiveProjectId(project.id);
+        setActiveScreen("runs");
+        await handleStartRun(project);
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to provision sample";
+      setOnboardingError(message);
+    } finally {
+      setOnboardingBusy(false);
+    }
   };
+
+  const dispatchReviewViewEvent = useCallback(
+    (eventName: string): void => {
+      if (activeScreen !== "review") {
+        setActiveScreen("review");
+      }
+      globalThis.dispatchEvent(new globalThis.CustomEvent(eventName));
+    },
+    [activeScreen]
+  );
+
+  const handleMenuAction = useCallback(
+    (actionId: string): void => {
+      switch (actionId) {
+        case "app:preferences":
+          setActiveScreen("settings");
+          break;
+        case "file:import-corpus":
+          void handleImportCorpus();
+          break;
+        case "file:export-run":
+          setActiveScreen("exports");
+          break;
+        case "file:open-current-run":
+          if (selectedRunDir) {
+            void handleRevealPath(selectedRunDir);
+          } else {
+            globalThis.alert("Select a run to open its folder.");
+          }
+          break;
+        case "view:toggle-overlays":
+          dispatchReviewViewEvent("asteria:toggle-overlays");
+          break;
+        case "view:toggle-guides":
+          dispatchReviewViewEvent("asteria:toggle-guides");
+          break;
+        case "view:toggle-rulers":
+          dispatchReviewViewEvent("asteria:toggle-rulers");
+          break;
+        case "view:toggle-snapping":
+          dispatchReviewViewEvent("asteria:toggle-snapping");
+          break;
+        case "view:reset-view":
+          dispatchReviewViewEvent("asteria:reset-view");
+          break;
+        case "help:open-logs":
+          void handleRevealPath("logs");
+          break;
+        case "help:diagnostics":
+          void handleCreateDiagnosticsBundle();
+          break;
+        case "help:shortcuts":
+          globalThis.alert(
+            "Keyboard shortcuts:\n\nJ/K = Navigate review queue\nA/F/R = Accept/Flag/Reject\nSpace = Toggle overlays\nG = Toggle guides\nShift+G = Toggle rulers\nS = Toggle snapping\nCtrl/Cmd+K = Command palette"
+          );
+          break;
+        default:
+          break;
+      }
+    },
+    [
+      dispatchReviewViewEvent,
+      selectedRunDir,
+      handleImportCorpus,
+      handleCreateDiagnosticsBundle,
+      handleRevealPath,
+    ]
+  );
+
+  useEffect((): void | (() => void) => {
+    const windowRef: typeof globalThis & {
+      asteria?: {
+        onMenuAction?: (handler: (actionId: string) => void) => () => void;
+      };
+    } = globalThis;
+    if (!windowRef.asteria?.onMenuAction) return;
+    const unsubscribe = windowRef.asteria.onMenuAction(handleMenuAction);
+    return () => {
+      unsubscribe?.();
+    };
+  }, [handleMenuAction]);
 
   const handleStartRun = async (project?: ProjectSummary): Promise<void> => {
     const selectedProject =
@@ -133,33 +358,51 @@ export function App(): JSX.Element {
       globalThis.alert("Select a project to start a run.");
       return;
     }
+    const parsePromptNumber = (value: string | null, fallback: number): number => {
+      const trimmed = (value ?? "").trim();
+      if (!trimmed) return fallback;
+      const parsed = Number(trimmed);
+      return Number.isFinite(parsed) ? parsed : fallback;
+    };
     const windowRef: typeof globalThis & { asteria?: { ipc?: Record<string, unknown> } } =
       globalThis;
     if (!windowRef.asteria?.ipc) return;
     const scanCorpus = windowRef.asteria.ipc["asteria:scan-corpus"] as
-      | ((rootPath: string, options?: { projectId?: string }) => Promise<PipelineRunConfig>)
+      | ((
+          rootPath: string,
+          options?: { projectId?: string }
+        ) => Promise<import("../ipc/contracts.js").IpcResult<PipelineRunConfig>>)
       | undefined;
     const analyzeCorpus = windowRef.asteria.ipc["asteria:analyze-corpus"] as
-      | ((config: PipelineRunConfig) => Promise<{
-          inferredDimensionsMm?: { width: number; height: number };
-          inferredDpi?: number;
-          dimensionConfidence?: number;
-          dpiConfidence?: number;
-          targetDimensionsMm: { width: number; height: number };
-          dpi: number;
-        }>)
+      | ((config: PipelineRunConfig) => Promise<
+          import("../ipc/contracts.js").IpcResult<{
+            inferredDimensionsMm?: { width: number; height: number };
+            inferredDpi?: number;
+            dimensionConfidence?: number;
+            dpiConfidence?: number;
+            targetDimensionsMm: { width: number; height: number };
+            dpi: number;
+          }>
+        >)
       | undefined;
     const startRun = windowRef.asteria.ipc["asteria:start-run"] as
-      | ((config: PipelineRunConfig) => Promise<{ runId: string; runDir: string }>)
+      | ((config: PipelineRunConfig) => Promise<
+          import("../ipc/contracts.js").IpcResult<{
+            runId: string;
+            runDir: string;
+          }>
+        >)
       | undefined;
     if (!scanCorpus || !startRun) return;
     try {
-      const scanConfig = await scanCorpus(selectedProject.inputPath, {
+      const scanConfigResult = await scanCorpus(selectedProject.inputPath, {
         projectId: selectedProject.id,
       });
+      const scanConfig = unwrapIpcResult(scanConfigResult, "Scan corpus");
       let effectiveConfig = scanConfig;
       if (analyzeCorpus) {
-        const analysis = await analyzeCorpus(scanConfig);
+        const analysisResult = await analyzeCorpus(scanConfig);
+        const analysis = unwrapIpcResult(analysisResult, "Analyze corpus");
         if (analysis.inferredDimensionsMm || analysis.inferredDpi) {
           const inferredDimensions = analysis.inferredDimensionsMm ?? analysis.targetDimensionsMm;
           const inferredDpi = analysis.inferredDpi ?? analysis.dpi;
@@ -191,31 +434,30 @@ export function App(): JSX.Element {
               "Override target DPI",
               String(scanConfig.targetDpi)
             );
-            const parsedWidth = widthOverride
-              ? Number(widthOverride)
-              : scanConfig.targetDimensionsMm.width;
-            const parsedHeight = heightOverride
-              ? Number(heightOverride)
-              : scanConfig.targetDimensionsMm.height;
-            const parsedDpi = dpiOverride ? Number(dpiOverride) : scanConfig.targetDpi;
+            const parsedWidth = parsePromptNumber(
+              widthOverride,
+              scanConfig.targetDimensionsMm.width
+            );
+            const parsedHeight = parsePromptNumber(
+              heightOverride,
+              scanConfig.targetDimensionsMm.height
+            );
+            const parsedDpi = parsePromptNumber(dpiOverride, scanConfig.targetDpi);
             effectiveConfig = {
               ...scanConfig,
               targetDimensionsMm: {
-                width: Number.isFinite(parsedWidth)
-                  ? parsedWidth
-                  : scanConfig.targetDimensionsMm.width,
-                height: Number.isFinite(parsedHeight)
-                  ? parsedHeight
-                  : scanConfig.targetDimensionsMm.height,
+                width: parsedWidth,
+                height: parsedHeight,
               },
-              targetDpi: Number.isFinite(parsedDpi) ? parsedDpi : scanConfig.targetDpi,
+              targetDpi: parsedDpi,
             };
           }
         }
       }
       const runResult = await startRun(effectiveConfig);
-      setSelectedRunId(runResult.runId);
-      setSelectedRunDir(runResult.runDir);
+      const runPayload = unwrapIpcResult(runResult, "Start run");
+      setSelectedRunId(runPayload.runId);
+      setSelectedRunDir(runPayload.runDir);
       setActiveProjectId(selectedProject.id);
       setActiveScreen("runs");
     } catch (error) {
@@ -299,6 +541,50 @@ export function App(): JSX.Element {
         void handleStartRun();
       },
     },
+    {
+      id: "view-toggle-guides",
+      label: "Toggle Guides",
+      category: "View",
+      shortcut: "G",
+      action: (): void => dispatchReviewViewEvent("asteria:toggle-guides"),
+    },
+    {
+      id: "view-toggle-rulers",
+      label: "Toggle Rulers",
+      category: "View",
+      shortcut: "Shift+G",
+      action: (): void => dispatchReviewViewEvent("asteria:toggle-rulers"),
+    },
+    {
+      id: "view-toggle-snapping",
+      label: "Toggle Snapping",
+      category: "View",
+      shortcut: "S",
+      action: (): void => dispatchReviewViewEvent("asteria:toggle-snapping"),
+    },
+    {
+      id: "view-reset",
+      label: "Reset View",
+      category: "View",
+      shortcut: "0",
+      action: (): void => dispatchReviewViewEvent("asteria:reset-view"),
+    },
+    {
+      id: "diagnostics",
+      label: "Create Diagnostics Bundle",
+      category: "Help",
+      action: (): void => {
+        void handleCreateDiagnosticsBundle();
+      },
+    },
+    {
+      id: "open-logs",
+      label: "Open Logs Folder",
+      category: "Help",
+      action: (): void => {
+        void handleRevealPath("logs");
+      },
+    },
   ];
 
   return (
@@ -323,6 +609,63 @@ export function App(): JSX.Element {
         </header>
 
         <main className="app-content">
+          {onboardingVisible && !appPreferences?.firstRunComplete && (
+            <div
+              role="dialog"
+              aria-modal="true"
+              aria-label="Welcome to Asteria Studio"
+              style={{
+                position: "fixed",
+                inset: 0,
+                zIndex: 1400,
+                background: "rgba(4, 8, 20, 0.7)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                padding: "24px",
+              }}
+            >
+              <div
+                className="card"
+                style={{
+                  width: "100%",
+                  maxWidth: "640px",
+                  display: "grid",
+                  gap: "16px",
+                  padding: "24px",
+                }}
+              >
+                <div>
+                  <h2 style={{ margin: 0, fontSize: "22px" }}>Welcome to Asteria Studio</h2>
+                  <p style={{ marginTop: "8px", color: "var(--text-secondary)" }}>
+                    Start with the bundled sample project or bring your own corpus to begin a run.
+                  </p>
+                </div>
+                {onboardingError && (
+                  <div className="card" style={{ borderColor: "var(--color-error)" }}>
+                    <strong style={{ color: "var(--color-error)" }}>Setup failed</strong>
+                    <p style={{ marginTop: "8px" }}>{onboardingError}</p>
+                  </div>
+                )}
+                <div style={{ display: "flex", gap: "12px", flexWrap: "wrap" }}>
+                  <button
+                    className="btn btn-primary"
+                    onClick={() => void handleProvisionSampleCorpus()}
+                    disabled={onboardingBusy}
+                  >
+                    {onboardingBusy ? "Provisioning…" : "Run Sample Project"}
+                  </button>
+                  <button
+                    className="btn btn-secondary"
+                    onClick={() => void handleImportCorpus({ markFirstRunComplete: true })}
+                    disabled={onboardingBusy}
+                  >
+                    Import Your Corpus
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
           {activeScreen === "projects" && (
             <ProjectsScreen
               onImportCorpus={handleImportCorpus}
