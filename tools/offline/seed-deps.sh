@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2250
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 ARCHIVE_PATH="${1:-$ROOT_DIR/artifacts/offline-deps.tgz}"
 STORE_DIR="${PNPM_STORE_DIR:-$ROOT_DIR/.pnpm-store}"
 
-if [[ "$STORE_DIR" != "$ROOT_DIR/"* ]]; then
+if [[ $STORE_DIR != "$ROOT_DIR/"* ]]; then
   echo "PNPM_STORE_DIR must be inside the repo to package it: $STORE_DIR" >&2
   exit 1
 fi

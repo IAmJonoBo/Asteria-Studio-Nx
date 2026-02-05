@@ -9,7 +9,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 export default tseslint.config(
   {
-    ignores: ["dist", "coverage", "node_modules"],
+    ignores: ["dist", "coverage", "node_modules", "tests/golden"],
   },
   {
     files: ["src/**/*.{ts,tsx}"],
@@ -58,6 +58,7 @@ export default tseslint.config(
       ...react.configs.recommended.rules,
       ...reactHooks.configs.recommended.rules,
       "react/react-in-jsx-scope": "off",
+      "no-undef": "off",
       "no-unused-vars": "off",
       "@typescript-eslint/no-unused-vars": [
         "error",

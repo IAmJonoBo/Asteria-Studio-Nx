@@ -48,10 +48,5 @@
     "@typescript-eslint/parser",
     "typescript-eslint"
   ],
-  "ignoreBinaries": [
-    "affected",
-    "build:main",
-    "playwright",
-    "trunk"
-  ]
+  "ignoreBinaries": ["affected", "build:main", "playwright", "trunk"]
 }

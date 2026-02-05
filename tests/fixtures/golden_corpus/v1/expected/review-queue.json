@@ -10,11 +10,7 @@
       "layoutConfidence": 0.9709031971670792,
       "qualityGate": {
         "accepted": false,
-        "reasons": [
-          "low-shading-confidence",
-          "shading-low-confidence",
-          "confidence-gate"
-        ]
+        "reasons": ["low-shading-confidence", "shading-low-confidence", "confidence-gate"]
       },
       "reason": "quality-gate",
       "previews": [
@@ -46,11 +42,7 @@
       "layoutConfidence": 0.9714534143415399,
       "qualityGate": {
         "accepted": false,
-        "reasons": [
-          "low-shading-confidence",
-          "shading-low-confidence",
-          "confidence-gate"
-        ]
+        "reasons": ["low-shading-confidence", "shading-low-confidence", "confidence-gate"]
       },
       "reason": "quality-gate",
       "previews": [
@@ -82,11 +74,7 @@
       "layoutConfidence": 0.9680819570223664,
       "qualityGate": {
         "accepted": false,
-        "reasons": [
-          "low-shading-confidence",
-          "shading-low-confidence",
-          "confidence-gate"
-        ]
+        "reasons": ["low-shading-confidence", "shading-low-confidence", "confidence-gate"]
       },
       "reason": "quality-gate",
       "previews": [
@@ -118,11 +106,7 @@
       "layoutConfidence": 0.9716591375810646,
       "qualityGate": {
         "accepted": false,
-        "reasons": [
-          "low-shading-confidence",
-          "shading-low-confidence",
-          "confidence-gate"
-        ]
+        "reasons": ["low-shading-confidence", "shading-low-confidence", "confidence-gate"]
       },
       "reason": "quality-gate",
       "previews": [
@@ -304,11 +288,7 @@
       "layoutConfidence": 0.954884853511017,
       "qualityGate": {
         "accepted": false,
-        "reasons": [
-          "low-shading-confidence",
-          "shading-low-confidence",
-          "confidence-gate"
-        ]
+        "reasons": ["low-shading-confidence", "shading-low-confidence", "confidence-gate"]
       },
       "reason": "quality-gate",
       "previews": [
@@ -377,11 +357,7 @@
       "layoutConfidence": 0.97004886795981,
       "qualityGate": {
         "accepted": false,
-        "reasons": [
-          "low-shading-confidence",
-          "shading-low-confidence",
-          "confidence-gate"
-        ]
+        "reasons": ["low-shading-confidence", "shading-low-confidence", "confidence-gate"]
       },
       "reason": "quality-gate",
       "previews": [
@@ -413,11 +389,7 @@
       "layoutConfidence": 0.9691641325161281,
       "qualityGate": {
         "accepted": false,
-        "reasons": [
-          "low-shading-confidence",
-          "shading-low-confidence",
-          "confidence-gate"
-        ]
+        "reasons": ["low-shading-confidence", "shading-low-confidence", "confidence-gate"]
       },
       "reason": "quality-gate",
       "previews": [
@@ -449,11 +421,7 @@
       "layoutConfidence": 0.9648157515302409,
       "qualityGate": {
         "accepted": false,
-        "reasons": [
-          "low-shading-confidence",
-          "shading-low-confidence",
-          "confidence-gate"
-        ]
+        "reasons": ["low-shading-confidence", "shading-low-confidence", "confidence-gate"]
       },
       "reason": "quality-gate",
       "previews": [

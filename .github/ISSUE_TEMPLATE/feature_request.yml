@@ -1,7 +1,8 @@
+# yamllint disable rule:quoted-strings
 name: Feature request
 description: Suggest an idea or improvement
-title: "[Feature]: "
-labels: ["enhancement"]
+title: [Feature]
+labels: [enhancement]
 assignees: []
 body:
   - type: markdown

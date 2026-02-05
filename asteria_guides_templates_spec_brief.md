@@ -359,7 +359,7 @@ Assign each page:
 - Coordinate mapping (normalized px ↔ preview coords)
 - Snapping engine: snap-zone behaviour, priority ordering, disable modifier
 
-### Integration tests
+### Integration tests (guides)
 
 - End-to-end artifact scoping: two runs must not collide
 - IPC run-aware fetch: fetch-page and fetch-sidecar read correct runDir
@@ -381,7 +381,7 @@ Assign each page:
 
 ## 7) Config and docs
 
-### Config
+### Config updates
 
 - Add/extend config sections:
   - `steps.baseline_grid` (confidence floor, peak params)

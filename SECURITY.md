@@ -4,11 +4,11 @@
 
 We provide security updates for:
 
-| Version | Supported |
-| --- | --- |
-| `main` (rolling) | Yes |
-| Latest tagged release (if any) | Yes |
-| Older releases | No |
+| Version                        | Supported |
+| ------------------------------ | --------- |
+| `main` (rolling)               | Yes       |
+| Latest tagged release (if any) | Yes       |
+| Older releases                 | No        |
 
 ## Reporting a Vulnerability
 

@@ -10,7 +10,7 @@
     "esModuleInterop": true,
     "skipLibCheck": true,
     "outDir": "dist",
-    "types": ["node", "@testing-library/jest-dom", "react", "react-dom"]
+    "types": ["node", "vitest/globals", "@testing-library/jest-dom/vitest", "react", "react-dom"]
   },
   "include": ["src"],
   "exclude": ["dist", "node_modules"]

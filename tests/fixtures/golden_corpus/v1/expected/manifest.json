@@ -32,9 +32,7 @@
         },
         "ocr": {
           "engine": "tesseract",
-          "languages": [
-            "eng"
-          ]
+          "languages": ["eng"]
         },
         "detector": {
           "name": "layout-detector",
@@ -141,10 +139,7 @@
         }
       },
       "export": {
-        "formats": [
-          "png",
-          "tiff"
-        ],
+        "formats": ["png", "tiff"],
         "include_pdf": true,
         "include_json_sidecars": true,
         "naming": "{projectId}_{pageId}_{runId}"
@@ -322,18 +317,8 @@
         "heightPx": 3075,
         "bleedPx": 35.433,
         "trimPx": 0,
-        "pageBounds": [
-          0,
-          0,
-          2175,
-          3075
-        ],
-        "contentBounds": [
-          35.433,
-          35.433,
-          2139.567,
-          3039.567
-        ]
+        "pageBounds": [0, 0, 2175, 3075],
+        "contentBounds": [35.433, 35.433, 2139.567, 3039.567]
       },
       {
         "pageId": "p02_clean_double",
@@ -341,18 +326,8 @@
         "heightPx": 3075,
         "bleedPx": 35.433,
         "trimPx": 0,
-        "pageBounds": [
-          0,
-          0,
-          2175,
-          3075
-        ],
-        "contentBounds": [
-          35.433,
-          35.433,
-          2139.567,
-          3039.567
-        ]
+        "pageBounds": [0, 0, 2175, 3075],
+        "contentBounds": [35.433, 35.433, 2139.567, 3039.567]
       },
       {
         "pageId": "p03_running_head_folio",
@@ -360,18 +335,8 @@
         "heightPx": 3075,
         "bleedPx": 35.433,
         "trimPx": 0,
-        "pageBounds": [
-          0,
-          0,
-          2175,
-          3075
-        ],
-        "contentBounds": [
-          35.433,
-          35.433,
-          2139.567,
-          3039.567
-        ]
+        "pageBounds": [0, 0, 2175, 3075],
+        "contentBounds": [35.433, 35.433, 2139.567, 3039.567]
       },
       {
         "pageId": "p04_ornament",
@@ -379,18 +344,8 @@
         "heightPx": 3075,
         "bleedPx": 35.433,
         "trimPx": 0,
-        "pageBounds": [
-          0,
-          0,
-          2175,
-          3075
-        ],
-        "contentBounds": [
-          35.433,
-          35.433,
-          2139.567,
-          3039.567
-        ]
+        "pageBounds": [0, 0, 2175, 3075],
+        "contentBounds": [35.433, 35.433, 2139.567, 3039.567]
       },
       {
         "pageId": "p05_footnotes_marginalia",
@@ -398,18 +353,8 @@
         "heightPx": 3075,
         "bleedPx": 35.433,
         "trimPx": 0,
-        "pageBounds": [
-          0,
-          0,
-          2175,
-          3075
-        ],
-        "contentBounds": [
-          35.433,
-          35.433,
-          2139.567,
-          3039.567
-        ]
+        "pageBounds": [0, 0, 2175, 3075],
+        "contentBounds": [35.433, 35.433, 2139.567, 3039.567]
       },
       {
         "pageId": "p06_blank_verso",
@@ -417,18 +362,8 @@
         "heightPx": 3075,
         "bleedPx": 35.433,
         "trimPx": 0,
-        "pageBounds": [
-          0,
-          0,
-          2175,
-          3075
-        ],
-        "contentBounds": [
-          35.433,
-          35.433,
-          2139.567,
-          3039.567
-        ]
+        "pageBounds": [0, 0, 2175, 3075],
+        "contentBounds": [35.433, 35.433, 2139.567, 3039.567]
       },
       {
         "pageId": "p07_plate",
@@ -436,18 +371,8 @@
         "heightPx": 3075,
         "bleedPx": 35.433,
         "trimPx": 0,
-        "pageBounds": [
-          0,
-          0,
-          2175,
-          3075
-        ],
-        "contentBounds": [
-          35.433,
-          35.433,
-          2139.567,
-          3039.567
-        ]
+        "pageBounds": [0, 0, 2175, 3075],
+        "contentBounds": [35.433, 35.433, 2139.567, 3039.567]
       },
       {
         "pageId": "p08_shadow_left",
@@ -455,18 +380,8 @@
         "heightPx": 3075,
         "bleedPx": 35.433,
         "trimPx": 0,
-        "pageBounds": [
-          0,
-          0,
-          2175,
-          3075
-        ],
-        "contentBounds": [
-          35.433,
-          35.433,
-          2139.567,
-          3039.567
-        ]
+        "pageBounds": [0, 0, 2175, 3075],
+        "contentBounds": [35.433, 35.433, 2139.567, 3039.567]
       },
       {
         "pageId": "p09_shadow_right",
@@ -474,18 +389,8 @@
         "heightPx": 3075,
         "bleedPx": 35.433,
         "trimPx": 0,
-        "pageBounds": [
-          0,
-          0,
-          2175,
-          3075
-        ],
-        "contentBounds": [
-          35.433,
-          35.433,
-          2139.567,
-          3039.567
-        ]
+        "pageBounds": [0, 0, 2175, 3075],
+        "contentBounds": [35.433, 35.433, 2139.567, 3039.567]
       },
       {
         "pageId": "p10_spread_dark_gutter",
@@ -493,18 +398,8 @@
         "heightPx": 3075,
         "bleedPx": 35.433,
         "trimPx": 0,
-        "pageBounds": [
-          0,
-          0,
-          2175,
-          3075
-        ],
-        "contentBounds": [
-          35.433,
-          35.433,
-          2139.567,
-          3039.567
-        ]
+        "pageBounds": [0, 0, 2175, 3075],
+        "contentBounds": [35.433, 35.433, 2139.567, 3039.567]
       },
       {
         "pageId": "p11_curved_warp",
@@ -512,18 +407,8 @@
         "heightPx": 3075,
         "bleedPx": 35.433,
         "trimPx": 0,
-        "pageBounds": [
-          0,
-          0,
-          2175,
-          3075
-        ],
-        "contentBounds": [
-          35.433,
-          35.433,
-          2139.567,
-          3039.567
-        ]
+        "pageBounds": [0, 0, 2175, 3075],
+        "contentBounds": [35.433, 35.433, 2139.567, 3039.567]
       },
       {
         "pageId": "p12_rot_perspective",
@@ -531,18 +416,8 @@
         "heightPx": 3075,
         "bleedPx": 35.433,
         "trimPx": 0,
-        "pageBounds": [
-          0,
-          0,
-          2175,
-          3075
-        ],
-        "contentBounds": [
-          35.433,
-          35.433,
-          2139.567,
-          3039.567
-        ]
+        "pageBounds": [0, 0, 2175, 3075],
+        "contentBounds": [35.433, 35.433, 2139.567, 3039.567]
       },
       {
         "pageId": "p13_rotation_only",
@@ -550,18 +425,8 @@
         "heightPx": 3075,
         "bleedPx": 35.433,
         "trimPx": 0,
-        "pageBounds": [
-          0,
-          0,
-          2175,
-          3075
-        ],
-        "contentBounds": [
-          35.433,
-          35.433,
-          2139.567,
-          3039.567
-        ]
+        "pageBounds": [0, 0, 2175, 3075],
+        "contentBounds": [35.433, 35.433, 2139.567, 3039.567]
       },
       {
         "pageId": "p14_spread_light_gutter",
@@ -569,18 +434,8 @@
         "heightPx": 3075,
         "bleedPx": 35.433,
         "trimPx": 0,
-        "pageBounds": [
-          0,
-          0,
-          2175,
-          3075
-        ],
-        "contentBounds": [
-          35.433,
-          35.433,
-          2139.567,
-          3039.567
-        ]
+        "pageBounds": [0, 0, 2175, 3075],
+        "contentBounds": [35.433, 35.433, 2139.567, 3039.567]
       },
       {
         "pageId": "p15_crop_adjustment",
@@ -588,18 +443,8 @@
         "heightPx": 3075,
         "bleedPx": 35.433,
         "trimPx": 0,
-        "pageBounds": [
-          0,
-          0,
-          2175,
-          3075
-        ],
-        "contentBounds": [
-          35.433,
-          35.433,
-          2139.567,
-          3039.567
-        ]
+        "pageBounds": [0, 0, 2175, 3075],
+        "contentBounds": [35.433, 35.433, 2139.567, 3039.567]
       },
       {
         "pageId": "p16_overlay_elements",
@@ -607,18 +452,8 @@
         "heightPx": 3075,
         "bleedPx": 35.433,
         "trimPx": 0,
-        "pageBounds": [
-          0,
-          0,
-          2175,
-          3075
-        ],
-        "contentBounds": [
-          35.433,
-          35.433,
-          2139.567,
-          3039.567
-        ]
+        "pageBounds": [0, 0, 2175, 3075],
+        "contentBounds": [35.433, 35.433, 2139.567, 3039.567]
       }
     ],
     "notes": "Corpus analysis uses target dimensions and probed image dimensions to seed layout bounds; replace with CV outputs when ready."
@@ -636,10 +471,7 @@
       "checksum": "58c57745d903d83c167d8567ac91e10484850049eb939d1db119759620a234b1",
       "dhash": "e6e6cee6eeeec6ee",
       "normalizedFile": "p02_clean_double.png",
-      "previews": [
-        "p02_clean_double-source.png",
-        "p02_clean_double-normalized.png"
-      ],
+      "previews": ["p02_clean_double-source.png", "p02_clean_double-normalized.png"],
       "stages": {
         "preprocess": {
           "backgroundMean": 244.57348292031912,
@@ -671,9 +503,7 @@
         },
         "confidenceGate": {
           "passed": false,
-          "reasons": [
-            "shading-low-confidence"
-          ]
+          "reasons": ["shading-low-confidence"]
         }
       }
     },
@@ -682,10 +512,7 @@
       "checksum": "a7551a51ec1169ea5cd079463683ed6624e482dfa7a24cec3f1ccc6de5c50991",
       "dhash": "f2f2f2f67ef2f2f2",
       "normalizedFile": "p01_clean_single.png",
-      "previews": [
-        "p01_clean_single-source.png",
-        "p01_clean_single-normalized.png"
-      ],
+      "previews": ["p01_clean_single-source.png", "p01_clean_single-normalized.png"],
       "stages": {
         "preprocess": {
           "backgroundMean": 244.57512470646577,
@@ -717,9 +544,7 @@
         },
         "confidenceGate": {
           "passed": false,
-          "reasons": [
-            "shading-low-confidence"
-          ]
+          "reasons": ["shading-low-confidence"]
         }
       }
     },
@@ -728,10 +553,7 @@
       "checksum": "0025d981375e81f9f8efa71de2ecfdf1df62747d8c2217dc909e0df186d8ae7d",
       "dhash": "faf2f2f2f2fafafa",
       "normalizedFile": "p04_ornament.png",
-      "previews": [
-        "p04_ornament-source.png",
-        "p04_ornament-normalized.png"
-      ],
+      "previews": ["p04_ornament-source.png", "p04_ornament-normalized.png"],
       "stages": {
         "preprocess": {
           "backgroundMean": 244.57266795262612,
@@ -763,9 +585,7 @@
         },
         "confidenceGate": {
           "passed": false,
-          "reasons": [
-            "shading-low-confidence"
-          ]
+          "reasons": ["shading-low-confidence"]
         }
       }
     },
@@ -809,9 +629,7 @@
         },
         "confidenceGate": {
           "passed": false,
-          "reasons": [
-            "shading-low-confidence"
-          ]
+          "reasons": ["shading-low-confidence"]
         }
       }
     },
@@ -820,10 +638,7 @@
       "checksum": "f61a7f28fa1e11b7c562ece90c8bcabfd22fcc9246f32678ef34a4726039359f",
       "dhash": "eee2fafafa72fafa",
       "normalizedFile": "p03_running_head_folio.png",
-      "previews": [
-        "p03_running_head_folio-source.png",
-        "p03_running_head_folio-normalized.png"
-      ],
+      "previews": ["p03_running_head_folio-source.png", "p03_running_head_folio-normalized.png"],
       "stages": {
         "preprocess": {
           "backgroundMean": 220.57258590889865,
@@ -855,9 +670,7 @@
         },
         "confidenceGate": {
           "passed": false,
-          "reasons": [
-            "shading-low-confidence"
-          ]
+          "reasons": ["shading-low-confidence"]
         }
       }
     },
@@ -866,10 +679,7 @@
       "checksum": "16cf5b92d3594a86705d10784ea95a34dae8b6605c4f32f3e2d8255ef232564d",
       "dhash": "0000000000000000",
       "normalizedFile": "p06_blank_verso.png",
-      "previews": [
-        "p06_blank_verso-source.png",
-        "p06_blank_verso-normalized.png"
-      ],
+      "previews": ["p06_blank_verso-source.png", "p06_blank_verso-normalized.png"],
       "stages": {
         "preprocess": {
           "backgroundMean": 247.4147465395779,
@@ -901,10 +711,7 @@
         },
         "confidenceGate": {
           "passed": false,
-          "reasons": [
-            "deskew-low-confidence",
-            "shading-low-confidence"
-          ]
+          "reasons": ["deskew-low-confidence", "shading-low-confidence"]
         }
       }
     },
@@ -913,10 +720,7 @@
       "checksum": "17b2ff36ffaa6c64cfe8939d3d9a72eba256b30a943bd151f0ca113b9f5e68b8",
       "dhash": "f27a72727272f272",
       "normalizedFile": "p09_shadow_right.png",
-      "previews": [
-        "p09_shadow_right-source.png",
-        "p09_shadow_right-normalized.png"
-      ],
+      "previews": ["p09_shadow_right-source.png", "p09_shadow_right-normalized.png"],
       "stages": {
         "preprocess": {
           "backgroundMean": 217.1215049372092,
@@ -948,9 +752,7 @@
         },
         "confidenceGate": {
           "passed": false,
-          "reasons": [
-            "shading-low-confidence"
-          ]
+          "reasons": ["shading-low-confidence"]
         }
       }
     },
@@ -959,10 +761,7 @@
       "checksum": "aaa5191637d703a9e5a6bb744d33cb8333901e4468db460c41535c04c3c4f769",
       "dhash": "f6fafafafafafafe",
       "normalizedFile": "p08_shadow_left.png",
-      "previews": [
-        "p08_shadow_left-source.png",
-        "p08_shadow_left-normalized.png"
-      ],
+      "previews": ["p08_shadow_left-source.png", "p08_shadow_left-normalized.png"],
       "stages": {
         "preprocess": {
           "backgroundMean": 218.09045320955062,
@@ -994,9 +793,7 @@
         },
         "confidenceGate": {
           "passed": false,
-          "reasons": [
-            "shading-low-confidence"
-          ]
+          "reasons": ["shading-low-confidence"]
         }
       }
     },
@@ -1005,10 +802,7 @@
       "checksum": "22576299e142c6d76d47bec499e85f9eff0205e9ac2586fbc047d3e9e25275e6",
       "dhash": "fefefefefefefefe",
       "normalizedFile": "p07_plate.png",
-      "previews": [
-        "p07_plate-source.png",
-        "p07_plate-normalized.png"
-      ],
+      "previews": ["p07_plate-source.png", "p07_plate-normalized.png"],
       "stages": {
         "preprocess": {
           "backgroundMean": 244.58207563337757,
@@ -1040,10 +834,7 @@
         },
         "confidenceGate": {
           "passed": false,
-          "reasons": [
-            "deskew-low-confidence",
-            "shading-low-confidence"
-          ]
+          "reasons": ["deskew-low-confidence", "shading-low-confidence"]
         }
       }
     },
@@ -1052,10 +843,7 @@
       "checksum": "2aa5b3a79608210306d4293d4be616a07f145d1bc97436fcdbe6139522c0af54",
       "dhash": "cecececececec6ce",
       "normalizedFile": "p10_spread_dark_gutter.png",
-      "previews": [
-        "p10_spread_dark_gutter-source.png",
-        "p10_spread_dark_gutter-normalized.png"
-      ],
+      "previews": ["p10_spread_dark_gutter-source.png", "p10_spread_dark_gutter-normalized.png"],
       "stages": {
         "preprocess": {
           "backgroundMean": 243.05459901206,
@@ -1087,9 +875,7 @@
         },
         "confidenceGate": {
           "passed": false,
-          "reasons": [
-            "shading-low-confidence"
-          ]
+          "reasons": ["shading-low-confidence"]
         }
       }
     },
@@ -1098,10 +884,7 @@
       "checksum": "91e8f2a191938536e153bd6df2c6a4c9e9c299795aec479604f143d079c4573a",
       "dhash": "f2fafafafaf2faf2",
       "normalizedFile": "p11_curved_warp.png",
-      "previews": [
-        "p11_curved_warp-source.png",
-        "p11_curved_warp-normalized.png"
-      ],
+      "previews": ["p11_curved_warp-source.png", "p11_curved_warp-normalized.png"],
       "stages": {
         "preprocess": {
           "backgroundMean": 244.86293866046296,
@@ -1133,9 +916,7 @@
         },
         "confidenceGate": {
           "passed": false,
-          "reasons": [
-            "shading-low-confidence"
-          ]
+          "reasons": ["shading-low-confidence"]
         }
       }
     },
@@ -1144,10 +925,7 @@
       "checksum": "389ad52c1564a766c70eafb35a1bd5766b321194697a3d140ce673510bc8fad1",
       "dhash": "f4f4fcfcfcf8f2fa",
       "normalizedFile": "p12_rot_perspective.png",
-      "previews": [
-        "p12_rot_perspective-source.png",
-        "p12_rot_perspective-normalized.png"
-      ],
+      "previews": ["p12_rot_perspective-source.png", "p12_rot_perspective-normalized.png"],
       "stages": {
         "preprocess": {
           "backgroundMean": 253.03444986568718,
@@ -1179,9 +957,7 @@
         },
         "confidenceGate": {
           "passed": false,
-          "reasons": [
-            "shading-low-confidence"
-          ]
+          "reasons": ["shading-low-confidence"]
         }
       }
     },
@@ -1190,10 +966,7 @@
       "checksum": "3925c5dec3ee9df651301cefb1da30a4ae59743dd159285596b2cc0a23745db9",
       "dhash": "eefef2f2dcfcfcf4",
       "normalizedFile": "p13_rotation_only.png",
-      "previews": [
-        "p13_rotation_only-source.png",
-        "p13_rotation_only-normalized.png"
-      ],
+      "previews": ["p13_rotation_only-source.png", "p13_rotation_only-normalized.png"],
       "stages": {
         "preprocess": {
           "backgroundMean": 250.46919825695375,
@@ -1225,9 +998,7 @@
         },
         "confidenceGate": {
           "passed": false,
-          "reasons": [
-            "shading-low-confidence"
-          ]
+          "reasons": ["shading-low-confidence"]
         }
       }
     },
@@ -1236,10 +1007,7 @@
       "checksum": "d5b336892260863af5485ee74824f7429ba8d7162f9121461962b56488ea0250",
       "dhash": "f2f272f2fafaf2fa",
       "normalizedFile": "p15_crop_adjustment.png",
-      "previews": [
-        "p15_crop_adjustment-source.png",
-        "p15_crop_adjustment-normalized.png"
-      ],
+      "previews": ["p15_crop_adjustment-source.png", "p15_crop_adjustment-normalized.png"],
       "stages": {
         "preprocess": {
           "backgroundMean": 226.19685207333615,
@@ -1271,9 +1039,7 @@
         },
         "confidenceGate": {
           "passed": false,
-          "reasons": [
-            "shading-low-confidence"
-          ]
+          "reasons": ["shading-low-confidence"]
         }
       }
     },
@@ -1282,10 +1048,7 @@
       "checksum": "324843c173b6536a80de372ff42edc67ba42c8f9743f4763f84fcb83728ab3e1",
       "dhash": "f4f4f4e4f4fcf4f4",
       "normalizedFile": "p16_overlay_elements.png",
-      "previews": [
-        "p16_overlay_elements-source.png",
-        "p16_overlay_elements-normalized.png"
-      ],
+      "previews": ["p16_overlay_elements-source.png", "p16_overlay_elements-normalized.png"],
       "stages": {
         "preprocess": {
           "backgroundMean": 223.16820331529587,
@@ -1317,9 +1080,7 @@
         },
         "confidenceGate": {
           "passed": false,
-          "reasons": [
-            "shading-low-confidence"
-          ]
+          "reasons": ["shading-low-confidence"]
         }
       }
     },
@@ -1328,10 +1089,7 @@
       "checksum": "f94840a51362be0a38ff9cd989aa5e5c8168027b2ac0ad05f3995b265836c3fc",
       "dhash": "cececececececece",
       "normalizedFile": "p14_spread_light_gutter.png",
-      "previews": [
-        "p14_spread_light_gutter-source.png",
-        "p14_spread_light_gutter-normalized.png"
-      ],
+      "previews": ["p14_spread_light_gutter-source.png", "p14_spread_light_gutter-normalized.png"],
       "stages": {
         "preprocess": {
           "backgroundMean": 243.29539980182807,
@@ -1363,9 +1121,7 @@
         },
         "confidenceGate": {
           "passed": false,
-          "reasons": [
-            "shading-low-confidence"
-          ]
+          "reasons": ["shading-low-confidence"]
         }
       }
     }

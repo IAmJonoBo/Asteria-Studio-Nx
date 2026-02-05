@@ -31,7 +31,9 @@ const writeState = async (state) => {
 };
 
 const isFresh = (timestamp) =>
-  typeof timestamp === "number" && Number.isFinite(timestamp) && Date.now() - timestamp < cooldownMs;
+  typeof timestamp === "number" &&
+  Number.isFinite(timestamp) &&
+  Date.now() - timestamp < cooldownMs;
 
 const runCommand = (command, argsList, extraEnv = {}) =>
   new Promise((resolve, reject) => {
@@ -52,7 +54,7 @@ const main = async () => {
 
   if (runDeps) {
     if (!force && isFresh(state.depsAt)) {
-      console.log("[upgrade:stack] Skipping deps update (recently run)." );
+      console.log("[upgrade:stack] Skipping deps update (recently run).");
     } else {
       console.log("[upgrade:stack] Updating dependencies...");
       await runCommand("pnpm", ["-r", "update"]);
@@ -62,7 +64,7 @@ const main = async () => {
 
   if (runTrunk) {
     if (!force && isFresh(state.trunkAt)) {
-      console.log("[upgrade:stack] Skipping Trunk upgrade (recently run)." );
+      console.log("[upgrade:stack] Skipping Trunk upgrade (recently run).");
     } else {
       console.log("[upgrade:stack] Upgrading Trunk tools...");
       await runCommand("trunk", ["upgrade"], { CI: "1", TRUNK_NONINTERACTIVE: "1" });

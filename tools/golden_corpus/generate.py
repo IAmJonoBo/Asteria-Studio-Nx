@@ -11,12 +11,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Optional, Tuple
 
-OBS_PATH = Path(__file__).resolve().parents[1] / "observability"
-if str(OBS_PATH) not in sys.path:
-    sys.path.append(str(OBS_PATH))
-
-from py_reporter import create_run_reporter
-
 import cv2
 import imagehash
 import numpy as np
@@ -622,7 +616,7 @@ def build_spread(
     gutter_start = WIDTH - gutter_width // 2
     gutter_end = WIDTH + gutter_width // 2
     gutter_color = 225
-    for attempt in range(6):
+    for _ in range(6):
         overlay = Image.new(
             "RGB", (width, height), (BACKGROUND, BACKGROUND, BACKGROUND)
         )
@@ -960,6 +954,11 @@ def main() -> None:
     args = parser.parse_args()
 
     run_id = args.run_id or f"golden-{args.seed}-{int(time.time() * 1000)}"
+    obs_path = Path(__file__).resolve().parents[1] / "observability"
+    if str(obs_path) not in sys.path:
+        sys.path.append(str(obs_path))
+    from py_reporter import create_run_reporter
+
     reporter = create_run_reporter("golden_corpus", run_id=run_id)
 
     try:

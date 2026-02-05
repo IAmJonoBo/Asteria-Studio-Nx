@@ -24,18 +24,18 @@ Each line is a single JSON object:
 
 ## Event output locations
 
-- CLI tools: artifacts/observability/<tool>/<runId>.jsonl
+- CLI tools: artifacts/observability/{tool}/{runId}.jsonl
 - (Future) App runs: runDir/diagnostics/events.jsonl
 
 Override:
 
-- ASTERIA_OBS_DIR=/custom/path (writes to <path>/<tool>/<runId>.jsonl)
+- ASTERIA_OBS_DIR=/custom/path (writes to {path}/{tool}/{runId}.jsonl)
 
 ## Canonical error format
 
 All actionable errors **must** emit a single line that matches:
 
-ASTERIA_ERROR <file>:<line>:<col> <code> <message>
+ASTERIA_ERROR {file}:{line}:{col} {code} {message}
 
 Example:
 

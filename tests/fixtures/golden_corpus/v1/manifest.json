@@ -10,39 +10,28 @@
     {
       "id": "p01_clean_single",
       "description": "clean single column",
-      "tags": [
-        "clean",
-        "single-column"
-      ],
+      "tags": ["clean", "single-column"],
       "truthFile": "p01_clean_single.json",
       "ssimThreshold": 0.99
     },
     {
       "id": "p02_clean_double",
       "description": "clean two column",
-      "tags": [
-        "clean",
-        "double-column"
-      ],
+      "tags": ["clean", "double-column"],
       "truthFile": "p02_clean_double.json",
       "ssimThreshold": 0.99
     },
     {
       "id": "p03_running_head_folio",
       "description": "running head and folio bands",
-      "tags": [
-        "running-head",
-        "folio"
-      ],
+      "tags": ["running-head", "folio"],
       "truthFile": "p03_running_head_folio.json",
       "ssimThreshold": 0.99
     },
     {
       "id": "p04_ornament",
       "description": "ornament page",
-      "tags": [
-        "ornament"
-      ],
+      "tags": ["ornament"],
       "truthFile": "p04_ornament.json",
       "ssimThreshold": 0.99,
       "ornamentHash": "86627f2428b7e536"
@@ -50,125 +39,84 @@
     {
       "id": "p05_footnotes_marginalia",
       "description": "footnotes and marginalia",
-      "tags": [
-        "footnotes",
-        "marginalia"
-      ],
+      "tags": ["footnotes", "marginalia"],
       "truthFile": "p05_footnotes_marginalia.json",
       "ssimThreshold": 0.99
     },
     {
       "id": "p06_blank_verso",
       "description": "blank verso",
-      "tags": [
-        "blank"
-      ],
+      "tags": ["blank"],
       "truthFile": "p06_blank_verso.json",
       "ssimThreshold": 0.99
     },
     {
       "id": "p07_plate",
       "description": "illustration plate",
-      "tags": [
-        "illustration",
-        "plate"
-      ],
+      "tags": ["illustration", "plate"],
       "truthFile": "p07_plate.json",
       "ssimThreshold": 0.99
     },
     {
       "id": "p08_shadow_left",
       "description": "left gutter shadow",
-      "tags": [
-        "shadow",
-        "gutter-left"
-      ],
+      "tags": ["shadow", "gutter-left"],
       "truthFile": "p08_shadow_left.json",
       "ssimThreshold": 0.985
     },
     {
       "id": "p09_shadow_right",
       "description": "right gutter shadow",
-      "tags": [
-        "shadow",
-        "gutter-right"
-      ],
+      "tags": ["shadow", "gutter-right"],
       "truthFile": "p09_shadow_right.json",
       "ssimThreshold": 0.985
     },
     {
       "id": "p10_spread_dark_gutter",
       "description": "two-page spread with dark gutter",
-      "tags": [
-        "spread",
-        "gutter"
-      ],
+      "tags": ["spread", "gutter"],
       "truthFile": "p10_spread_dark_gutter.json",
       "ssimThreshold": 0.985
     },
     {
       "id": "p11_curved_warp",
       "description": "curved warp baseline",
-      "tags": [
-        "warp",
-        "baseline"
-      ],
+      "tags": ["warp", "baseline"],
       "truthFile": "p11_curved_warp.json",
       "ssimThreshold": 0.985
     },
     {
       "id": "p12_rot_perspective",
       "description": "rotation + perspective warp",
-      "tags": [
-        "warp",
-        "perspective"
-      ],
+      "tags": ["warp", "perspective"],
       "truthFile": "p12_rot_perspective.json",
       "ssimThreshold": 0.985
     },
     {
       "id": "p13_rotation_only",
       "description": "rotation only",
-      "tags": [
-        "rotation",
-        "skew"
-      ],
+      "tags": ["rotation", "skew"],
       "truthFile": "p13_rotation_only.json",
       "ssimThreshold": 0.985
     },
     {
       "id": "p14_spread_light_gutter",
       "description": "two-page spread with light gutter",
-      "tags": [
-        "spread",
-        "gutter",
-        "split"
-      ],
+      "tags": ["spread", "gutter", "split"],
       "truthFile": "p14_spread_light_gutter.json",
       "ssimThreshold": 0.98
     },
     {
       "id": "p15_crop_adjustment",
       "description": "crop adjustment stress",
-      "tags": [
-        "crop",
-        "adjustment"
-      ],
+      "tags": ["crop", "adjustment"],
       "truthFile": "p15_crop_adjustment.json",
       "ssimThreshold": 0.985
     },
     {
       "id": "p16_overlay_elements",
       "description": "overlay element class showcase",
-      "tags": [
-        "overlay",
-        "elements",
-        "title",
-        "drop-cap",
-        "marginalia",
-        "footnotes",
-        "ornament"
-      ],
+      "tags": ["overlay", "elements", "title", "drop-cap", "marginalia", "footnotes", "ornament"],
       "truthFile": "p16_overlay_elements.json",
       "ssimThreshold": 0.985
     }

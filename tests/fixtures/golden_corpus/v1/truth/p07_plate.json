@@ -1,17 +1,7 @@
 {
   "pageId": "p07_plate",
-  "pageBoundsPx": [
-    0,
-    0,
-    2174,
-    3074
-  ],
-  "contentBoxPx": [
-    240,
-    340,
-    1935,
-    2635
-  ],
+  "pageBoundsPx": [0, 0, 2174, 3074],
+  "contentBoxPx": [240, 340, 1935, 2635],
   "gutter": {
     "side": "none",
     "widthPx": 0
@@ -19,8 +9,5 @@
   "baselineGrid": {},
   "ornaments": [],
   "shouldSplit": false,
-  "expectedReviewReasons": [
-    "low-skew-confidence",
-    "low-shading-confidence"
-  ]
+  "expectedReviewReasons": ["low-skew-confidence", "low-shading-confidence"]
 }

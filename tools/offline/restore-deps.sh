@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2250
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 ARCHIVE_PATH="${1:-$ROOT_DIR/artifacts/offline-deps.tgz}"
 STORE_DIR="${PNPM_STORE_DIR:-$ROOT_DIR/.pnpm-store}"
 
-if [[ ! -f "$ARCHIVE_PATH" ]]; then
+if [[ ! -f $ARCHIVE_PATH ]]; then
   echo "Offline dependency archive not found: $ARCHIVE_PATH" >&2
   echo "Run tools/offline/seed-deps.sh in a connected environment first." >&2
   exit 1

@@ -536,7 +536,7 @@ pub fn dhash_9x8_js(data: Buffer) -> String {
         return "0".to_string();
     }
     let hash = dhash_9x8(&bytes[..9 * 8]);
-    format!("{:016x}", hash)
+    format!("{hash:016x}")
 }
 
 #[cfg(test)]

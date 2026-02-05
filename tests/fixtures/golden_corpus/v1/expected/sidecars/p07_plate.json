@@ -14,18 +14,8 @@
   },
   "dpi": 72,
   "normalization": {
-    "cropBox": [
-      0,
-      0,
-      2174,
-      3074
-    ],
-    "pageMask": [
-      1,
-      1,
-      2173,
-      3073
-    ],
+    "cropBox": [0, 0, 2174, 3074],
+    "pageMask": [1, 1, 2173, 3073],
     "dpiSource": "metadata",
     "bleed": 12.499975,
     "trim": 0,
@@ -57,137 +47,74 @@
     {
       "id": "page-bounds",
       "type": "page_bounds",
-      "bbox": [
-        0,
-        0,
-        2174,
-        3074
-      ],
+      "bbox": [0, 0, 2174, 3074],
       "confidence": 0.6,
       "source": "local",
-      "flags": [
-        "native"
-      ]
+      "flags": ["native"]
     },
     {
       "id": "text-block",
       "type": "text_block",
-      "bbox": [
-        240,
-        340,
-        1935,
-        2635
-      ],
+      "bbox": [240, 340, 1935, 2635],
       "confidence": 0.55,
       "source": "local",
-      "flags": [
-        "native"
-      ]
+      "flags": ["native"]
     },
     {
       "id": "title",
       "type": "title",
-      "bbox": [
-        443,
-        386,
-        1732,
-        661
-      ],
+      "bbox": [443, 386, 1732, 661],
       "confidence": 0.28,
       "source": "local",
-      "flags": [
-        "native"
-      ]
+      "flags": ["native"]
     },
     {
       "id": "running-head",
       "type": "running_head",
-      "bbox": [
-        410,
-        340,
-        1766,
-        524
-      ],
+      "bbox": [410, 340, 1766, 524],
       "confidence": 0.25,
       "source": "local",
-      "flags": [
-        "native"
-      ]
+      "flags": ["native"]
     },
     {
       "id": "folio",
       "type": "folio",
-      "bbox": [
-        952,
-        2406,
-        1223,
-        2589
-      ],
+      "bbox": [952, 2406, 1223, 2589],
       "confidence": 0.22,
       "source": "local",
-      "flags": [
-        "native"
-      ]
+      "flags": ["native"]
     },
     {
       "id": "ornament",
       "type": "ornament",
-      "bbox": [
-        952,
-        753,
-        1223,
-        891
-      ],
+      "bbox": [952, 753, 1223, 891],
       "confidence": 0.2,
       "source": "local",
-      "flags": [
-        "native"
-      ]
+      "flags": ["native"]
     },
     {
       "id": "drop-cap",
       "type": "drop_cap",
-      "bbox": [
-        274,
-        753,
-        410,
-        1074
-      ],
+      "bbox": [274, 753, 410, 1074],
       "confidence": 0.18,
       "source": "local",
-      "flags": [
-        "native"
-      ]
+      "flags": ["native"]
     },
     {
       "id": "footnote",
       "type": "footnote",
-      "bbox": [
-        325,
-        2314,
-        1850,
-        2589
-      ],
+      "bbox": [325, 2314, 1850, 2589],
       "confidence": 0.2,
       "source": "local",
-      "flags": [
-        "native"
-      ]
+      "flags": ["native"]
     },
     {
       "id": "marginalia",
       "type": "marginalia",
-      "bbox": [
-        240,
-        914,
-        376,
-        2061
-      ],
+      "bbox": [240, 914, 376, 2061],
       "confidence": 0.18,
       "source": "local",
-      "flags": [
-        "native"
-      ]
+      "flags": ["native"]
     }
   ],
   "overrides": {},
@@ -205,9 +132,7 @@
       "medianSpacingPx": 3075,
       "lineStraightnessResidual": 0,
       "confidence": 0.35,
-      "peaksY": [
-        0.8571893298633702
-      ]
+      "peaksY": [0.8571893298633702]
     }
   },
   "bookModel": {

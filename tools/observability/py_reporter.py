@@ -7,10 +7,27 @@ import time
 import traceback
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Iterable, Optional
+from typing import TYPE_CHECKING, Any, Dict, Iterable, Optional, TypeAlias
+
+if TYPE_CHECKING:
+    from rich.progress import (  # type: ignore[import-not-found]
+        BarColumn,
+        Progress,
+        TaskID,
+        TextColumn,
+        TimeElapsedColumn,
+        TimeRemainingColumn,
+    )
+else:
+    BarColumn: TypeAlias = Any
+    Progress: TypeAlias = Any
+    TaskID: TypeAlias = Any
+    TextColumn: TypeAlias = Any
+    TimeElapsedColumn: TypeAlias = Any
+    TimeRemainingColumn: TypeAlias = Any
 
 try:
-    from rich.progress import (
+    from rich.progress import (  # type: ignore[import-not-found]
         BarColumn,
         Progress,
         TaskID,
@@ -153,14 +170,19 @@ class RunReporter:
                 TimeRemainingColumn(),
                 refresh_per_second=10,
             )
+        progress = self._progress
+        if progress is None:
+            return
         if not self._progress_started:
-            self._progress.start()
+            progress.start()
             self._progress_started = True
 
     def _get_task(self, phase: str, total: Optional[int]) -> Optional[TaskID]:
         if not _RICH_AVAILABLE:
             return None
         self._ensure_progress()
+        if self._progress is None:
+            return None
         if phase not in self._tasks:
             task_id = self._progress.add_task(phase, total=total or 0)
             self._tasks[phase] = task_id

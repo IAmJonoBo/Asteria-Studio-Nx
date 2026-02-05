@@ -88,12 +88,12 @@ They are used to verify margins, columns, baselines, and gutter splits without c
 
 **Guides shortcuts**:
 
-| Key         | Action            | Description                     |
-| ----------- | ----------------- | ------------------------------- |
-| `G`         | Toggle guides     | Show/hide guide layers          |
-| `Shift + G` | Toggle rulers     | Show/hide rulers layer          |
-| `S`         | Toggle snapping   | Enable/disable snapping         |
-| `0`         | Reset view        | Reset zoom/pan                  |
+| Key         | Action          | Description             |
+| ----------- | --------------- | ----------------------- |
+| `G`         | Toggle guides   | Show/hide guide layers  |
+| `Shift + G` | Toggle rulers   | Show/hide rulers layer  |
+| `S`         | Toggle snapping | Enable/disable snapping |
+| `0`         | Reset view      | Reset zoom/pan          |
 
 ### 3. Run Status & Feedback
 

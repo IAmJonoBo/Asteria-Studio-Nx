@@ -1,7 +1,8 @@
+# yamllint disable rule:quoted-strings
 name: Bug report
 description: Report a bug or regression
-title: "[Bug]: "
-labels: ["bug"]
+title: [Bug]
+labels: [bug]
 assignees: []
 body:
   - type: markdown

@@ -29,6 +29,7 @@ Add a root script:
 - `artifacts/preflight/diffs/` (only if golden fails; copy `.golden-artifacts` if present)
 
 The report must include:
+
 - git commit hash
 - app version
 - OS/Node/Electron versions (as available)
@@ -40,21 +41,24 @@ The report must include:
 ## 3) Steps (in order)
 
 ### Step A — Static checks
-1) `pnpm nx run asteria-desktop:lint`
-2) `pnpm nx run asteria-desktop:typecheck`
-3) `pnpm nx run asteria-desktop:build:main` (skip with `PREFLIGHT_SKIP_BUILD=1`)
+
+1. `pnpm nx run asteria-desktop:lint`
+2. `pnpm nx run asteria-desktop:typecheck`
+3. `pnpm nx run asteria-desktop:build:main` (skip with `PREFLIGHT_SKIP_BUILD=1`)
 
 Fail if any fails.
 
 ### Step B — Tests
-4) `pnpm nx run asteria-desktop:test` (or explicit unit/integration/renderer suite)
-5) `pnpm nx run asteria-desktop:golden` (skip with `PREFLIGHT_SKIP_GOLDEN=1`)
-6) `pnpm nx run asteria-desktop:e2e` (skip with `PREFLIGHT_SKIP_E2E=1`)
+
+1. `pnpm nx run asteria-desktop:test` (or explicit unit/integration/renderer suite)
+2. `pnpm nx run asteria-desktop:golden` (skip with `PREFLIGHT_SKIP_GOLDEN=1`)
+3. `pnpm nx run asteria-desktop:e2e` (skip with `PREFLIGHT_SKIP_E2E=1`)
 
 Fail if any fails. On golden failure, ensure diff artifacts are written.
 
 ### Step C — Determinism tripwires
-7) Run a tiny corpus run twice using `node tools/preflight/run-pipeline.mjs` (built main required):
+
+1. Run a tiny corpus run twice using `node tools/preflight/run-pipeline.mjs` (built main required):
    - corpus resolved from `PREFLIGHT_CORPUS_DIR`, else `tests/fixtures/golden_corpus/v1/inputs`
    - sample count defaults to 2 (`PREFLIGHT_SAMPLE_COUNT` to override)
    - Confirm `runs/<runId>/...` artefacts exist
@@ -62,12 +66,15 @@ Fail if any fails. On golden failure, ensure diff artifacts are written.
    - Confirm stable manifest schema and atomic JSON writes
 
 Fail if:
+
 - forbidden directories created
 - run manifests or review queues are not parseable
 - run collisions detected (same pageId overwrites across runs)
 
 ### Step D — Bundle sanity (run output)
-8) Verify the latest run output contains:
+
+1. Verify the latest run output contains:
+
 - manifest.json
 - report.json
 - review-queue.json
@@ -77,7 +84,9 @@ Fail if:
 Fail if missing.
 
 ### Step E — Basic performance smoke (non-benchmark)
-9) Record pipeline run duration + throughput:
+
+1. Record pipeline run duration + throughput:
+
 - warn if runtime exceeds the configured threshold (default 120s)
 - additional UI responsiveness checks remain manual (see prelaunch checklist)
 
@@ -88,6 +97,7 @@ Fail only on severe cases (e.g., obvious freeze); otherwise warn.
 ## 4) Pass/fail rules
 
 **FAIL** on:
+
 - any lint/typecheck/test failures
 - golden regressions outside tolerance
 - any global artefact writes
@@ -96,6 +106,7 @@ Fail only on severe cases (e.g., obvious freeze); otherwise warn.
 - uncaught exceptions in logs during the run
 
 **WARN** on:
+
 - performance thresholds exceeded
 - minor UI/accessibility advisory checks (unless you decide to promote them to FAIL)
 

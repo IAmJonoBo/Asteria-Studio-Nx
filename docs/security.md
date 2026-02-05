@@ -2,19 +2,19 @@
 
 ## Threat Model (Lite)
 
-**Assets**
+### Assets
 
 - Source code and models
 - Build artefacts and installers
 - Pipeline outputs and customer data
 
-**Trust Boundaries**
+### Trust Boundaries
 
 - Developer machines
 - CI runners (cloud or self-hosted)
 - Remote cache services
 
-**Key Risks**
+### Key Risks
 
 - Dependency supply-chain attacks
 - Cache poisoning in remote caches

@@ -7,8 +7,8 @@ set -e
 ROOT_DIR="$(pwd)"
 
 if [[ ! -f "${ROOT_DIR}/package.json" ]]; then
-	echo "Repo root missing; skipping checks." >&2
-	exit 0
+  echo "Repo root missing; skipping checks." >&2
+  exit 0
 fi
 
 echo "Running pre-commit checks..."

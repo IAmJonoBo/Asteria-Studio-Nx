@@ -79,7 +79,6 @@ async function main(): Promise<void> {
     verifyStep.end("ok");
 
     const runStep = startStep("Run benchmark pipeline");
-    const runStart = Date.now();
     progress = createProgressReporter("Benchmark progress");
     let lastStage: string | null = null;
     const result = await runPipeline({

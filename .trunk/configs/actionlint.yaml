@@ -1,0 +1,7 @@
+self-hosted-runner:
+  labels:
+    - air-gapped
+
+config-variables:
+  - NX_CACHE_MODE
+  - NX_REMOTE_CACHE_URL

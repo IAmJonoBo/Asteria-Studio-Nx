@@ -252,7 +252,7 @@ describe.sequential("golden corpus regression", () => {
         const expectedImage = path.join(expectedDir, "normalized", `${pageId}.png`);
         const expectedSidecar = path.join(expectedDir, "sidecars", `${pageId}.json`);
         if (!(await fileExists(expectedImage)) || !(await fileExists(expectedSidecar))) {
-          failure = new Error(`Missing expected outputs for ${pageId}. Run \"pnpm golden:bless\".`);
+          failure = new Error(`Missing expected outputs for ${pageId}. Run 'pnpm golden:bless'.`);
           break outer;
         }
 

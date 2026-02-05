@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2250,SC2295,SC2312
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -58,7 +59,7 @@ check_zip_size() {
   local zip_path="$1"
   local size_bytes
   size_bytes=$(get_file_size_bytes "$zip_path")
-  if (( size_bytes > MAX_ZIP_BYTES )); then
+  if ((size_bytes > MAX_ZIP_BYTES)); then
     echo "ERROR: $zip_path exceeds 150MB (size=$size_bytes bytes)." >&2
     echo "Hint: move large binaries (fonts/scans/test artefacts) to fixtures or repro ZIPs." >&2
     exit 1
@@ -82,24 +83,24 @@ write_large_files_report() {
       -not -path "$ROOT_DIR/artifacts/*" \
       -not -path "$ROOT_DIR/.venv/*" \
       -not -path "$ROOT_DIR/release_review/*" \
-      -print0 \
-      | while IFS= read -r -d '' file; do
-          local size_bytes
-          size_bytes=$(get_file_size_bytes "$file")
-          printf "| %.1f | %s |\n" "$(awk "BEGIN {print $size_bytes/1024/1024}")" "${file#$ROOT_DIR/}"
-        done \
-      | sort -nr
-  } > "$report_path"
+      -print0 |
+      while IFS= read -r -d '' file; do
+        local size_bytes
+        size_bytes=$(get_file_size_bytes "$file")
+        printf "| %.1f | %s |\n" "$(awk "BEGIN {print $size_bytes/1024/1024}")" "${file#$ROOT_DIR/}"
+      done |
+      sort -nr
+  } >"$report_path"
 }
 
 build_file_list() {
   local list_path="$1"
   shift
-  : > "$list_path"
-  find "$@" -type f -size "-${LARGE_FILE_BYTES}c" -print0 \
-    | while IFS= read -r -d '' file; do
-        printf "%s\n" "${file#$ROOT_DIR/}" >> "$list_path"
-      done
+  : >"$list_path"
+  find "$@" -type f -size "-${LARGE_FILE_BYTES}c" -print0 |
+    while IFS= read -r -d '' file; do
+      printf "%s\n" "${file#$ROOT_DIR/}" >>"$list_path"
+    done
 }
 
 build_allowlist_paths() {
@@ -107,31 +108,31 @@ build_allowlist_paths() {
   shopt -s nullglob
 
   for d in "$ROOT_DIR"/apps/*/src "$ROOT_DIR"/apps/*/scripts "$ROOT_DIR"/apps/*/resources; do
-    [[ -e "$d" ]] && paths+=("$d")
+    [[ -e $d ]] && paths+=("$d")
   done
   for f in "$ROOT_DIR"/apps/*/package.json "$ROOT_DIR"/apps/*/project.json "$ROOT_DIR"/apps/*/tsconfig*.json; do
-    [[ -e "$f" ]] && paths+=("$f")
+    [[ -e $f ]] && paths+=("$f")
   done
   for f in "$ROOT_DIR"/apps/*/*config.* "$ROOT_DIR"/apps/*/README.md; do
-    [[ -e "$f" ]] && paths+=("$f")
+    [[ -e $f ]] && paths+=("$f")
   done
 
   for d in "$ROOT_DIR"/packages/*/src; do
-    [[ -e "$d" ]] && paths+=("$d")
+    [[ -e $d ]] && paths+=("$d")
   done
   for f in "$ROOT_DIR"/packages/*/package.json "$ROOT_DIR"/packages/*/project.json "$ROOT_DIR"/packages/*/tsconfig*.json "$ROOT_DIR"/packages/*/Cargo.toml; do
-    [[ -e "$f" ]] && paths+=("$f")
+    [[ -e $f ]] && paths+=("$f")
   done
 
   paths+=("$ROOT_DIR/tools" "$ROOT_DIR/docs" "$ROOT_DIR/spec" "$ROOT_DIR/.github")
   for f in "$ROOT_DIR"/package.json "$ROOT_DIR"/pnpm-lock.yaml "$ROOT_DIR"/pnpm-workspace.yaml "$ROOT_DIR"/nx.json; do
-    [[ -e "$f" ]] && paths+=("$f")
+    [[ -e $f ]] && paths+=("$f")
   done
   for f in "$ROOT_DIR"/tsconfig*.json "$ROOT_DIR"/eslint.config.js "$ROOT_DIR"/.eslintrc.json "$ROOT_DIR"/.prettierrc.json; do
-    [[ -e "$f" ]] && paths+=("$f")
+    [[ -e $f ]] && paths+=("$f")
   done
   for f in "$ROOT_DIR"/README.md "$ROOT_DIR"/CODE_OF_CONDUCT.md "$ROOT_DIR"/CONTRIBUTING.md "$ROOT_DIR"/LICENSE "$ROOT_DIR"/SECURITY.md "$ROOT_DIR"/SUPPORT.md "$ROOT_DIR"/PREFLIGHT_TASK_SPEC.md "$ROOT_DIR"/PRELAUNCH_CHECKLIST.md "$ROOT_DIR"/REPRO.md; do
-    [[ -e "$f" ]] && paths+=("$f")
+    [[ -e $f ]] && paths+=("$f")
   done
 
   shopt -u nullglob
@@ -142,17 +143,17 @@ fail_if_large_in_list() {
   local list_path="$1"
   local violations
   violations=$(while IFS= read -r rel; do
-    [[ -z "$rel" ]] && continue
+    [[ -z $rel ]] && continue
     local abs="$ROOT_DIR/$rel"
-    [[ -f "$abs" ]] || continue
+    [[ -f $abs ]] || continue
     local size_bytes
     size_bytes=$(get_file_size_bytes "$abs")
-    if (( size_bytes > LARGE_FILE_BYTES )); then
+    if ((size_bytes > LARGE_FILE_BYTES)); then
       printf "%s\t%d\n" "$rel" "$size_bytes"
     fi
-  done < "$list_path")
+  done <"$list_path")
 
-  if [[ -n "$violations" ]]; then
+  if [[ -n $violations ]]; then
     echo "ERROR: Large files found in 01-src (>${LARGE_FILE_BYTES} bytes):" >&2
     echo "$violations" | while IFS=$'\t' read -r rel size; do
       echo "- $rel ($size bytes)" >&2
@@ -171,19 +172,19 @@ write_top20_report() {
     echo "| Size (MB) | Path |"
     echo "| --- | --- |"
     while IFS= read -r rel; do
-      [[ -z "$rel" ]] && continue
+      [[ -z $rel ]] && continue
       local abs="$ROOT_DIR/$rel"
-      [[ -f "$abs" ]] || continue
+      [[ -f $abs ]] || continue
       local size_bytes
       size_bytes=$(get_file_size_bytes "$abs")
       printf "%.1f\t%s\n" "$(awk "BEGIN {print $size_bytes/1024/1024}")" "$rel"
-    done < "$list_path" \
-      | sort -nr \
-      | head -20 \
-      | while IFS=$'\t' read -r size rel; do
-          printf "| %s | %s |\n" "$size" "$rel"
-        done
-  } > "$report_path"
+    done <"$list_path" |
+      sort -nr |
+      head -20 |
+      while IFS=$'\t' read -r size rel; do
+        printf "| %s | %s |\n" "$size" "$rel"
+      done
+  } >"$report_path"
 }
 
 print_zip_size() {
@@ -196,34 +197,52 @@ print_zip_size() {
 zip_from_list() {
   local zip_path="$1"
   local list_path="$2"
-  (cd "$ROOT_DIR" && zip -r "$zip_path" -@ < "$list_path")
+  (cd "$ROOT_DIR" && zip -r "$zip_path" -@ <"$list_path")
 }
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --fixtures-corpus)
-      FIX_CORPUS="$2"; shift 2 ;;
-    --fixtures-run)
-      FIX_RUN="$2"; shift 2 ;;
-    --fixtures-export)
-      FIX_EXPORT="$2"; shift 2 ;;
-    --fixtures-logs)
-      FIX_LOGS="$2"; shift 2 ;;
-    --repro-corpus)
-      REPRO_CORPUS="$2"; shift 2 ;;
-    --repro-run)
-      REPRO_RUN="$2"; shift 2 ;;
-    --repro-export)
-      REPRO_EXPORT="$2"; shift 2 ;;
-    --repro-logs)
-      REPRO_LOGS="$2"; shift 2 ;;
-    --help)
-      print_usage; exit 0 ;;
-    *)
-      echo "Unknown option: $1" >&2
-      print_usage
-      exit 1
-      ;;
+  --fixtures-corpus)
+    FIX_CORPUS="$2"
+    shift 2
+    ;;
+  --fixtures-run)
+    FIX_RUN="$2"
+    shift 2
+    ;;
+  --fixtures-export)
+    FIX_EXPORT="$2"
+    shift 2
+    ;;
+  --fixtures-logs)
+    FIX_LOGS="$2"
+    shift 2
+    ;;
+  --repro-corpus)
+    REPRO_CORPUS="$2"
+    shift 2
+    ;;
+  --repro-run)
+    REPRO_RUN="$2"
+    shift 2
+    ;;
+  --repro-export)
+    REPRO_EXPORT="$2"
+    shift 2
+    ;;
+  --repro-logs)
+    REPRO_LOGS="$2"
+    shift 2
+    ;;
+  --help)
+    print_usage
+    exit 0
+    ;;
+  *)
+    echo "Unknown option: $1" >&2
+    print_usage
+    exit 1
+    ;;
   esac
 done
 
@@ -243,57 +262,57 @@ mapfile -t SRC_PATHS < <(build_allowlist_paths)
 build_file_list "$SRC_LIST" "${SRC_PATHS[@]}"
 
 grep -v -E "(^|/)node_modules/|(^|/)\.git/|(^|/)dist/|(^|/)out/|(^|/)\.next/|(^|/)build/|(^|/)coverage/|(^|/)pipeline-results/|(^|/)runs/|(^|/)exports/|(^|/)logs/|(^|/)artifacts/|(^|/)\.venv/|(^|/)\.mypy_cache/|(^|/)\.pytest_cache/|(^|/)__pycache__/|(^|/)tests/fixtures/golden_corpus/|(^|/)dist-app/|(^|/)playwright-report/|(^|/)test-results/|(^|/)\.cache/|(^|/)packages/pipeline-core/target/|(^|/)apps/asteria-desktop/benchmark-results/|(^|/)apps/asteria-desktop/\.vite/|\.DS_Store$|Thumbs\.db$" \
-  "$SRC_LIST" > "$SRC_LIST.tmp" && mv "$SRC_LIST.tmp" "$SRC_LIST"
+  "$SRC_LIST" >"$SRC_LIST.tmp" && mv "$SRC_LIST.tmp" "$SRC_LIST"
 
 fail_if_large_in_list "$SRC_LIST"
 write_top20_report "$SRC_LIST"
 
 zip_from_list "$SRC_ZIP" "$SRC_LIST"
 
-  check_zip_size "$SRC_ZIP"
+check_zip_size "$SRC_ZIP"
 
 FIX_LIST="$OUT_DIR/fixtures-files.txt"
 build_file_list "$FIX_LIST" \
   "$ROOT_DIR/tests/fixtures/golden_corpus/v1" \
   "$ROOT_DIR/tools/golden_corpus"
 
-grep -v -E "\.DS_Store$|Thumbs\.db$" "$FIX_LIST" > "$FIX_LIST.tmp" && mv "$FIX_LIST.tmp" "$FIX_LIST"
+grep -v -E "\.DS_Store$|Thumbs\.db$" "$FIX_LIST" >"$FIX_LIST.tmp" && mv "$FIX_LIST.tmp" "$FIX_LIST"
 
 zip_from_list "$FIX_ZIP" "$FIX_LIST"
 
-  check_zip_size "$FIX_ZIP"
+check_zip_size "$FIX_ZIP"
 
-if [[ -n "$FIX_CORPUS" || -n "$FIX_RUN" || -n "$FIX_EXPORT" || -n "$FIX_LOGS" ]]; then
+if [[ -n $FIX_CORPUS || -n $FIX_RUN || -n $FIX_EXPORT || -n $FIX_LOGS ]]; then
   FIX_ITEMS=()
-  [[ -n "$FIX_CORPUS" ]] && FIX_ITEMS+=("$FIX_CORPUS")
-  [[ -n "$FIX_RUN" ]] && FIX_ITEMS+=("$FIX_RUN")
-  [[ -n "$FIX_EXPORT" ]] && FIX_ITEMS+=("$FIX_EXPORT")
-  [[ -n "$FIX_LOGS" ]] && FIX_ITEMS+=("$FIX_LOGS")
+  [[ -n $FIX_CORPUS ]] && FIX_ITEMS+=("$FIX_CORPUS")
+  [[ -n $FIX_RUN ]] && FIX_ITEMS+=("$FIX_RUN")
+  [[ -n $FIX_EXPORT ]] && FIX_ITEMS+=("$FIX_EXPORT")
+  [[ -n $FIX_LOGS ]] && FIX_ITEMS+=("$FIX_LOGS")
 
   zip -r "$FIX_ZIP" "${FIX_ITEMS[@]}" \
     -x "**/.DS_Store" \
-       "**/Thumbs.db"
+    "**/Thumbs.db"
 fi
 
-if [[ -n "$REPRO_CORPUS" || -n "$REPRO_RUN" || -n "$REPRO_EXPORT" || -n "$REPRO_LOGS" ]]; then
+if [[ -n $REPRO_CORPUS || -n $REPRO_RUN || -n $REPRO_EXPORT || -n $REPRO_LOGS ]]; then
   mkdir -p "$REPRO_DIR"
 
   REPRO_ITEMS=()
-  [[ -n "$REPRO_CORPUS" ]] && REPRO_ITEMS+=("$REPRO_CORPUS")
-  [[ -n "$REPRO_RUN" ]] && REPRO_ITEMS+=("$REPRO_RUN")
-  [[ -n "$REPRO_EXPORT" ]] && REPRO_ITEMS+=("$REPRO_EXPORT")
-  [[ -n "$REPRO_LOGS" ]] && REPRO_ITEMS+=("$REPRO_LOGS")
+  [[ -n $REPRO_CORPUS ]] && REPRO_ITEMS+=("$REPRO_CORPUS")
+  [[ -n $REPRO_RUN ]] && REPRO_ITEMS+=("$REPRO_RUN")
+  [[ -n $REPRO_EXPORT ]] && REPRO_ITEMS+=("$REPRO_EXPORT")
+  [[ -n $REPRO_LOGS ]] && REPRO_ITEMS+=("$REPRO_LOGS")
 
   REPRO_LIST="$OUT_DIR/repro-files.txt"
   build_file_list "$REPRO_LIST" "${REPRO_ITEMS[@]}"
-  grep -v -E "\.DS_Store$|Thumbs\.db$" "$REPRO_LIST" > "$REPRO_LIST.tmp" && mv "$REPRO_LIST.tmp" "$REPRO_LIST"
+  grep -v -E "\.DS_Store$|Thumbs\.db$" "$REPRO_LIST" >"$REPRO_LIST.tmp" && mv "$REPRO_LIST.tmp" "$REPRO_LIST"
 
   zip_from_list "$REPRO_ZIP" "$REPRO_LIST"
 
   check_zip_size "$REPRO_ZIP"
 fi
 
-cat > "$OUT_DIR/README.md" <<'EOF'
+cat >"$OUT_DIR/README.md" <<'EOF'
 # Release Review Bundles
 
 - 01-src/asteria-src.zip — source, configs, tests, schemas, and docs
@@ -315,6 +334,6 @@ EOF
 echo "Created:"
 print_zip_size "$SRC_ZIP"
 print_zip_size "$FIX_ZIP"
-if [[ -f "$REPRO_ZIP" ]]; then
+if [[ -f $REPRO_ZIP ]]; then
   print_zip_size "$REPRO_ZIP"
 fi

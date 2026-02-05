@@ -16,6 +16,7 @@ export default tseslint.config(
       "apps/asteria-desktop/src/**/*.{ts,tsx}",
       "apps/asteria-desktop/e2e/**/*.ts",
       "apps/asteria-desktop/scripts/**/*.ts",
+      "apps/asteria-desktop/tests/**/*.ts",
       "apps/asteria-desktop/*.{ts,tsx}",
     ],
     languageOptions: {
@@ -27,6 +28,7 @@ export default tseslint.config(
       },
       globals: {
         Buffer: "readonly",
+        NodeJS: "readonly",
         __dirname: "readonly",
         AbortController: "readonly",
         console: "readonly",
@@ -52,6 +54,7 @@ export default tseslint.config(
       ...react.configs.recommended.rules,
       ...reactHooks.configs.recommended.rules,
       "react/react-in-jsx-scope": "off",
+      "no-undef": "off",
       "no-unused-vars": "off",
       "@typescript-eslint/no-unused-vars": [
         "error",

@@ -20,13 +20,13 @@ Adopt Nx as the monorepo backbone:
 
 ## Consequences
 
-**Pros**
+### Pros
 
 - Faster CI with affected-based execution.
 - Consistent task interface across packages.
 - Explicit caching and deterministic inputs.
 
-**Cons**
+### Cons
 
 - Additional configuration and maintenance.
 - Developers must learn Nx commands and cache behaviour.

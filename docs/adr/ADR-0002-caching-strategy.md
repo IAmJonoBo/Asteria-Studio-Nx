@@ -33,11 +33,11 @@ possible, gate cache writes behind review or signing.
 
 ## Consequences
 
-**Pros**
+### Pros
 
 - Works offline once caches are pre-seeded.
 - Optional remote cache for faster CI.
 
-**Cons**
+### Cons
 
 - Extra operational overhead for a self-hosted cache server.

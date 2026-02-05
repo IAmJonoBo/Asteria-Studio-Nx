@@ -1,17 +1,7 @@
 {
   "pageId": "p10_spread_dark_gutter",
-  "pageBoundsPx": [
-    0,
-    0,
-    4349,
-    3074
-  ],
-  "contentBoxPx": [
-    140,
-    140,
-    4210,
-    2935
-  ],
+  "pageBoundsPx": [0, 0, 4349, 3074],
+  "contentBoxPx": [140, 140, 4210, 2935],
   "gutter": {
     "side": "center",
     "widthPx": 220
@@ -21,8 +11,5 @@
   },
   "ornaments": [],
   "shouldSplit": true,
-  "expectedReviewReasons": [
-    "low-shading-confidence",
-    "spread-split-low-confidence"
-  ]
+  "expectedReviewReasons": ["low-shading-confidence", "spread-split-low-confidence"]
 }
