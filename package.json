@@ -41,6 +41,7 @@
     "ci:lint": "node tools/nx/run.mjs affected -t lint",
     "ci:test": "node tools/nx/run.mjs affected -t test",
     "ci:build": "node tools/nx/run.mjs affected -t build",
+    "ci:trunk": "node tools/quality/check-trunk.mjs",
     "ci:knip": "pnpm exec knip --config knip.json",
     "ci:ipc": "node tools/quality/check-orphan-ipc.mjs",
     "ci:catch": "node tools/quality/check-empty-catch.mjs",

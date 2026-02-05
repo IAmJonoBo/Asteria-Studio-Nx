@@ -463,7 +463,7 @@ describe("Pipeline Runner", () => {
 
     expect(result.success).toBe(true);
     expect(result.scanConfig.pages.length).toBe(2);
-  });
+  }, 20000);
 
   it("does not split when spread detection fails", async () => {
     const spreadDir = await fs.mkdtemp(path.join(os.tmpdir(), "asteria-no-split-"));

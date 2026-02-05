@@ -213,6 +213,7 @@ const runPreflight = async () => {
   const commands = [];
   const isSmoke = process.env.PREFLIGHT_SMOKE === "1";
   const baseCommandSteps = [
+    { id: "trunk", label: "Trunk", phase: "trunk", command: "pnpm", args: ["ci:trunk"] },
     {
       id: "lint",
       label: "Lint",
