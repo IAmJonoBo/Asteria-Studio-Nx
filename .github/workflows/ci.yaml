@@ -87,7 +87,7 @@ jobs:
           CI: true
 
       - name: Upload coverage
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: coverage
           path: apps/asteria-desktop/coverage/
@@ -179,7 +179,7 @@ jobs:
 
       - name: Upload benchmark results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: benchmark-results
           path: apps/asteria-desktop/benchmark-results/benchmark.json
