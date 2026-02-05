@@ -103,6 +103,42 @@ export interface BaselineGridGuide {
   source?: "auto" | "user";
 }
 
+export interface GuideBandOverride {
+  startPx?: number | null;
+  endPx?: number | null;
+}
+
+export interface GuideMarginOverride {
+  topPx?: number | null;
+  rightPx?: number | null;
+  bottomPx?: number | null;
+  leftPx?: number | null;
+}
+
+export interface GuideColumnOverride {
+  count?: number | null;
+  leftPx?: number | null;
+  rightPx?: number | null;
+  gutterPx?: number | null;
+}
+
+export interface GuideOverrides {
+  baselineGrid?: BaselineGridGuide;
+  margins?: GuideMarginOverride;
+  columns?: GuideColumnOverride;
+  headerBand?: GuideBandOverride;
+  footerBand?: GuideBandOverride;
+  gutterBand?: GuideBandOverride;
+}
+
+export interface PageLayoutOverrides {
+  normalization?: Record<string, unknown>;
+  elements?: PageLayoutElement[];
+  guides?: GuideOverrides;
+  templateCluster?: Record<string, unknown>;
+  [key: string]: unknown;
+}
+
 export interface BookModel {
   trimBoxPx?: BoxDistribution;
   contentBoxPx?: BoxDistribution;
@@ -124,7 +160,7 @@ export interface ReviewDecision {
   pageId: string;
   decision: "accept" | "reject" | "adjust";
   notes?: string;
-  overrides?: Record<string, unknown>;
+  overrides?: PageLayoutOverrides;
 }
 
 export interface TemplateTrainingSignal {
@@ -213,12 +249,30 @@ export interface PageLayoutElement {
   source?: string;
 }
 
+export type GuideSource = "auto" | "template" | "user";
+
+export type GuideRole =
+  | "baseline"
+  | "margin"
+  | "column"
+  | "gutter"
+  | "header-band"
+  | "footer-band"
+  | "ornament"
+  | "diagnostic"
+  | "ruler"
+  | "detected";
+
 export interface GuideLine {
   id: string;
   axis: "x" | "y";
   position: number;
   kind: "major" | "minor";
   label?: string;
+  role?: GuideRole;
+  source?: GuideSource;
+  confidence?: number;
+  locked?: boolean;
 }
 
 export interface GuideLayerData {
@@ -297,7 +351,7 @@ export interface PageLayoutSidecar {
     appliedAt?: string;
     source?: "review";
   };
-  overrides?: Record<string, unknown>;
+  overrides?: PageLayoutOverrides;
   guides?: GuideLayout;
   bookModel?: BookModel;
   version?: string;
@@ -527,55 +581,108 @@ export interface RunManifestSummary {
   count: number;
 }
 
+export interface AppPreferences {
+  outputDir: string;
+  projectsDir: string;
+  firstRunComplete: boolean;
+  sampleCorpusInstalled: boolean;
+  lastVersion?: string;
+}
+
+export interface AppInfo {
+  version: string;
+  buildHash?: string;
+  commit?: string;
+  platform: string;
+}
+
+export type IpcErrorPayload = {
+  message: string;
+  code?: string;
+  detail?: string;
+};
+
+export type IpcResult<T> =
+  | {
+      ok: true;
+      value: T;
+    }
+  | {
+      ok: false;
+      error: IpcErrorPayload;
+    };
+
 export interface IpcChannels {
-  "asteria:start-run": (_config: PipelineRunConfig) => Promise<PipelineRunResult>;
-  "asteria:cancel-run": (_runId: string) => Promise<void>;
-  "asteria:pause-run": (_runId: string) => Promise<void>;
-  "asteria:resume-run": (_runId: string) => Promise<void>;
-  "asteria:fetch-page": (_runId: string, _runDir: string, _pageId: string) => Promise<PageData>;
+  "asteria:get-app-preferences": () => Promise<IpcResult<AppPreferences>>;
+  "asteria:set-app-preferences": (
+    _prefs: Partial<AppPreferences>
+  ) => Promise<IpcResult<AppPreferences>>;
+  "asteria:get-app-info": () => Promise<IpcResult<AppInfo>>;
+  "asteria:provision-sample-corpus": () => Promise<
+    IpcResult<{ projectId: string; inputPath: string }>
+  >;
+  "asteria:create-diagnostics-bundle": () => Promise<IpcResult<{ bundlePath: string }>>;
+  "asteria:reveal-path": (_targetPath: string) => Promise<IpcResult<void>>;
+  "asteria:start-run": (_config: PipelineRunConfig) => Promise<IpcResult<PipelineRunResult>>;
+  "asteria:cancel-run": (_runId: string) => Promise<IpcResult<void>>;
+  "asteria:pause-run": (_runId: string) => Promise<IpcResult<void>>;
+  "asteria:resume-run": (_runId: string) => Promise<IpcResult<void>>;
+  "asteria:fetch-page": (
+    _runId: string,
+    _runDir: string,
+    _pageId: string
+  ) => Promise<IpcResult<PageData>>;
   "asteria:fetch-sidecar": (
     _runId: string,
     _runDir: string,
     _pageId: string
-  ) => Promise<PageLayoutSidecar | null>;
+  ) => Promise<IpcResult<PageLayoutSidecar | null>>;
   "asteria:apply-override": (
     _runId: string,
     _runDir: string,
     _pageId: string,
     _overrides: Record<string, unknown>
-  ) => Promise<void>;
+  ) => Promise<IpcResult<void>>;
   "asteria:export-run": (
     _runId: string,
     _runDir: string,
     _formats: Array<"png" | "tiff" | "pdf">
-  ) => Promise<string>;
-  "asteria:analyze-corpus": (_config: PipelineRunConfig) => Promise<CorpusSummary>;
+  ) => Promise<IpcResult<string>>;
+  "asteria:analyze-corpus": (_config: PipelineRunConfig) => Promise<IpcResult<CorpusSummary>>;
   "asteria:scan-corpus": (
     _rootPath: string,
     _options?: ScanCorpusOptions
-  ) => Promise<PipelineRunConfig>;
-  "asteria:pick-corpus-dir": () => Promise<string | null>;
-  "asteria:list-projects": () => Promise<ProjectSummary[]>;
-  "asteria:import-corpus": (_request: ImportCorpusRequest) => Promise<ProjectSummary>;
-  "asteria:list-runs": () => Promise<RunSummary[]>;
+  ) => Promise<IpcResult<PipelineRunConfig>>;
+  "asteria:pick-corpus-dir": () => Promise<IpcResult<string | null>>;
+  "asteria:list-projects": () => Promise<IpcResult<ProjectSummary[]>>;
+  "asteria:import-corpus": (_request: ImportCorpusRequest) => Promise<IpcResult<ProjectSummary>>;
+  "asteria:list-runs": () => Promise<IpcResult<RunSummary[]>>;
   "asteria:get-run-manifest": (
     _runId: string,
     _runDir: string
-  ) => Promise<RunManifestSummary | null>;
-  "asteria:get-pipeline-config": (_projectId?: string) => Promise<PipelineConfigSnapshot>;
+  ) => Promise<IpcResult<RunManifestSummary | null>>;
+  "asteria:get-pipeline-config": (
+    _projectId?: string
+  ) => Promise<IpcResult<PipelineConfigSnapshot>>;
   "asteria:save-project-config": (
     _projectId: string,
     _overrides: PipelineConfigOverrides
-  ) => Promise<void>;
-  "asteria:get-run-config": (_runId: string, _runDir: string) => Promise<RunConfigSnapshot | null>;
-  "asteria:fetch-review-queue": (_runId: string, _runDir: string) => Promise<ReviewQueue>;
+  ) => Promise<IpcResult<void>>;
+  "asteria:get-run-config": (
+    _runId: string,
+    _runDir: string
+  ) => Promise<IpcResult<RunConfigSnapshot | null>>;
+  "asteria:fetch-review-queue": (
+    _runId: string,
+    _runDir: string
+  ) => Promise<IpcResult<ReviewQueue>>;
   "asteria:submit-review": (
     _runId: string,
     _runDir: string,
     _decisions: ReviewDecision[]
-  ) => Promise<void>;
+  ) => Promise<IpcResult<void>>;
   "asteria:record-template-training": (
     _runId: string,
     _signal: TemplateTrainingSignal
-  ) => Promise<void>;
+  ) => Promise<IpcResult<void>>;
 }

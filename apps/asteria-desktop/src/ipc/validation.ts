@@ -174,6 +174,44 @@ export const validateImportCorpusRequest = (request: {
   }
 };
 
+export const validateAppPreferencesUpdate = (prefs: Record<string, unknown>): void => {
+  requirePlainObject(prefs, "Invalid preferences update: expected object");
+  const allowed = new Set([
+    "outputDir",
+    "projectsDir",
+    "firstRunComplete",
+    "sampleCorpusInstalled",
+    "lastVersion",
+  ]);
+
+  for (const [key, value] of Object.entries(prefs)) {
+    if (!allowed.has(key)) {
+      throwTypeError(`Invalid preferences update: unknown field ${key}`);
+    }
+    if ((key === "outputDir" || key === "projectsDir" || key === "lastVersion") && value !== undefined) {
+      if (!isNonEmptyString(value)) {
+        throwTypeError(`Invalid preferences update: ${key} must be a non-empty string`);
+      }
+    }
+    if ((key === "firstRunComplete" || key === "sampleCorpusInstalled") && value !== undefined) {
+      if (typeof value !== "boolean") {
+        throwTypeError(`Invalid preferences update: ${key} must be a boolean`);
+      }
+    }
+  }
+};
+
+export const validateRevealPath = (targetPath: string): void => {
+  requireNonEmptyString(targetPath, "Invalid reveal path: expected non-empty string");
+  if (targetPath === "logs") return;
+  if (targetPath.includes("\u0000")) {
+    throwTypeError("Invalid reveal path: contains null byte");
+  }
+  if (!path.isAbsolute(targetPath)) {
+    throwTypeError("Invalid reveal path: expected absolute path");
+  }
+};
+
 export const validateOverrides = (overrides: Record<string, unknown>): void => {
   if (!isPlainObject(overrides)) {
     throw new Error("Invalid overrides: expected plain object");
