@@ -9,7 +9,7 @@
   "scripts": {
     "bootstrap": "node tools/bootstrap.mjs",
     "sync:node-version": "node tools/sync-node-version.mjs",
-    "upgrade:stack": "pnpm -r update && trunk upgrade && pnpm sync:node-version",
+    "upgrade:stack": "node tools/upgrade-stack.mjs",
     "trunk:check": "trunk check",
     "trunk:fmt": "trunk fmt",
     "nx": "node tools/nx/run.mjs",

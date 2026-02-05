@@ -47,6 +47,9 @@ pnpm upgrade:stack
 
 This updates workspace dependencies, upgrades Trunk-managed linters, and syncs
 the Node version metadata from the current runtime.
+By default it skips dependency or Trunk upgrades if the last run was within the
+previous 24 hours. Use `pnpm upgrade:stack -- --force` to override the cooldown
+or `UPGRADE_COOLDOWN_HOURS` to change the window.
 
 ## Rust (Pipeline Core)
 
