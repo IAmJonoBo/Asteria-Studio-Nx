@@ -188,7 +188,10 @@ export const validateAppPreferencesUpdate = (prefs: Record<string, unknown>): vo
     if (!allowed.has(key)) {
       throwTypeError(`Invalid preferences update: unknown field ${key}`);
     }
-    if ((key === "outputDir" || key === "projectsDir" || key === "lastVersion") && value !== undefined) {
+    if (
+      (key === "outputDir" || key === "projectsDir" || key === "lastVersion") &&
+      value !== undefined
+    ) {
       if (!isNonEmptyString(value)) {
         throwTypeError(`Invalid preferences update: ${key} must be a non-empty string`);
       }

@@ -45,10 +45,8 @@ const api: IpcChannels = {
     return safeInvoke("asteria:set-app-preferences", prefs);
   },
   "asteria:get-app-info": async () => safeInvoke("asteria:get-app-info"),
-  "asteria:provision-sample-corpus": async () =>
-    safeInvoke("asteria:provision-sample-corpus"),
-  "asteria:create-diagnostics-bundle": async () =>
-    safeInvoke("asteria:create-diagnostics-bundle"),
+  "asteria:provision-sample-corpus": async () => safeInvoke("asteria:provision-sample-corpus"),
+  "asteria:create-diagnostics-bundle": async () => safeInvoke("asteria:create-diagnostics-bundle"),
   "asteria:reveal-path": async (targetPath: Parameters<IpcChannels["asteria:reveal-path"]>[0]) => {
     validateRevealPath(targetPath);
     return safeInvoke("asteria:reveal-path", targetPath);
