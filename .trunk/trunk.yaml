@@ -23,7 +23,7 @@ lint:
     - isort@7.0.0
     - oxipng@10.1.0
     - ruff@0.15.0
-    - renovate@43.2.6
+    - renovate@43.3.4
     - osv-scanner@2.3.2
     - actionlint@1.7.10
     - eslint@9.39.0
@@ -36,7 +36,7 @@ lint:
     - shellcheck@0.11.0
     - shfmt@3.6.0
     - taplo@0.10.0
-    - trufflehog@3.92.5
+    - trufflehog@3.93.0
     - yamllint@1.38.0
 actions:
   disabled:

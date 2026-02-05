@@ -92,7 +92,11 @@ const createFallbackNative = (): PipelineCoreNative => {
     return magnitudes;
   };
 
-  const estimateSkewAngle = (data: Buffer, width: number, height: number) => {
+  const estimateSkewAngle = (
+    data: Buffer,
+    width: number,
+    height: number
+  ): ReturnType<PipelineCoreNative["estimateSkewAngle"]> => {
     if (width <= 0 || height <= 0 || data.length < width * height) {
       return { angle: 0, confidence: 0 };
     }
@@ -157,7 +161,11 @@ const createFallbackNative = (): PipelineCoreNative => {
     return sorted[mid];
   };
 
-  const baselineMetrics = (data: Buffer, width: number, height: number) => {
+  const baselineMetrics = (
+    data: Buffer,
+    width: number,
+    height: number
+  ): ReturnType<PipelineCoreNative["baselineMetrics"]> => {
     if (width <= 0 || height <= 0 || data.length < width * height) {
       return {
         lineConsistency: 0,
@@ -240,7 +248,11 @@ const createFallbackNative = (): PipelineCoreNative => {
     };
   };
 
-  const columnMetrics = (data: Buffer, width: number, height: number) => {
+  const columnMetrics = (
+    data: Buffer,
+    width: number,
+    height: number
+  ): ReturnType<PipelineCoreNative["columnMetrics"]> => {
     if (width <= 0 || height <= 0 || data.length < width * height) {
       return { columnCount: 0, columnSeparation: 0 };
     }
@@ -272,7 +284,11 @@ const createFallbackNative = (): PipelineCoreNative => {
     return { columnCount: Math.max(1, columnBands), columnSeparation: std };
   };
 
-  const detectLayoutElements = (data: Buffer, width: number, height: number) => {
+  const detectLayoutElements = (
+    data: Buffer,
+    width: number,
+    height: number
+  ): ReturnType<PipelineCoreNative["detectLayoutElements"]> => {
     if (width <= 0 || height <= 0 || data.length < width * height) return [];
     const values = data.subarray(0, width * height);
     const mean = values.reduce((acc, v) => acc + v, 0) / Math.max(1, values.length);

@@ -18,7 +18,7 @@ import {
 } from "../guides/registry.js";
 import { applyGuideOverrides } from "../guides/overrides.js";
 import { snapBoxWithSources, getBoxSnapCandidates } from "../utils/snapping.js";
-import type { SnapEdge } from "../utils/snapping.js";
+import type { SnapEdge, SnapSourceConfig } from "../utils/snapping.js";
 import { unwrapIpcResult } from "../utils/ipc.js";
 
 type PreviewRef = {
@@ -575,8 +575,11 @@ type GuideHit = {
   position: number;
 };
 
-const clampGuidePosition = (value: number, axis: "x" | "y", bounds: { w: number; h: number }) =>
-  Math.max(0, Math.min(value, axis === "x" ? bounds.w : bounds.h));
+const clampGuidePosition = (
+  value: number,
+  axis: "x" | "y",
+  bounds: { w: number; h: number }
+): number => Math.max(0, Math.min(value, axis === "x" ? bounds.w : bounds.h));
 
 const hitTestGuides = (params: {
   point: { x: number; y: number };
@@ -2681,7 +2684,7 @@ export function ReviewQueueScreen({
     sidecar?.overrides && typeof sidecar.overrides === "object" && "guides" in sidecar.overrides
       ? (sidecar.overrides.guides as GuideOverrides | null)
       : null;
-  const runtimeGuideOverrides = useMemo(() => {
+  const runtimeGuideOverrides = useMemo((): GuideOverrides => {
     const baselineGrid =
       baselineSpacingPx !== null ||
       baselineOffsetPx !== null ||
@@ -2709,7 +2712,7 @@ export function ReviewQueueScreen({
     guideOverridesDraft,
   ]);
   const effectiveGuideLayout = useMemo(
-    () =>
+    (): GuideLayout | undefined =>
       applyGuideOverrides({
         guideLayout: sidecar?.guides,
         overrides: runtimeGuideOverrides ?? guideOverrides ?? undefined,
@@ -2725,7 +2728,7 @@ export function ReviewQueueScreen({
     ]
   );
 
-  useEffect(() => {
+  useEffect((): void | (() => void) => {
     const listener = (): void => {
       setOverlaysVisible((prev) => !prev);
     };
@@ -2734,7 +2737,7 @@ export function ReviewQueueScreen({
       globalThis.removeEventListener("asteria:toggle-overlays", listener);
     };
   }, []);
-  useEffect(() => {
+  useEffect((): void | (() => void) => {
     const toggleGuides = (): void => setGuidesVisible((prev) => !prev);
     const toggleSnapping = (): void => setSnapEnabled((prev) => !prev);
     const resetViewEvent = (): void => resetView();
@@ -2803,7 +2806,7 @@ export function ReviewQueueScreen({
     if (guidesVisible) return guideGroupVisibility;
     return { structural: false, detected: false, diagnostic: false };
   }, [guidesVisible, guideGroupVisibility]);
-  const snapSources = useMemo(() => {
+  const snapSources = useMemo((): SnapSourceConfig[] => {
     const templateCandidates = [
       ...(sidecar?.bookModel?.runningHeadTemplates?.flatMap((template) =>
         getBoxSnapCandidates(

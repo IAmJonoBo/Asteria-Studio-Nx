@@ -67,5 +67,11 @@ export default tseslint.config(
       "@typescript-eslint/no-explicit-any": "error",
       "no-console": ["warn", { allow: ["warn", "error"] }],
     },
+  },
+  {
+    files: ["src/**/*.test.{ts,tsx}", "src/**/*.spec.{ts,tsx}"],
+    rules: {
+      "@typescript-eslint/explicit-function-return-type": "off",
+    },
   }
 );
