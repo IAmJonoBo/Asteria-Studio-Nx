@@ -1,6 +1,7 @@
 import type { JSX } from "react";
 import { useEffect, useMemo, useState } from "react";
-import type { RunManifestSummary, RunSummary } from "../../ipc/contracts.js";
+import type { IpcResult, RunManifestSummary, RunSummary } from "../../ipc/contracts.js";
+import { unwrapIpcResult, unwrapIpcResultOr } from "../utils/ipc.js";
 
 const exportFormats = ["png", "tiff", "pdf"] as const;
 
@@ -27,21 +28,28 @@ export function ExportsScreen(): JSX.Element {
       if (!windowRef.asteria?.ipc) return;
       try {
         const listRuns = windowRef.asteria.ipc["asteria:list-runs"] as
-          | (() => Promise<RunSummary[]>)
+          | (() => Promise<import("../../ipc/contracts.js").IpcResult<RunSummary[]>>)
           | undefined;
-        const data = listRuns ? await listRuns() : [];
+        const data: IpcResult<RunSummary[]> = listRuns ? await listRuns() : { ok: true, value: [] };
+        if (!data.ok) {
+          throw new Error(data.error.message);
+        }
+        const resolvedRuns = unwrapIpcResultOr(data, []);
         if (!cancelled) {
-          setRuns(data);
-          setSelectedRunId((prev) => prev ?? data[0]?.runId ?? null);
+          setRuns(resolvedRuns);
+          setSelectedRunId((prev) => prev ?? resolvedRuns[0]?.runId ?? null);
         }
         const getManifest = windowRef.asteria.ipc["asteria:get-run-manifest"] as
-          | ((runId: string, runDir: string) => Promise<RunManifestSummary | null>)
+          | ((
+              runId: string,
+              runDir: string
+            ) => Promise<import("../../ipc/contracts.js").IpcResult<RunManifestSummary | null>>)
           | undefined;
-        if (getManifest && data.length > 0) {
+        if (getManifest && resolvedRuns.length > 0) {
           const manifestEntries = await Promise.all(
-            data.map(async (run) => ({
+            resolvedRuns.map(async (run) => ({
               runId: run.runId,
-              manifest: await getManifest(run.runId, run.runDir),
+              manifest: unwrapIpcResultOr(await getManifest(run.runId, run.runDir), null),
             }))
           );
           if (!cancelled) {
@@ -82,7 +90,11 @@ export function ExportsScreen(): JSX.Element {
       globalThis;
     if (!windowRef.asteria?.ipc) return;
     const exportRun = windowRef.asteria.ipc["asteria:export-run"] as
-      | ((runId: string, runDir: string, formats: Array<ExportFormat>) => Promise<string>)
+      | ((
+          runId: string,
+          runDir: string,
+          formats: Array<ExportFormat>
+        ) => Promise<import("../../ipc/contracts.js").IpcResult<string>>)
       | undefined;
     if (!exportRun) return;
     const selectedFormats = exportFormats.filter((format) => formats[format]);
@@ -94,8 +106,8 @@ export function ExportsScreen(): JSX.Element {
     setExportPath(null);
     setError(null);
     try {
-      const path = await exportRun(selectedRunId, selectedRun.runDir, selectedFormats);
-      setExportPath(path);
+      const exportResult = await exportRun(selectedRunId, selectedRun.runDir, selectedFormats);
+      setExportPath(unwrapIpcResult(exportResult, "Export run"));
     } catch (err) {
       const message = err instanceof Error ? err.message : "Export failed";
       setError(message);

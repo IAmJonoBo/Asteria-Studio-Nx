@@ -1,9 +1,12 @@
 {
   "version": "1.0.0",
   "pageId": "p11_curved_warp",
+  "pageType": "body",
+  "templateId": "template-02",
+  "templateConfidence": 0.9922433160366424,
   "source": {
-    "path": "/Users/jonathanbotha/GitHub/Asteria-Studio/tests/fixtures/golden_corpus/v1/inputs/p11_curved_warp.png",
-    "checksum": "4d32952e69eee76581f5f904f0943088a168325a3f7a04d4b419767f967f8748"
+    "path": "/Volumes/APFS Space/GitHub/Asteria-Studio-NX/tests/fixtures/golden_corpus/v1/inputs/p11_curved_warp.png",
+    "checksum": "91e8f2a191938536e153bd6df2c6a4c9e9c299795aec479604f143d079c4573a"
   },
   "dimensions": {
     "width": 767.2916666666666,
@@ -12,13 +15,23 @@
   },
   "dpi": 72,
   "normalization": {
-    "cropBox": [0, 0, 2174, 3074],
-    "pageMask": [6, 5, 2170, 3069],
+    "cropBox": [
+      0,
+      0,
+      2174,
+      3074
+    ],
+    "pageMask": [
+      32,
+      30,
+      2142,
+      3044
+    ],
     "dpiSource": "metadata",
     "bleed": 12.499975,
     "trim": 0,
-    "scale": 0.7402995234853642,
-    "skewAngle": 16,
+    "scale": 1.0023041474654377,
+    "skewAngle": 0,
     "warp": {
       "method": "affine",
       "residual": 0
@@ -27,8 +40,8 @@
       "present": false,
       "side": "none",
       "widthPx": 0,
-      "confidence": -0.4479118733026458,
-      "darkness": -78.683129264504
+      "confidence": -0.8656774188146449,
+      "darkness": -113.49705724698629
     },
     "shading": {
       "method": "border-regression",
@@ -43,93 +56,279 @@
   },
   "elements": [
     {
-      "id": "p11_curved_warp-page-bounds",
+      "id": "page-bounds",
       "type": "page_bounds",
-      "bbox": [0, 0, 2174, 3074],
+      "bbox": [
+        0,
+        0,
+        2174,
+        3074
+      ],
       "confidence": 0.6,
       "source": "local",
-      "flags": ["derived"]
+      "flags": [
+        "native"
+      ]
     },
     {
-      "id": "p11_curved_warp-text-block",
+      "id": "text-block",
       "type": "text_block",
-      "bbox": [6, 5, 2170, 3069],
+      "bbox": [
+        138,
+        156,
+        1983,
+        2926
+      ],
       "confidence": 0.55,
       "source": "local",
-      "flags": ["mask-derived"]
+      "flags": [
+        "native"
+      ]
     },
     {
-      "id": "p11_curved_warp-title",
+      "id": "title",
       "type": "title",
-      "bbox": [266, 66, 1910, 434],
+      "bbox": [
+        359,
+        211,
+        1762,
+        544
+      ],
       "confidence": 0.28,
       "source": "local",
-      "flags": ["heuristic"]
+      "flags": [
+        "native"
+      ]
     },
     {
-      "id": "p11_curved_warp-running-head",
+      "id": "running-head",
       "type": "running_head",
-      "bbox": [222, 5, 1954, 250],
+      "bbox": [
+        323,
+        156,
+        1799,
+        378
+      ],
       "confidence": 0.25,
       "source": "local",
-      "flags": ["heuristic"]
+      "flags": [
+        "native"
+      ]
     },
     {
-      "id": "p11_curved_warp-folio",
+      "id": "folio",
       "type": "folio",
-      "bbox": [915, 2763, 1261, 3008],
+      "bbox": [
+        913,
+        2649,
+        1208,
+        2871
+      ],
       "confidence": 0.22,
       "source": "local",
-      "flags": ["heuristic"]
+      "flags": [
+        "native"
+      ]
     },
     {
-      "id": "p11_curved_warp-ornament",
+      "id": "ornament",
       "type": "ornament",
-      "bbox": [915, 557, 1261, 740],
+      "bbox": [
+        913,
+        655,
+        1208,
+        821
+      ],
       "confidence": 0.2,
       "source": "local",
-      "flags": ["heuristic"]
+      "flags": [
+        "native"
+      ]
     },
     {
-      "id": "p11_curved_warp-drop-cap",
+      "id": "drop-cap",
       "type": "drop_cap",
-      "bbox": [49, 557, 222, 985],
+      "bbox": [
+        175,
+        655,
+        323,
+        1042
+      ],
       "confidence": 0.18,
       "source": "local",
-      "flags": ["heuristic"]
+      "flags": [
+        "native"
+      ]
     },
     {
-      "id": "p11_curved_warp-footnote",
+      "id": "footnote",
       "type": "footnote",
-      "bbox": [114, 2640, 2062, 3008],
+      "bbox": [
+        230,
+        2538,
+        1891,
+        2871
+      ],
       "confidence": 0.2,
       "source": "local",
-      "flags": ["heuristic"]
+      "flags": [
+        "native"
+      ]
     },
     {
-      "id": "p11_curved_warp-marginalia",
+      "id": "marginalia",
       "type": "marginalia",
-      "bbox": [6, 771, 179, 2303],
+      "bbox": [
+        138,
+        849,
+        286,
+        2234
+      ],
       "confidence": 0.18,
       "source": "local",
-      "flags": ["heuristic"]
+      "flags": [
+        "native"
+      ]
     }
   ],
+  "overrides": {},
   "metrics": {
     "processingMs": 0,
     "deskewConfidence": 1,
-    "shadowScore": -78.683129264504,
-    "maskCoverage": 1,
-    "backgroundStd": 2.9652577305861993,
-    "backgroundMean": 254.0746280121986,
-    "illuminationResidual": 0.587484057207485,
+    "shadowScore": -113.49705724698629,
+    "maskCoverage": 0.9947810485001402,
+    "backgroundStd": 1.9220573715143783,
+    "backgroundMean": 244.86293866046296,
+    "illuminationResidual": 0.8660093560929916,
     "spineShadowScore": 0,
-    "layoutScore": 0.9708320425265452,
+    "layoutScore": 0.97004886795981,
     "baseline": {
-      "medianSpacingPx": 34.85294117647059,
-      "lineStraightnessResidual": 8,
-      "confidence": 0.7355301702887045
+      "medianSpacingPx": 21.00683148991542,
+      "spacingMAD": 19.006180871828235,
+      "lineStraightnessResidual": 0,
+      "confidence": 0.29516848722927236,
+      "peaksY": [
+        0.09303838646714378,
+        0.0936890045543266,
+        0.10019518542615485,
+        0.10084580351333768,
+        0.10735198438516591,
+        0.10800260247234873,
+        0.11483409238776839,
+        0.13597918022121014,
+        0.13662979830839297,
+        0.14378659726740403,
+        0.15744957709824334,
+        0.18607677293428757,
+        0.20754716981132076,
+        0.20819778789850357,
+        0.21470396877033182,
+        0.21535458685751463,
+        0.2504879635653871,
+        0.2511385816525699,
+        0.25797007156798957,
+        0.3152244632400781,
+        0.3793103448275862,
+        0.37996096291476905,
+        0.3867924528301887,
+        0.4011060507482108,
+        0.40793754066363047,
+        0.4085881587508133,
+        0.41541964866623293,
+        0.4583604424202993,
+        0.47950553025374104,
+        0.4801561483409239,
+        0.4869876382563435,
+        0.5156148340923877,
+        0.544242029928432,
+        0.5510735198438517,
+        0.5517241379310345,
+        0.5572543916720885,
+        0.5871828236824984,
+        0.6014964216005205,
+        0.6369551073519844,
+        0.6376057254391672,
+        0.6444372153545869,
+        0.6512687052700065,
+        0.6519193233571894,
+        0.6584255042290176,
+        0.6942094990240729,
+        0.6948601171112557,
+        0.7013662979830839,
+        0.7020169160702667,
+        0.7371502927781393,
+        0.7378009108653221,
+        0.7446324007807417,
+        0.7491867273910214,
+        0.7514638906961614,
+        0.7521145087833442,
+        0.7589459986987638,
+        0.8230318802862719,
+        0.8236824983734548,
+        0.8305139882888745,
+        0.8516590761223162,
+        0.852309694209499,
+        0.8591411841249187
+      ]
     }
   },
-  "overrides": {}
+  "bookModel": {
+    "pageTemplates": [
+      {
+        "id": "template-02",
+        "pageType": "body",
+        "pageIds": [
+          "p02_clean_double",
+          "p03_running_head_folio",
+          "p04_ornament",
+          "p05_footnotes_marginalia",
+          "p06_blank_verso",
+          "p08_shadow_left",
+          "p09_shadow_right",
+          "p10_spread_dark_gutter",
+          "p11_curved_warp",
+          "p12_rot_perspective",
+          "p13_rotation_only",
+          "p14_spread_light_gutter",
+          "p15_crop_adjustment",
+          "p16_overlay_elements"
+        ],
+        "margins": {
+          "top": 0.046341463414634146,
+          "right": 0.06653530377668308,
+          "bottom": 0.044761904761904774,
+          "left": 0.04348111658456486
+        },
+        "columns": {
+          "count": 1,
+          "valleyRatio": 0
+        },
+        "headBand": {
+          "ratio": 0.18846852746724332
+        },
+        "footerBand": {
+          "ratio": 0.15177419073300785
+        },
+        "baseline": {
+          "spacingPx": 4.204324970216151,
+          "consistency": 0.78410459387599
+        },
+        "gutter": {},
+        "ornamentHashes": [
+          "4e4e4b4b484a4849",
+          "0020007074003000",
+          "90aeae100c000000",
+          "4000040006091616",
+          "0000000404001656",
+          "f2866424c434756c",
+          "ce080818c8f430c1",
+          "b4b4483004000000",
+          "0060807070802000"
+        ],
+        "textDensity": 1,
+        "whitespaceRatio": 0,
+        "confidence": 0.9733409051273462
+      }
+    ]
+  }
 }

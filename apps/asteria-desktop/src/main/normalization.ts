@@ -9,7 +9,6 @@ const MAX_PREVIEW_DIM = 1600;
 const DEFAULT_PADDING_PX = 12;
 const BORDER_SAMPLE_RATIO = 0.05;
 const EDGE_THRESHOLD_SCALE = 1.15;
-const MAX_SKEW_DEGREES = 8;
 const COMMON_SIZES_MM = [
   { name: "A4", width: 210, height: 297 },
   { name: "Letter", width: 216, height: 279 },
@@ -20,53 +19,7 @@ const COMMON_SIZES_MM = [
 
 const clamp01 = (value: number): number => Math.max(0, Math.min(1, value));
 
-const getNativeCore = (): PipelineCoreNative | null => getPipelineCoreNative();
-
-const computeRowSums = (preview: PreviewImage): number[] => {
-  const { data, width, height } = preview;
-  const native = getNativeCore();
-  if (native) {
-    const sums = native.projectionProfileY(Buffer.from(data), width, height);
-    if (sums.length === height) {
-      const maxRow = width * 255;
-      return sums.map((sum) => maxRow - sum);
-    }
-  }
-
-  const rowSums = new Array<number>(height).fill(0);
-  for (let y = 0; y < height; y++) {
-    let sum = 0;
-    for (let x = 0; x < width; x++) {
-      const v = data[y * width + x];
-      sum += 255 - v;
-    }
-    rowSums[y] = sum;
-  }
-  return rowSums;
-};
-
-const computeColSums = (preview: PreviewImage): number[] => {
-  const { data, width, height } = preview;
-  const native = getNativeCore();
-  if (native) {
-    const sums = native.projectionProfileX(Buffer.from(data), width, height);
-    if (sums.length === width) {
-      const maxCol = height * 255;
-      return sums.map((sum) => maxCol - sum);
-    }
-  }
-
-  const colSums = new Array<number>(width).fill(0);
-  for (let x = 0; x < width; x++) {
-    let sum = 0;
-    for (let y = 0; y < height; y++) {
-      const v = data[y * width + x];
-      sum += 255 - v;
-    }
-    colSums[x] = sum;
-  }
-  return colSums;
-};
+const getNativeCore = (): PipelineCoreNative => getPipelineCoreNative();
 
 interface PreviewImage {
   data: Uint8Array;
@@ -345,13 +298,6 @@ const inferPhysicalSize = (
   );
 };
 
-const angleToBucket = (angle: number): number => {
-  let normalized = angle;
-  if (normalized > 90) normalized -= 180;
-  if (normalized < -90) normalized += 180;
-  return Math.max(0, Math.min(180, Math.round(normalized + 90)));
-};
-
 const gradientAt = (
   data: Uint8Array,
   width: number,
@@ -375,29 +321,23 @@ const gradientAt = (
   return { magnitude: Math.hypot(gx, gy), angle: (Math.atan2(gy, gx) * 180) / Math.PI };
 };
 
-const computeGradientHistogram = (preview: PreviewImage): Float64Array => {
-  const { data, width, height } = preview;
-  const gxKernel = [-1, 0, 1, -2, 0, 2, -1, 0, 1];
-  const gyKernel = [1, 2, 1, 0, 0, 0, -1, -2, -1];
-  const histogram = new Float64Array(181); // -90..90 degrees
-
-  for (let y = 1; y < height - 1; y++) {
-    for (let x = 1; x < width - 1; x++) {
-      const { magnitude, angle } = gradientAt(data, width, x, y, gxKernel, gyKernel);
-      if (magnitude < 10) continue;
-      const bucket = angleToBucket(angle);
-      histogram[bucket] += magnitude;
-    }
-  }
-
-  return histogram;
-};
-
 const loadPreview = async (imagePath: string): Promise<PreviewImage> => {
   const image = sharp(imagePath);
   const meta = await image.metadata();
   const width = meta.width ?? 0;
   const height = meta.height ?? 0;
+  if (width <= 0 || height <= 0) {
+    const { data, info } = await image
+      .ensureAlpha()
+      .removeAlpha()
+      .grayscale()
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+    if (!info.width || !info.height) {
+      throw new Error("Failed to load image preview dimensions");
+    }
+    return { data: new Uint8Array(data), width: info.width, height: info.height, scale: 1 };
+  }
   const scale = Math.min(1, MAX_PREVIEW_DIM / Math.max(width, height, 1));
   const resized =
     scale < 1 ? image.resize(Math.round(width * scale), Math.round(height * scale)) : image;
@@ -407,6 +347,9 @@ const loadPreview = async (imagePath: string): Promise<PreviewImage> => {
     .grayscale()
     .raw()
     .toBuffer({ resolveWithObject: true });
+  if (!info.width || !info.height) {
+    throw new Error("Failed to load image preview dimensions");
+  }
   return { data: new Uint8Array(data), width: info.width, height: info.height, scale };
 };
 
@@ -418,46 +361,26 @@ const buildPreviewFromSharp = async (image: sharp.Sharp): Promise<PreviewImage> 
     .grayscale()
     .raw()
     .toBuffer({ resolveWithObject: true });
+  if (!info.width || !info.height) {
+    throw new Error("Failed to build preview from image buffer");
+  }
   return { data: new Uint8Array(data), width: info.width, height: info.height, scale: 1 };
 };
 
 const estimateSkewAngle = (preview: PreviewImage): { angle: number; confidence: number } => {
+  if (preview.width < 2 || preview.height < 2) {
+    return { angle: 0, confidence: 0 };
+  }
   const native = getNativeCore();
-  if (native) {
-    const estimate = native.estimateSkewAngle(
-      Buffer.from(preview.data),
-      preview.width,
-      preview.height
-    );
-    if (Number.isFinite(estimate.angle) && Number.isFinite(estimate.confidence)) {
-      return { angle: estimate.angle, confidence: estimate.confidence };
-    }
+  const estimate = native.estimateSkewAngle(
+    Buffer.from(preview.data),
+    preview.width,
+    preview.height
+  );
+  if (!Number.isFinite(estimate.angle) || !Number.isFinite(estimate.confidence)) {
+    throw new Error("pipeline-core estimateSkewAngle returned invalid values");
   }
-  const histogram = computeGradientHistogram(preview);
-  const { width, height } = preview;
-
-  let bestBucket = 90;
-  let bestVal = 0;
-  histogram.forEach((val, i) => {
-    if (val > bestVal) {
-      bestVal = val;
-      bestBucket = i;
-    }
-  });
-
-  // Weighted average around the best bucket to smooth
-  const window = 3;
-  let num = 0;
-  let den = 0;
-  for (let i = Math.max(0, bestBucket - window); i <= Math.min(180, bestBucket + window); i++) {
-    const w = histogram[i];
-    num += (i - 90) * w;
-    den += w;
-  }
-  const angle = den > 0 ? num / den : 0;
-  const clipped = Math.max(-MAX_SKEW_DEGREES, Math.min(MAX_SKEW_DEGREES, angle));
-  const confidence = Math.min(1, bestVal / (width * height * 4));
-  return { angle: clipped, confidence };
+  return { angle: estimate.angle, confidence: estimate.confidence };
 };
 
 const computeBorderStats = (preview: PreviewImage): { mean: number; std: number } => {
@@ -490,6 +413,7 @@ const computeBorderStats = (preview: PreviewImage): { mean: number; std: number 
 
 const computeEdgeDensity = (preview: PreviewImage, bounds: { x0: number; x1: number }): number => {
   const { data, width, height } = preview;
+  if (width < 3 || height < 3) return 0;
   const gxKernel = [-1, 0, 1, -2, 0, 2, -1, 0, 1];
   const gyKernel = [1, 2, 1, 0, 0, 0, -1, -2, -1];
   const threshold = computeEdgeThreshold(preview);
@@ -671,6 +595,9 @@ const applyShadingCorrection = async (
     .removeAlpha()
     .raw()
     .toBuffer({ resolveWithObject: true });
+  if (!info.width || !info.height) {
+    return { corrected: image, model };
+  }
   const buffer = Buffer.from(data);
   const channels = info.channels ?? 3;
   const xScale = shading.field.width / info.width;
@@ -705,6 +632,9 @@ const computeMaskBox = (
   intensityThreshold: number
 ): { box: [number, number, number, number]; coverage: number } => {
   const { data, width, height } = preview;
+  if (width <= 0 || height <= 0) {
+    return { box: [0, 0, 0, 0], coverage: 0 };
+  }
   const rowCounts = new Uint32Array(height);
   const colCounts = new Uint32Array(width);
   for (let y = 0; y < height; y++) {
@@ -729,7 +659,7 @@ const computeMaskBox = (
   while (right > left && colCounts[right] < colLimit) right--;
 
   const maskArea = (bottom - top + 1) * (right - left + 1);
-  const coverage = Math.max(0, maskArea) / (width * height);
+  const coverage = width > 0 && height > 0 ? Math.max(0, maskArea) / (width * height) : 0;
   return { box: [left, top, right, bottom], coverage };
 };
 
@@ -738,6 +668,12 @@ const computeEdgeBox = (
   threshold: number
 ): [number, number, number, number] => {
   const { data, width, height } = preview;
+  if (width <= 0 || height <= 0) {
+    return [0, 0, 0, 0];
+  }
+  if (width < 3 || height < 3) {
+    return [0, 0, Math.max(0, width - 1), Math.max(0, height - 1)];
+  }
   const gxKernel = [-1, 0, 1, -2, 0, 2, -1, 0, 1];
   const gyKernel = [1, 2, 1, 0, 0, 0, -1, -2, -1];
   const rowCounts = new Uint32Array(height);
@@ -791,164 +727,62 @@ const computeMagnitudeStats = (
 
 const computeEdgeThreshold = (preview: PreviewImage): number => {
   const { data, width, height } = preview;
+  if (width < 3 || height < 3) return 8;
   const native = getNativeCore();
-  if (native) {
-    const magnitudes = native.sobelMagnitude(Buffer.from(data), width, height);
-    if (magnitudes.length === width * height) {
-      const { mean, std } = computeMagnitudeStats(width, height, (x, _y, rowOffset) => {
-        return magnitudes[rowOffset + x] ?? 0;
-      });
-      return Math.max(8, mean + std * EDGE_THRESHOLD_SCALE);
-    }
+  const magnitudes = native.sobelMagnitude(Buffer.from(data), width, height);
+  if (magnitudes.length !== width * height) {
+    throw new Error("pipeline-core sobelMagnitude returned unexpected length");
   }
-  const gxKernel = [-1, 0, 1, -2, 0, 2, -1, 0, 1];
-  const gyKernel = [1, 2, 1, 0, 0, 0, -1, -2, -1];
-  const { mean, std } = computeMagnitudeStats(width, height, (x, y) => {
-    return gradientAt(data, width, x, y, gxKernel, gyKernel).magnitude;
+  const { mean, std } = computeMagnitudeStats(width, height, (x, _y, rowOffset) => {
+    return magnitudes[rowOffset + x] ?? 0;
   });
   return Math.max(8, mean + std * EDGE_THRESHOLD_SCALE);
 };
 
-const projectionStats = (values: number[]): { mean: number; std: number } => {
-  if (values.length === 0) return { mean: 0, std: 0 };
-  const mean = values.reduce((sum, v) => sum + v, 0) / values.length;
-  const variance = values.reduce((sum, v) => sum + Math.pow(v - mean, 2), 0) / values.length;
-  return { mean, std: Math.sqrt(variance) };
-};
-
-const median = (values: number[]): number => {
-  if (values.length === 0) return 0;
-  const sorted = [...values].sort((a, b) => a - b);
-  const mid = Math.floor(sorted.length / 2);
-  return sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
-};
-
-const computeBaselineSignal = (
-  rowSums: number[],
-  residualAngle: number
-): {
-  peaksY: number[];
-  spacingNorm: number;
-  spacingMADNorm: number;
-  offsetNorm: number;
-  angleDeg: number;
-  confidence: number;
-  peakSharpness: number;
-  textLineCount: number;
-  lineConsistency: number;
-} => {
-  const { mean, std } = projectionStats(rowSums);
-  const consistencyRaw = mean > 0 ? 1 - Math.min(1, std / (mean * 2)) : 0;
-  const threshold = mean + std * 0.6;
-  const peaks: number[] = [];
-  const sharpnessValues: number[] = [];
-  for (let y = 1; y < rowSums.length - 1; y++) {
-    if (rowSums[y] > threshold && rowSums[y] > rowSums[y - 1] && rowSums[y] > rowSums[y + 1]) {
-      peaks.push(y);
-      const neighborAvg = 0.5 * (rowSums[y - 1] + rowSums[y + 1]);
-      const sharpness = rowSums[y] - neighborAvg;
-      sharpnessValues.push(std > 0 ? sharpness / std : 0);
-    }
-  }
-  const peakSharpness = sharpnessValues.length > 0 ? median(sharpnessValues) : 0;
-  const peaksY =
-    rowSums.length > 1
-      ? peaks.map((y) => y / (rowSums.length - 1))
-      : new Array(peaks.length).fill(0);
-  const deltas = peaksY.slice(1).map((val, idx) => val - peaksY[idx]);
-  const spacingNorm = deltas.length > 0 ? median(deltas) : 0;
-  const spacingMADNorm =
-    spacingNorm > 0 ? median(deltas.map((delta) => Math.abs(delta - spacingNorm))) : 0;
-  const offsetNorm = spacingNorm > 0 ? median(peaksY.map((peak) => peak % spacingNorm)) : 0;
-  const peakCountScore = clamp01((peaks.length - 2) / 8);
-  const spacingScore = spacingNorm > 0 ? clamp01(1 - spacingMADNorm / spacingNorm) : 0;
-  const sharpnessScore = clamp01(peakSharpness / 3);
-  const confidence = clamp01(0.4 * spacingScore + 0.35 * sharpnessScore + 0.25 * peakCountScore);
-  return {
-    peaksY,
-    spacingNorm,
-    spacingMADNorm,
-    offsetNorm,
-    angleDeg: residualAngle,
-    confidence,
-    peakSharpness,
-    textLineCount: peaks.length,
-    lineConsistency: clamp01(consistencyRaw),
-  };
-};
-
 const estimateBaselineMetrics = (preview: PreviewImage, residualAngle: number): BaselineMetrics => {
-  const native = getNativeCore();
-  if (native) {
-    const metrics = native.baselineMetrics(
-      Buffer.from(preview.data),
-      preview.width,
-      preview.height
-    );
-    const peaksY = metrics.peaksY ?? [];
+  if (preview.width < 8 || preview.height < 8) {
     return {
       residualAngle: Math.abs(residualAngle),
-      lineConsistency: Math.max(0, Math.min(1, metrics.lineConsistency)),
-      textLineCount: metrics.textLineCount,
-      peaksY,
-      spacingNorm: metrics.spacingNorm,
-      spacingMADNorm: metrics.spacingMadNorm,
-      offsetNorm: metrics.offsetNorm,
+      lineConsistency: 0,
+      textLineCount: 0,
+      peaksY: [],
       angleDeg: residualAngle,
-      confidence: clamp01(metrics.confidence),
-      peakSharpness: metrics.peakSharpness,
+      confidence: 0,
     };
   }
-  const rowSums = computeRowSums(preview);
-  const signal = computeBaselineSignal(rowSums, residualAngle);
+  const native = getNativeCore();
+  const metrics = native.baselineMetrics(Buffer.from(preview.data), preview.width, preview.height);
+  const peaksY = metrics.peaksY ?? [];
   return {
     residualAngle: Math.abs(residualAngle),
-    lineConsistency: signal.lineConsistency,
-    textLineCount: signal.textLineCount,
-    peaksY: signal.peaksY,
-    spacingNorm: signal.spacingNorm,
-    spacingMADNorm: signal.spacingMADNorm,
-    offsetNorm: signal.offsetNorm,
-    angleDeg: signal.angleDeg,
-    confidence: signal.confidence,
-    peakSharpness: signal.peakSharpness,
+    lineConsistency: Math.max(0, Math.min(1, metrics.lineConsistency)),
+    textLineCount: metrics.textLineCount,
+    peaksY,
+    spacingNorm: metrics.spacingNorm,
+    spacingMADNorm: metrics.spacingMadNorm,
+    offsetNorm: metrics.offsetNorm,
+    angleDeg: residualAngle,
+    confidence: clamp01(metrics.confidence),
+    peakSharpness: metrics.peakSharpness,
   };
 };
 
 export const __testables = {
-  computeRowSums,
   estimateBaselineMetrics,
 };
 
 const estimateColumnMetrics = (preview: PreviewImage): ColumnMetrics => {
-  const native = getNativeCore();
-  if (native) {
-    const metrics = native.columnMetrics(Buffer.from(preview.data), preview.width, preview.height);
+  if (preview.width < 8 || preview.height < 8) {
     return {
-      columnCount: Math.max(1, Math.round(metrics.columnCount)),
-      columnSeparation: metrics.columnSeparation,
+      columnCount: 1,
+      columnSeparation: 0,
     };
   }
-  const colSums = computeColSums(preview);
-
-  const { mean, std } = projectionStats(colSums);
-  const threshold = mean + std * 0.7;
-  let columnBands = 0;
-  let inBand = false;
-  for (const value of colSums) {
-    if (value > threshold) {
-      if (!inBand) {
-        columnBands++;
-        inBand = true;
-      }
-    } else {
-      inBand = false;
-    }
-  }
-
+  const native = getNativeCore();
+  const metrics = native.columnMetrics(Buffer.from(preview.data), preview.width, preview.height);
   return {
-    columnCount: Math.max(1, columnBands),
-    columnSeparation: std,
+    columnCount: Math.max(1, Math.round(metrics.columnCount)),
+    columnSeparation: metrics.columnSeparation,
   };
 };
 
@@ -1041,10 +875,12 @@ const clampBox = (
   width: number,
   height: number
 ): [number, number, number, number] => {
-  const left = Math.max(0, Math.min(width - 2, box[0]));
-  const top = Math.max(0, Math.min(height - 2, box[1]));
-  const right = Math.max(left + 1, Math.min(width - 1, box[2]));
-  const bottom = Math.max(top + 1, Math.min(height - 1, box[3]));
+  const maxX = Math.max(0, width - 1);
+  const maxY = Math.max(0, height - 1);
+  const left = Math.max(0, Math.min(maxX, box[0]));
+  const top = Math.max(0, Math.min(maxY, box[1]));
+  const right = Math.max(left, Math.min(maxX, box[2]));
+  const bottom = Math.max(top, Math.min(maxY, box[3]));
   return [left, top, right, bottom];
 };
 
@@ -1117,6 +953,15 @@ const roundBox = (box: [number, number, number, number]): [number, number, numbe
 
 const detectShadows = (preview: PreviewImage): ShadowDetection => {
   const { data, width, height } = preview;
+  if (width <= 0 || height <= 0) {
+    return {
+      present: false,
+      side: "none",
+      widthPx: 0,
+      confidence: 0,
+      darkness: 0,
+    };
+  }
   const stripSize = Math.max(4, Math.round(width * 0.04));
   const idx = (x: number, y: number): number => y * width + x;
 
@@ -1217,6 +1062,9 @@ export async function normalizePage(
   );
 
   const preview = await loadPreview(page.originalPath);
+  if (preview.width <= 0 || preview.height <= 0) {
+    throw new Error("Preview image has invalid dimensions");
+  }
   const skew = estimateSkewAngle(preview);
   const refinementMode = options?.skewRefinement ?? "on";
 
@@ -1252,6 +1100,9 @@ export async function normalizePage(
     skewRefined = true;
   }
 
+  if (rotatedPreview.width <= 0 || rotatedPreview.height <= 0) {
+    throw new Error("Rotated preview has invalid dimensions");
+  }
   const borderStats = computeBorderStats(rotatedPreview);
   const baselineMetrics = estimateBaselineMetrics(rotatedPreview, residual.angle);
   const columnMetrics = estimateColumnMetrics(rotatedPreview);
@@ -1373,6 +1224,9 @@ export async function normalizePage(
   expanded = bookSnap.box;
   const cropWidth = expanded[2] - expanded[0] + 1;
   const cropHeight = expanded[3] - expanded[1] + 1;
+  if (cropWidth <= 0 || cropHeight <= 0) {
+    throw new Error("Normalization crop produced invalid dimensions");
+  }
 
   const normalizedPath = getRunNormalizedPath(runDir, page.id);
   await fs.mkdir(path.dirname(normalizedPath), { recursive: true });

@@ -51,6 +51,7 @@ import {
   type NormalizationOptions,
   type NormalizationPriors,
 } from "./normalization.js";
+import { createGuideLayout } from "./guides/guide-layout.js";
 import { requestRemoteLayout } from "./remote-inference.js";
 import {
   loadPipelineConfig,
@@ -71,7 +72,8 @@ const safeReadJson = async <T>(filePath: string): Promise<T | null> => {
   try {
     const raw = await fs.readFile(filePath, "utf-8");
     return JSON.parse(raw) as T;
-  } catch {
+  } catch (error) {
+    console.warn(`Failed to read JSON at ${filePath}`, error);
     return null;
   }
 };
@@ -233,7 +235,8 @@ const detectSpread = async (page: PageData): Promise<SpreadSplitResult> => {
       width,
       height,
     };
-  } catch {
+  } catch (error) {
+    console.warn("Failed to analyze spread for split", error);
     return { shouldSplit: false, confidence: 0 };
   }
 };
@@ -1261,12 +1264,15 @@ const cleanupNormalizedOutput = async (runDir: string, pages: PageData[]): Promi
     await runWithConcurrency(deletions, getIoConcurrency(), async (filePath) => {
       try {
         await fs.unlink(filePath);
-      } catch {
-        // ignore missing files
+      } catch (error) {
+        const code = (error as NodeJS.ErrnoException | undefined)?.code;
+        if (code && code !== "ENOENT") {
+          console.warn(`Failed to delete stale file ${filePath}`, error);
+        }
       }
     });
-  } catch {
-    // no manifest to clean
+  } catch (error) {
+    console.warn("Failed to clean prior manifest previews", error);
   }
 };
 
@@ -1795,48 +1801,55 @@ const buildElementBoxes = (
   return elements;
 };
 
-const dhash9x8Js = (data: Buffer | Uint8Array): string => {
-  if (data.length < 9 * 8) return "0";
-  let hash = 0n;
-  let bit = 0n;
-  for (let y = 0; y < 8; y++) {
-    for (let x = 0; x < 8; x++) {
-      const left = data[y * 9 + x];
-      const right = data[y * 9 + x + 1];
-      if (left < right) {
-        hash |= 1n << bit;
-      }
-      bit += 1n;
-    }
-  }
-  return hash.toString(16).padStart(16, "0");
-};
-
-const computePageDhash = async (
-  imagePath: string,
-  native: PipelineCoreNative | null
-): Promise<string> => {
+const computePageDhash = async (imagePath: string, native: PipelineCoreNative): Promise<string> => {
   try {
-    const { data } = await sharp(imagePath)
+    const { data, info } = await sharp(imagePath)
       .resize(9, 8)
       .grayscale()
       .raw()
       .toBuffer({ resolveWithObject: true });
-    if (native) {
-      return native.dhash9x8(Buffer.from(data));
+    if (info.width !== 9 || info.height !== 8 || data.length !== 72) {
+      return "0";
     }
-    return dhash9x8Js(data);
-  } catch {
+    const hash = native.dhash9x8(Buffer.from(data));
+    return typeof hash === "string" && hash.length > 0 ? hash : "0";
+  } catch (error) {
+    console.warn(`Failed to compute dhash for ${imagePath}`, error);
     return "0";
   }
+};
+
+const clampToRange = (value: number, max: number): number =>
+  Math.max(0, Math.min(max, Math.round(value)));
+
+const normalizeBBox = (
+  bbox: [number, number, number, number],
+  width: number,
+  height: number
+): [number, number, number, number] | null => {
+  if (width <= 0 || height <= 0) return null;
+  const maxX = Math.max(0, width - 1);
+  const maxY = Math.max(0, height - 1);
+  const x0 = clampToRange(Math.min(bbox[0], bbox[2]), maxX);
+  const y0 = clampToRange(Math.min(bbox[1], bbox[3]), maxY);
+  const x1 = clampToRange(Math.max(bbox[0], bbox[2]), maxX);
+  const y1 = clampToRange(Math.max(bbox[1], bbox[3]), maxY);
+  if (x1 < x0 || y1 < y0) return null;
+  return [x0, y0, x1, y1];
+};
+
+const coerceBBox = (bbox: unknown): [number, number, number, number] | null => {
+  if (!Array.isArray(bbox) || bbox.length < 4) return null;
+  const values = bbox.slice(0, 4).map((value) => Number(value));
+  if (values.some((value) => Number.isNaN(value))) return null;
+  return [values[0], values[1], values[2], values[3]];
 };
 
 const loadNativeLayoutElements = async (
   pageId: string,
   imagePath: string,
-  native: PipelineCoreNative | null
-): Promise<PageLayoutElement[] | null> => {
-  if (!native) return null;
+  native: PipelineCoreNative
+): Promise<PageLayoutElement[]> => {
   try {
     const { data, info } = await sharp(imagePath)
       .ensureAlpha()
@@ -1844,24 +1857,46 @@ const loadNativeLayoutElements = async (
       .grayscale()
       .raw()
       .toBuffer({ resolveWithObject: true });
+    const width = info.width ?? 0;
+    const height = info.height ?? 0;
+    if (width <= 0 || height <= 0) return [];
     const raw = Buffer.from(data);
-    const elements = native.detectLayoutElements(raw, info.width ?? 0, info.height ?? 0);
-    if (!Array.isArray(elements) || elements.length === 0) return null;
-    return elements.map((element, index) => ({
-      id: element.id || `${pageId}-native-${index}`,
-      type: element.type as PageLayoutElement["type"],
-      bbox: [
-        Math.round(element.bbox[0] ?? 0),
-        Math.round(element.bbox[1] ?? 0),
-        Math.round(element.bbox[2] ?? 0),
-        Math.round(element.bbox[3] ?? 0),
-      ] as [number, number, number, number],
-      confidence: clamp01(Number(element.confidence ?? 0.5)),
-      source: "local",
-      flags: ["native"],
-    }));
-  } catch {
-    return null;
+    const elements = native.detectLayoutElements(raw, width, height);
+    if (!Array.isArray(elements)) return [];
+    const allowedTypes = new Set<PageLayoutElement["type"]>([
+      "page_bounds",
+      "text_block",
+      "title",
+      "running_head",
+      "folio",
+      "ornament",
+      "drop_cap",
+      "footnote",
+      "marginalia",
+    ]);
+    const isLayoutType = (value: unknown): value is PageLayoutElement["type"] =>
+      typeof value === "string" && allowedTypes.has(value as PageLayoutElement["type"]);
+    return elements
+      .map((element, index) => {
+        const rawBBox = coerceBBox(element.bbox);
+        if (!rawBBox) return null;
+        const normalized = normalizeBBox(rawBBox, width, height);
+        if (!normalized) return null;
+        const type = isLayoutType(element.type) ? element.type : "text_block";
+        return {
+          id: element.id || `${pageId}-native-${index}`,
+          type,
+          bbox: normalized,
+          confidence: clamp01(Number(element.confidence ?? 0.5)),
+          source: "local",
+          flags: ["native"],
+        } as PageLayoutElement;
+      })
+      .filter((element): element is PageLayoutElement => Boolean(element));
+  } catch (error) {
+    throw new Error(
+      `Native layout element detection failed for ${pageId}: ${error instanceof Error ? error.message : String(error)}`
+    );
   }
 };
 
@@ -1903,6 +1938,7 @@ const attachOverlays = async (
   reviewQueue: ReviewQueue,
   normalization: Map<string, NormalizationResult>,
   runDir: string,
+  native: PipelineCoreNative,
   bookModel?: BookModel,
   gutterByPageId?: Map<string, GutterRatio>,
   control?: RunControl
@@ -1930,7 +1966,7 @@ const attachOverlays = async (
         { box: maskBox, color: "#22c55e", label: "content" },
       ];
 
-      const elements = buildElementBoxes(item.pageId, width, height, maskBox, bookModel);
+      const elements = await loadNativeLayoutElements(item.pageId, norm.normalizedPath, native);
       elements.forEach((element) => {
         overlayBoxes.push({
           box: element.bbox,
@@ -1960,8 +1996,8 @@ const attachOverlays = async (
         .toFile(overlayPath);
 
       item.previews.push({ kind: "overlay", path: overlayPath, width, height });
-    } catch {
-      // ignore overlay errors
+    } catch (error) {
+      console.warn(`Failed to build overlay preview for ${item.pageId}`, error);
     }
   });
 };
@@ -2627,9 +2663,7 @@ export async function runPipeline(options: PipelineRunnerOptions): Promise<Pipel
   let configSnapshot: { resolved: PipelineConfig; sources: PipelineConfigSources } | null = null;
 
   const native = getPipelineCoreNative();
-  console.log(
-    `[${runId}] Native pipeline-core ${native ? "enabled" : "unavailable; using JS fallbacks"}`
-  );
+  console.log(`[${runId}] Native pipeline-core enabled`);
 
   try {
     await fs.mkdir(runDir, { recursive: true });
@@ -2897,6 +2931,7 @@ export async function runPipeline(options: PipelineRunnerOptions): Promise<Pipel
       reviewQueue,
       normalizationResults,
       runDir,
+      native,
       bookModel,
       spreadSplitResult.gutterByPageId,
       control
@@ -3086,7 +3121,7 @@ const writeSidecars = async (
   normalization: Map<string, NormalizationResult>,
   runDir: string,
   runId: string,
-  native: PipelineCoreNative | null,
+  native: PipelineCoreNative,
   bookModel?: BookModel,
   pipelineConfig?: PipelineConfig,
   gutterByPageId?: Map<string, GutterRatio>,
@@ -3129,13 +3164,6 @@ const writeSidecars = async (
       ];
       const cropWidth = Math.max(1, norm.cropBox[2] - norm.cropBox[0] + 1);
       const scale = outputWidth / cropWidth;
-      const localElements = buildElementBoxes(
-        page.id,
-        outputWidth,
-        outputHeight,
-        maskBoxOut,
-        bookModel
-      );
       const remoteElements = await requestRemoteLayout(
         page.id,
         norm.normalizedPath,
@@ -3143,15 +3171,18 @@ const writeSidecars = async (
         outputHeight
       );
       const nativeElements = remoteElements
-        ? null
+        ? []
         : await loadNativeLayoutElements(page.id, norm.normalizedPath, native);
-      const elements = remoteElements ?? nativeElements ?? localElements;
-      let layoutSource: "remote" | "native" | "local" = "local";
-      if (remoteElements) {
-        layoutSource = "remote";
-      } else if (nativeElements) {
-        layoutSource = "native";
-      }
+      const baseElements = remoteElements ?? nativeElements;
+      const elements =
+        baseElements.length > 0
+          ? baseElements
+          : buildElementBoxes(page.id, outputWidth, outputHeight, maskBoxOut, bookModel);
+      const layoutSource = remoteElements
+        ? "remote"
+        : nativeElements.length > 0
+          ? "native"
+          : "heuristic";
       layoutSummaries.set(page.id, {
         profile: assessment.profile,
         confidence: layoutConfidence,
@@ -3250,6 +3281,7 @@ const writeSidecars = async (
         baselineSummary,
         baselineGridGuide,
         spread,
+        textFeatures,
         templateFeatures,
       };
     })
@@ -3277,6 +3309,24 @@ const writeSidecars = async (
 
   await runWithConcurrency(sidecarEntries, getIoConcurrency(), async (entry) => {
     const assignment = assignmentByPageId.get(entry.page.id);
+    const template = assignment?.templateId
+      ? enrichedBookModel?.pageTemplates?.find(
+          (candidate) => candidate.id === assignment.templateId
+        )
+      : undefined;
+    const guideLayout = createGuideLayout({
+      outputWidth: entry.outputWidth,
+      outputHeight: entry.outputHeight,
+      maskBoxOut: entry.maskBoxOut,
+      cropBoxOut: entry.cropBoxOut,
+      elements: entry.elements,
+      textFeatures: entry.textFeatures,
+      spread: entry.spread,
+      baselineGrid: entry.baselineGridGuide ?? null,
+      baselinePeaks: entry.baselineSummary?.peaksY,
+      template,
+      templateConfidence: assignment?.confidence,
+    });
     const sidecar = {
       version: "1.0.0",
       pageId: entry.page.id,
@@ -3317,6 +3367,7 @@ const writeSidecars = async (
       },
       elements: entry.elements,
       overrides: {},
+      guides: guideLayout.layers.length > 0 ? guideLayout : undefined,
       metrics: {
         processingMs: (analysis as unknown as { processingMs?: number }).processingMs ?? 0,
         deskewConfidence: entry.deskewConfidence,

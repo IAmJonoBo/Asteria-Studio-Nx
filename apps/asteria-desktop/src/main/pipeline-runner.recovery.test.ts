@@ -41,6 +41,33 @@ vi.mock("./normalization.ts", (): { normalizePage: typeof normalizePage } => ({ 
 vi.mock("./normalization", (): { normalizePage: typeof normalizePage } => ({ normalizePage }));
 vi.mock("./normalization.js", (): { normalizePage: typeof normalizePage } => ({ normalizePage }));
 
+vi.mock("./pipeline-core-native.js", () => ({
+  getPipelineCoreNative: () => ({
+    estimateSkewAngle: vi.fn(() => ({ angle: 0, confidence: 0.8 })),
+    baselineMetrics: vi.fn(() => ({
+      lineConsistency: 0.6,
+      textLineCount: 6,
+      spacingNorm: 0.05,
+      spacingMadNorm: 0.004,
+      offsetNorm: 0.01,
+      angleDeg: 0,
+      confidence: 0.7,
+      peakSharpness: 1.1,
+      peaksY: [],
+    })),
+    columnMetrics: vi.fn(() => ({ columnCount: 1, columnSeparation: 0.4 })),
+    detectLayoutElements: vi.fn(() => []),
+    projectionProfileX: vi.fn((_data: Buffer, width: number) => new Array(width).fill(0)),
+    projectionProfileY: vi.fn((_data: Buffer, _width: number, height: number) =>
+      new Array(height).fill(0)
+    ),
+    sobelMagnitude: vi.fn((_data: Buffer, width: number, height: number) =>
+      new Array(width * height).fill(0)
+    ),
+    dhash9x8: vi.fn(() => "0"),
+  }),
+}));
+
 const loadRunPipeline = async (): Promise<typeof import("./pipeline-runner.js").runPipeline> => {
   const mod = await import("./pipeline-runner.js");
   return mod.runPipeline;

@@ -5,7 +5,7 @@
   "templateConfidence": 0,
   "source": {
     "path": "/Volumes/APFS Space/GitHub/Asteria-Studio-NX/tests/fixtures/golden_corpus/v1/inputs/p07_plate.png",
-    "checksum": "18cc5e802167c3dcf364e010a1f7be00e6c62c9239f7bc5fae01d263410b8a86"
+    "checksum": "22576299e142c6d76d47bec499e85f9eff0205e9ac2586fbc047d3e9e25275e6"
   },
   "dimensions": {
     "width": 767.2916666666666,
@@ -55,7 +55,7 @@
   },
   "elements": [
     {
-      "id": "p07_plate-page-bounds",
+      "id": "page-bounds",
       "type": "page_bounds",
       "bbox": [
         0,
@@ -66,144 +66,144 @@
       "confidence": 0.6,
       "source": "local",
       "flags": [
-        "derived"
+        "native"
       ]
     },
     {
-      "id": "p07_plate-text-block",
+      "id": "text-block",
       "type": "text_block",
       "bbox": [
-        1,
-        1,
-        2173,
-        3073
+        240,
+        340,
+        1935,
+        2635
       ],
       "confidence": 0.55,
       "source": "local",
       "flags": [
-        "mask-derived"
+        "native"
       ]
     },
     {
-      "id": "p07_plate-title",
+      "id": "title",
       "type": "title",
       "bbox": [
-        262,
-        62,
-        1912,
-        431
+        443,
+        386,
+        1732,
+        661
       ],
       "confidence": 0.28,
       "source": "local",
       "flags": [
-        "heuristic"
+        "native"
       ]
     },
     {
-      "id": "p07_plate-running-head",
+      "id": "running-head",
       "type": "running_head",
       "bbox": [
-        218,
-        1,
-        1956,
-        247
+        410,
+        340,
+        1766,
+        524
       ],
       "confidence": 0.25,
       "source": "local",
       "flags": [
-        "heuristic"
+        "native"
       ]
     },
     {
-      "id": "p07_plate-folio",
+      "id": "folio",
       "type": "folio",
       "bbox": [
-        913,
-        2766,
-        1261,
-        3012
+        952,
+        2406,
+        1223,
+        2589
       ],
       "confidence": 0.22,
       "source": "local",
       "flags": [
-        "heuristic"
+        "native"
       ]
     },
     {
-      "id": "p07_plate-ornament",
+      "id": "ornament",
       "type": "ornament",
       "bbox": [
-        913,
-        554,
-        1261,
-        738
+        952,
+        753,
+        1223,
+        891
       ],
       "confidence": 0.2,
       "source": "local",
       "flags": [
-        "heuristic"
+        "native"
       ]
     },
     {
-      "id": "p07_plate-drop-cap",
+      "id": "drop-cap",
       "type": "drop_cap",
       "bbox": [
-        44,
-        554,
-        218,
-        984
+        274,
+        753,
+        410,
+        1074
       ],
       "confidence": 0.18,
       "source": "local",
       "flags": [
-        "heuristic"
+        "native"
       ]
     },
     {
-      "id": "p07_plate-footnote",
+      "id": "footnote",
       "type": "footnote",
       "bbox": [
-        110,
-        2643,
-        2064,
-        3012
+        325,
+        2314,
+        1850,
+        2589
       ],
       "confidence": 0.2,
       "source": "local",
       "flags": [
-        "heuristic"
+        "native"
       ]
     },
     {
-      "id": "p07_plate-marginalia",
+      "id": "marginalia",
       "type": "marginalia",
       "bbox": [
-        1,
-        769,
-        175,
-        2305
+        240,
+        914,
+        376,
+        2061
       ],
       "confidence": 0.18,
       "source": "local",
       "flags": [
-        "heuristic"
+        "native"
       ]
     }
   ],
   "overrides": {},
   "metrics": {
     "processingMs": 0,
-    "deskewConfidence": 0.46272175052657905,
+    "deskewConfidence": 0.35167696323990627,
     "shadowScore": -14.721590430800859,
     "maskCoverage": 1,
     "backgroundStd": 1.0601814811639707,
     "backgroundMean": 244.58207563337757,
     "illuminationResidual": 1,
     "spineShadowScore": 0,
-    "layoutScore": 0.8233468403012265,
+    "layoutScore": 0.8089110179539591,
     "baseline": {
       "medianSpacingPx": 3075,
-      "lineStraightnessResidual": 0.000999603327048164,
+      "lineStraightnessResidual": 0,
       "confidence": 0.35,
       "peaksY": [
         0.8571893298633702
@@ -225,40 +225,47 @@
           "p09_shadow_right",
           "p10_spread_dark_gutter",
           "p11_curved_warp",
-          "p12_rot_perspective"
+          "p12_rot_perspective",
+          "p13_rotation_only",
+          "p14_spread_light_gutter",
+          "p15_crop_adjustment",
+          "p16_overlay_elements"
         ],
         "margins": {
-          "top": 0.0023739837398373985,
-          "right": 0.0026206896551724135,
-          "bottom": 0.002113821138211382,
-          "left": 0.0031724137931034486
+          "top": 0.046341463414634146,
+          "right": 0.06653530377668308,
+          "bottom": 0.044761904761904774,
+          "left": 0.04348111658456486
         },
         "columns": {
           "count": 1,
           "valleyRatio": 0
         },
         "headBand": {
-          "ratio": 0.2308647387299418
+          "ratio": 0.18846852746724332
         },
         "footerBand": {
-          "ratio": 0.1949532746240595
+          "ratio": 0.15177419073300785
         },
         "baseline": {
-          "spacingPx": 3.811030493155021,
-          "consistency": 0.7582162798554125
+          "spacingPx": 4.204324970216151,
+          "consistency": 0.78410459387599
         },
         "gutter": {},
         "ornamentHashes": [
-          "69b3cde47e66b03e",
-          "974816a094126d92",
-          "1448d7bc70630fbf",
-          "e1cf3f68f0116d49",
-          "d0c3ccc9c8c8c8c4",
-          "ba75e3c3c5bd53af"
+          "4e4e4b4b484a4849",
+          "0020007074003000",
+          "90aeae100c000000",
+          "4000040006091616",
+          "0000000404001656",
+          "f2866424c434756c",
+          "ce080818c8f430c1",
+          "b4b4483004000000",
+          "0060807070802000"
         ],
         "textDensity": 1,
         "whitespaceRatio": 0,
-        "confidence": 0.9853344881568418
+        "confidence": 0.9733409051273462
       }
     ]
   }

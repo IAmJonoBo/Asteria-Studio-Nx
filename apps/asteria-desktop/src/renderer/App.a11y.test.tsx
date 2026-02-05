@@ -38,17 +38,18 @@ describe("App - Navigation & Accessibility", () => {
     const previousAsteria = windowRef.asteria;
     windowRef.asteria = {
       ipc: {
-        "asteria:list-projects": async (): Promise<
-          Array<{ id: string; name: string; path: string; inputPath: string; status: string }>
-        > => [
-          {
-            id: "mind-myth-magick",
-            name: "Mind, Myth and Magick",
-            path: "/projects/mind-myth-and-magick",
-            inputPath: "/projects/mind-myth-and-magick/input/raw",
-            status: "completed",
-          },
-        ],
+        "asteria:list-projects": async () => ({
+          ok: true as const,
+          value: [
+            {
+              id: "mind-myth-magick",
+              name: "Mind, Myth and Magick",
+              path: "/projects/mind-myth-and-magick",
+              inputPath: "/projects/mind-myth-and-magick/input/raw",
+              status: "completed",
+            },
+          ],
+        }),
       },
     };
 

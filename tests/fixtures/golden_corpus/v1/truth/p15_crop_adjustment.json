@@ -1,0 +1,27 @@
+{
+  "pageId": "p15_crop_adjustment",
+  "pageBoundsPx": [
+    0,
+    0,
+    2174,
+    3074
+  ],
+  "contentBoxPx": [
+    70,
+    110,
+    2095,
+    2995
+  ],
+  "gutter": {
+    "side": "none",
+    "widthPx": 0
+  },
+  "baselineGrid": {
+    "medianSpacingPx": 27.35
+  },
+  "ornaments": [],
+  "shouldSplit": false,
+  "expectedReviewReasons": [
+    "low-shading-confidence"
+  ]
+}

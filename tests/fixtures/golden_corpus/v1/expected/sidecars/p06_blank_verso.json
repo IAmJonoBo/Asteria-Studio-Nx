@@ -3,10 +3,10 @@
   "pageId": "p06_blank_verso",
   "pageType": "body",
   "templateId": "template-02",
-  "templateConfidence": 0.9837857650243241,
+  "templateConfidence": 0.953117319817469,
   "source": {
     "path": "/Volumes/APFS Space/GitHub/Asteria-Studio-NX/tests/fixtures/golden_corpus/v1/inputs/p06_blank_verso.png",
-    "checksum": "293ec5bbc098e00b57ef7b6c96c456ca8c2930b1e2bef4b2bc272c79453377e8"
+    "checksum": "16cf5b92d3594a86705d10784ea95a34dae8b6605c4f32f3e2d8255ef232564d"
   },
   "dimensions": {
     "width": 767.2916666666666,
@@ -56,7 +56,7 @@
   },
   "elements": [
     {
-      "id": "p06_blank_verso-page-bounds",
+      "id": "page-bounds",
       "type": "page_bounds",
       "bbox": [
         0,
@@ -67,59 +67,59 @@
       "confidence": 0.6,
       "source": "local",
       "flags": [
-        "derived"
+        "native"
       ]
     },
     {
-      "id": "p06_blank_verso-text-block",
+      "id": "text-block",
       "type": "text_block",
       "bbox": [
-        1,
-        1,
+        0,
+        0,
         2174,
         3074
       ],
       "confidence": 0.55,
       "source": "local",
       "flags": [
-        "mask-derived"
+        "native"
       ]
     },
     {
-      "id": "p06_blank_verso-title",
+      "id": "title",
       "type": "title",
       "bbox": [
-        262,
-        62,
+        261,
+        61,
         1913,
-        431
+        430
       ],
       "confidence": 0.28,
       "source": "local",
       "flags": [
-        "heuristic"
+        "native"
       ]
     },
     {
-      "id": "p06_blank_verso-running-head",
+      "id": "running-head",
       "type": "running_head",
       "bbox": [
-        218,
-        1,
+        217,
+        0,
         1957,
-        247
+        246
       ],
       "confidence": 0.25,
       "source": "local",
       "flags": [
-        "heuristic"
+        "native"
       ]
     },
     {
-      "id": "p06_blank_verso-folio",
+      "id": "folio",
       "type": "folio",
       "bbox": [
-        914,
+        913,
         2767,
         1261,
         3013
@@ -127,44 +127,44 @@
       "confidence": 0.22,
       "source": "local",
       "flags": [
-        "heuristic"
+        "native"
       ]
     },
     {
-      "id": "p06_blank_verso-ornament",
+      "id": "ornament",
       "type": "ornament",
       "bbox": [
-        914,
-        554,
+        913,
+        553,
         1261,
-        739
+        738
       ],
       "confidence": 0.2,
       "source": "local",
       "flags": [
-        "heuristic"
+        "native"
       ]
     },
     {
-      "id": "p06_blank_verso-drop-cap",
+      "id": "drop-cap",
       "type": "drop_cap",
       "bbox": [
-        44,
-        554,
-        218,
+        43,
+        553,
+        217,
         984
       ],
       "confidence": 0.18,
       "source": "local",
       "flags": [
-        "heuristic"
+        "native"
       ]
     },
     {
-      "id": "p06_blank_verso-footnote",
+      "id": "footnote",
       "type": "footnote",
       "bbox": [
-        110,
+        109,
         2644,
         2065,
         3013
@@ -172,41 +172,41 @@
       "confidence": 0.2,
       "source": "local",
       "flags": [
-        "heuristic"
+        "native"
       ]
     },
     {
-      "id": "p06_blank_verso-marginalia",
+      "id": "marginalia",
       "type": "marginalia",
       "bbox": [
-        1,
+        0,
         769,
-        175,
+        174,
         2306
       ],
       "confidence": 0.18,
       "source": "local",
       "flags": [
-        "heuristic"
+        "native"
       ]
     }
   ],
   "overrides": {},
   "metrics": {
     "processingMs": 0,
-    "deskewConfidence": 0.25078512288571164,
+    "deskewConfidence": 0.25,
     "shadowScore": 0.0007278572095970048,
     "maskCoverage": 1,
     "backgroundStd": 0.8804322791512624,
     "backgroundMean": 247.4147465395779,
     "illuminationResidual": 1,
     "spineShadowScore": 0.0000018310828315670433,
-    "layoutScore": 0.6371810000725822,
+    "layoutScore": 0.637004347423297,
     "baseline": {
-      "medianSpacingPx": 4.001301236174271,
-      "spacingMAD": 2.0006506180869645,
+      "medianSpacingPx": 4.001301236174366,
+      "spacingMAD": 2.0006506180871826,
       "lineStraightnessResidual": 0,
-      "confidence": 0.6200323828218388,
+      "confidence": 0.6265079750786107,
       "peaksY": [
         0.0009759271307742355,
         0.001951854261548471,
@@ -838,40 +838,47 @@
           "p09_shadow_right",
           "p10_spread_dark_gutter",
           "p11_curved_warp",
-          "p12_rot_perspective"
+          "p12_rot_perspective",
+          "p13_rotation_only",
+          "p14_spread_light_gutter",
+          "p15_crop_adjustment",
+          "p16_overlay_elements"
         ],
         "margins": {
-          "top": 0.0023739837398373985,
-          "right": 0.0026206896551724135,
-          "bottom": 0.002113821138211382,
-          "left": 0.0031724137931034486
+          "top": 0.046341463414634146,
+          "right": 0.06653530377668308,
+          "bottom": 0.044761904761904774,
+          "left": 0.04348111658456486
         },
         "columns": {
           "count": 1,
           "valleyRatio": 0
         },
         "headBand": {
-          "ratio": 0.2308647387299418
+          "ratio": 0.18846852746724332
         },
         "footerBand": {
-          "ratio": 0.1949532746240595
+          "ratio": 0.15177419073300785
         },
         "baseline": {
-          "spacingPx": 3.811030493155021,
-          "consistency": 0.7582162798554125
+          "spacingPx": 4.204324970216151,
+          "consistency": 0.78410459387599
         },
         "gutter": {},
         "ornamentHashes": [
-          "69b3cde47e66b03e",
-          "974816a094126d92",
-          "1448d7bc70630fbf",
-          "e1cf3f68f0116d49",
-          "d0c3ccc9c8c8c8c4",
-          "ba75e3c3c5bd53af"
+          "4e4e4b4b484a4849",
+          "0020007074003000",
+          "90aeae100c000000",
+          "4000040006091616",
+          "0000000404001656",
+          "f2866424c434756c",
+          "ce080818c8f430c1",
+          "b4b4483004000000",
+          "0060807070802000"
         ],
         "textDensity": 1,
         "whitespaceRatio": 0,
-        "confidence": 0.9853344881568418
+        "confidence": 0.9733409051273462
       }
     ]
   }

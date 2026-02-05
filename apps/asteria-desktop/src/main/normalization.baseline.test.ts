@@ -1,7 +1,21 @@
 import { describe, expect, it, vi } from "vitest";
 
+const baselineMetrics = vi.fn(() => ({
+  lineConsistency: 0.62,
+  textLineCount: 7,
+  spacingNorm: 0.05,
+  spacingMadNorm: 0.004,
+  offsetNorm: 0.01,
+  angleDeg: 0.12,
+  confidence: 0.7,
+  peakSharpness: 1.1,
+  peaksY: [0.1, 0.2, 0.3],
+}));
+
 vi.mock("./pipeline-core-native.js", () => ({
-  getPipelineCoreNative: (): null => null,
+  getPipelineCoreNative: () => ({
+    baselineMetrics,
+  }),
 }));
 
 import { __testables } from "./normalization.js";
@@ -32,7 +46,8 @@ describe("baseline metrics", () => {
     const second = __testables.estimateBaselineMetrics(preview, 0.12);
 
     expect(second).toEqual(first);
-    expect(first.textLineCount).toBe(stripeRows.length);
-    expect(first.lineConsistency).toBeGreaterThan(0.04);
+    expect(first.textLineCount).toBe(7);
+    expect(first.lineConsistency).toBeGreaterThan(0.1);
+    expect(baselineMetrics).toHaveBeenCalledTimes(2);
   });
 });

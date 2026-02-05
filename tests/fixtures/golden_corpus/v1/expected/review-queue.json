@@ -1,34 +1,38 @@
 {
   "runId": "golden-v1",
   "projectId": "golden-v1",
-  "generatedAt": "2026-02-02T21:05:05.768Z",
+  "generatedAt": "2026-02-04T19:20:04.949Z",
   "items": [
     {
       "pageId": "p01_clean_single",
       "filename": "p01_clean_single.png",
       "layoutProfile": "cover",
-      "layoutConfidence": 0.965670023739691,
+      "layoutConfidence": 0.9709031971670792,
       "qualityGate": {
         "accepted": false,
-        "reasons": ["low-shading-confidence"]
+        "reasons": [
+          "low-shading-confidence",
+          "shading-low-confidence",
+          "confidence-gate"
+        ]
       },
       "reason": "quality-gate",
       "previews": [
         {
           "kind": "source",
-          "path": "/Users/jonathanbotha/GitHub/Asteria-Studio/apps/asteria-desktop/.cache/golden/bless/runs/golden-v1/previews/p01_clean_single-source.png",
+          "path": "/Volumes/APFS Space/GitHub/Asteria-Studio-NX/apps/asteria-desktop/.cache/golden/bless/runs/golden-v1/previews/p01_clean_single-source.png",
           "width": 1132,
           "height": 1600
         },
         {
           "kind": "normalized",
-          "path": "/Users/jonathanbotha/GitHub/Asteria-Studio/apps/asteria-desktop/.cache/golden/bless/runs/golden-v1/previews/p01_clean_single-normalized.png",
+          "path": "/Volumes/APFS Space/GitHub/Asteria-Studio-NX/apps/asteria-desktop/.cache/golden/bless/runs/golden-v1/previews/p01_clean_single-normalized.png",
           "width": 1132,
           "height": 1600
         },
         {
           "kind": "overlay",
-          "path": "/Users/jonathanbotha/GitHub/Asteria-Studio/apps/asteria-desktop/.cache/golden/bless/runs/golden-v1/overlays/p01_clean_single-overlay.png",
+          "path": "/Volumes/APFS Space/GitHub/Asteria-Studio-NX/apps/asteria-desktop/.cache/golden/bless/runs/golden-v1/overlays/p01_clean_single-overlay.png",
           "width": 2175,
           "height": 3075
         }
@@ -39,28 +43,32 @@
       "pageId": "p02_clean_double",
       "filename": "p02_clean_double.png",
       "layoutProfile": "body",
-      "layoutConfidence": 0.9708205033415949,
+      "layoutConfidence": 0.9714534143415399,
       "qualityGate": {
         "accepted": false,
-        "reasons": ["low-shading-confidence", "residual-skew-8.00deg"]
+        "reasons": [
+          "low-shading-confidence",
+          "shading-low-confidence",
+          "confidence-gate"
+        ]
       },
       "reason": "quality-gate",
       "previews": [
         {
           "kind": "source",
-          "path": "/Users/jonathanbotha/GitHub/Asteria-Studio/apps/asteria-desktop/.cache/golden/bless/runs/golden-v1/previews/p02_clean_double-source.png",
+          "path": "/Volumes/APFS Space/GitHub/Asteria-Studio-NX/apps/asteria-desktop/.cache/golden/bless/runs/golden-v1/previews/p02_clean_double-source.png",
           "width": 1132,
           "height": 1600
         },
         {
           "kind": "normalized",
-          "path": "/Users/jonathanbotha/GitHub/Asteria-Studio/apps/asteria-desktop/.cache/golden/bless/runs/golden-v1/previews/p02_clean_double-normalized.png",
+          "path": "/Volumes/APFS Space/GitHub/Asteria-Studio-NX/apps/asteria-desktop/.cache/golden/bless/runs/golden-v1/previews/p02_clean_double-normalized.png",
           "width": 1132,
           "height": 1600
         },
         {
           "kind": "overlay",
-          "path": "/Users/jonathanbotha/GitHub/Asteria-Studio/apps/asteria-desktop/.cache/golden/bless/runs/golden-v1/overlays/p02_clean_double-overlay.png",
+          "path": "/Volumes/APFS Space/GitHub/Asteria-Studio-NX/apps/asteria-desktop/.cache/golden/bless/runs/golden-v1/overlays/p02_clean_double-overlay.png",
           "width": 2175,
           "height": 3075
         }
@@ -71,28 +79,32 @@
       "pageId": "p03_running_head_folio",
       "filename": "p03_running_head_folio.png",
       "layoutProfile": "body",
-      "layoutConfidence": 0.9663751903434235,
+      "layoutConfidence": 0.9680819570223664,
       "qualityGate": {
         "accepted": false,
-        "reasons": ["low-shading-confidence", "residual-skew-8.00deg"]
+        "reasons": [
+          "low-shading-confidence",
+          "shading-low-confidence",
+          "confidence-gate"
+        ]
       },
       "reason": "quality-gate",
       "previews": [
         {
           "kind": "source",
-          "path": "/Users/jonathanbotha/GitHub/Asteria-Studio/apps/asteria-desktop/.cache/golden/bless/runs/golden-v1/previews/p03_running_head_folio-source.png",
+          "path": "/Volumes/APFS Space/GitHub/Asteria-Studio-NX/apps/asteria-desktop/.cache/golden/bless/runs/golden-v1/previews/p03_running_head_folio-source.png",
           "width": 1132,
           "height": 1600
         },
         {
           "kind": "normalized",
-          "path": "/Users/jonathanbotha/GitHub/Asteria-Studio/apps/asteria-desktop/.cache/golden/bless/runs/golden-v1/previews/p03_running_head_folio-normalized.png",
+          "path": "/Volumes/APFS Space/GitHub/Asteria-Studio-NX/apps/asteria-desktop/.cache/golden/bless/runs/golden-v1/previews/p03_running_head_folio-normalized.png",
           "width": 1132,
           "height": 1600
         },
         {
           "kind": "overlay",
-          "path": "/Users/jonathanbotha/GitHub/Asteria-Studio/apps/asteria-desktop/.cache/golden/bless/runs/golden-v1/overlays/p03_running_head_folio-overlay.png",
+          "path": "/Volumes/APFS Space/GitHub/Asteria-Studio-NX/apps/asteria-desktop/.cache/golden/bless/runs/golden-v1/overlays/p03_running_head_folio-overlay.png",
           "width": 2175,
           "height": 3075
         }
@@ -103,28 +115,32 @@
       "pageId": "p04_ornament",
       "filename": "p04_ornament.png",
       "layoutProfile": "body",
-      "layoutConfidence": 0.970820491553813,
+      "layoutConfidence": 0.9716591375810646,
       "qualityGate": {
         "accepted": false,
-        "reasons": ["low-shading-confidence", "residual-skew-8.00deg"]
+        "reasons": [
+          "low-shading-confidence",
+          "shading-low-confidence",
+          "confidence-gate"
+        ]
       },
       "reason": "quality-gate",
       "previews": [
         {
           "kind": "source",
-          "path": "/Users/jonathanbotha/GitHub/Asteria-Studio/apps/asteria-desktop/.cache/golden/bless/runs/golden-v1/previews/p04_ornament-source.png",
+          "path": "/Volumes/APFS Space/GitHub/Asteria-Studio-NX/apps/asteria-desktop/.cache/golden/bless/runs/golden-v1/previews/p04_ornament-source.png",
           "width": 1132,
           "height": 1600
         },
         {
           "kind": "normalized",
-          "path": "/Users/jonathanbotha/GitHub/Asteria-Studio/apps/asteria-desktop/.cache/golden/bless/runs/golden-v1/previews/p04_ornament-normalized.png",
+          "path": "/Volumes/APFS Space/GitHub/Asteria-Studio-NX/apps/asteria-desktop/.cache/golden/bless/runs/golden-v1/previews/p04_ornament-normalized.png",
           "width": 1132,
           "height": 1600
         },
         {
           "kind": "overlay",
-          "path": "/Users/jonathanbotha/GitHub/Asteria-Studio/apps/asteria-desktop/.cache/golden/bless/runs/golden-v1/overlays/p04_ornament-overlay.png",
+          "path": "/Volumes/APFS Space/GitHub/Asteria-Studio-NX/apps/asteria-desktop/.cache/golden/bless/runs/golden-v1/overlays/p04_ornament-overlay.png",
           "width": 2175,
           "height": 3075
         }
@@ -135,28 +151,33 @@
       "pageId": "p05_footnotes_marginalia",
       "filename": "p05_footnotes_marginalia.png",
       "layoutProfile": "body",
-      "layoutConfidence": 0.970817546957309,
+      "layoutConfidence": 0.9486300252312868,
       "qualityGate": {
         "accepted": false,
-        "reasons": ["low-shading-confidence", "residual-skew-8.00deg"]
+        "reasons": [
+          "noisy-background",
+          "low-shading-confidence",
+          "shading-low-confidence",
+          "confidence-gate"
+        ]
       },
       "reason": "quality-gate",
       "previews": [
         {
           "kind": "source",
-          "path": "/Users/jonathanbotha/GitHub/Asteria-Studio/apps/asteria-desktop/.cache/golden/bless/runs/golden-v1/previews/p05_footnotes_marginalia-source.png",
+          "path": "/Volumes/APFS Space/GitHub/Asteria-Studio-NX/apps/asteria-desktop/.cache/golden/bless/runs/golden-v1/previews/p05_footnotes_marginalia-source.png",
           "width": 1132,
           "height": 1600
         },
         {
           "kind": "normalized",
-          "path": "/Users/jonathanbotha/GitHub/Asteria-Studio/apps/asteria-desktop/.cache/golden/bless/runs/golden-v1/previews/p05_footnotes_marginalia-normalized.png",
+          "path": "/Volumes/APFS Space/GitHub/Asteria-Studio-NX/apps/asteria-desktop/.cache/golden/bless/runs/golden-v1/previews/p05_footnotes_marginalia-normalized.png",
           "width": 1132,
           "height": 1600
         },
         {
           "kind": "overlay",
-          "path": "/Users/jonathanbotha/GitHub/Asteria-Studio/apps/asteria-desktop/.cache/golden/bless/runs/golden-v1/overlays/p05_footnotes_marginalia-overlay.png",
+          "path": "/Volumes/APFS Space/GitHub/Asteria-Studio-NX/apps/asteria-desktop/.cache/golden/bless/runs/golden-v1/overlays/p05_footnotes_marginalia-overlay.png",
           "width": 2175,
           "height": 3075
         }
@@ -167,28 +188,34 @@
       "pageId": "p06_blank_verso",
       "filename": "p06_blank_verso.png",
       "layoutProfile": "body",
-      "layoutConfidence": 0.6362585066888071,
+      "layoutConfidence": 0.637004347423297,
       "qualityGate": {
         "accepted": false,
-        "reasons": ["low-skew-confidence", "low-shading-confidence", "residual-skew-0.20deg"]
+        "reasons": [
+          "low-skew-confidence",
+          "low-shading-confidence",
+          "deskew-low-confidence",
+          "shading-low-confidence",
+          "confidence-gate"
+        ]
       },
       "reason": "quality-gate",
       "previews": [
         {
           "kind": "source",
-          "path": "/Users/jonathanbotha/GitHub/Asteria-Studio/apps/asteria-desktop/.cache/golden/bless/runs/golden-v1/previews/p06_blank_verso-source.png",
+          "path": "/Volumes/APFS Space/GitHub/Asteria-Studio-NX/apps/asteria-desktop/.cache/golden/bless/runs/golden-v1/previews/p06_blank_verso-source.png",
           "width": 1132,
           "height": 1600
         },
         {
           "kind": "normalized",
-          "path": "/Users/jonathanbotha/GitHub/Asteria-Studio/apps/asteria-desktop/.cache/golden/bless/runs/golden-v1/previews/p06_blank_verso-normalized.png",
+          "path": "/Volumes/APFS Space/GitHub/Asteria-Studio-NX/apps/asteria-desktop/.cache/golden/bless/runs/golden-v1/previews/p06_blank_verso-normalized.png",
           "width": 1132,
           "height": 1600
         },
         {
           "kind": "overlay",
-          "path": "/Users/jonathanbotha/GitHub/Asteria-Studio/apps/asteria-desktop/.cache/golden/bless/runs/golden-v1/overlays/p06_blank_verso-overlay.png",
+          "path": "/Volumes/APFS Space/GitHub/Asteria-Studio-NX/apps/asteria-desktop/.cache/golden/bless/runs/golden-v1/overlays/p06_blank_verso-overlay.png",
           "width": 2175,
           "height": 3075
         }
@@ -199,28 +226,34 @@
       "pageId": "p07_plate",
       "filename": "p07_plate.png",
       "layoutProfile": "illustration",
-      "layoutConfidence": 0.8233494945870348,
+      "layoutConfidence": 0.8089110179539591,
       "qualityGate": {
         "accepted": false,
-        "reasons": ["low-skew-confidence", "low-shading-confidence"]
+        "reasons": [
+          "low-skew-confidence",
+          "low-shading-confidence",
+          "deskew-low-confidence",
+          "shading-low-confidence",
+          "confidence-gate"
+        ]
       },
       "reason": "quality-gate",
       "previews": [
         {
           "kind": "source",
-          "path": "/Users/jonathanbotha/GitHub/Asteria-Studio/apps/asteria-desktop/.cache/golden/bless/runs/golden-v1/previews/p07_plate-source.png",
+          "path": "/Volumes/APFS Space/GitHub/Asteria-Studio-NX/apps/asteria-desktop/.cache/golden/bless/runs/golden-v1/previews/p07_plate-source.png",
           "width": 1132,
           "height": 1600
         },
         {
           "kind": "normalized",
-          "path": "/Users/jonathanbotha/GitHub/Asteria-Studio/apps/asteria-desktop/.cache/golden/bless/runs/golden-v1/previews/p07_plate-normalized.png",
+          "path": "/Volumes/APFS Space/GitHub/Asteria-Studio-NX/apps/asteria-desktop/.cache/golden/bless/runs/golden-v1/previews/p07_plate-normalized.png",
           "width": 1132,
           "height": 1600
         },
         {
           "kind": "overlay",
-          "path": "/Users/jonathanbotha/GitHub/Asteria-Studio/apps/asteria-desktop/.cache/golden/bless/runs/golden-v1/overlays/p07_plate-overlay.png",
+          "path": "/Volumes/APFS Space/GitHub/Asteria-Studio-NX/apps/asteria-desktop/.cache/golden/bless/runs/golden-v1/overlays/p07_plate-overlay.png",
           "width": 2175,
           "height": 3075
         }
@@ -231,28 +264,33 @@
       "pageId": "p08_shadow_left",
       "filename": "p08_shadow_left.png",
       "layoutProfile": "body",
-      "layoutConfidence": 0.9632807563378243,
+      "layoutConfidence": 0.9519209610921715,
       "qualityGate": {
         "accepted": false,
-        "reasons": ["low-shading-confidence", "residual-skew-8.00deg"]
+        "reasons": [
+          "noisy-background",
+          "low-shading-confidence",
+          "shading-low-confidence",
+          "confidence-gate"
+        ]
       },
       "reason": "quality-gate",
       "previews": [
         {
           "kind": "source",
-          "path": "/Users/jonathanbotha/GitHub/Asteria-Studio/apps/asteria-desktop/.cache/golden/bless/runs/golden-v1/previews/p08_shadow_left-source.png",
+          "path": "/Volumes/APFS Space/GitHub/Asteria-Studio-NX/apps/asteria-desktop/.cache/golden/bless/runs/golden-v1/previews/p08_shadow_left-source.png",
           "width": 1132,
           "height": 1600
         },
         {
           "kind": "normalized",
-          "path": "/Users/jonathanbotha/GitHub/Asteria-Studio/apps/asteria-desktop/.cache/golden/bless/runs/golden-v1/previews/p08_shadow_left-normalized.png",
+          "path": "/Volumes/APFS Space/GitHub/Asteria-Studio-NX/apps/asteria-desktop/.cache/golden/bless/runs/golden-v1/previews/p08_shadow_left-normalized.png",
           "width": 1132,
           "height": 1600
         },
         {
           "kind": "overlay",
-          "path": "/Users/jonathanbotha/GitHub/Asteria-Studio/apps/asteria-desktop/.cache/golden/bless/runs/golden-v1/overlays/p08_shadow_left-overlay.png",
+          "path": "/Volumes/APFS Space/GitHub/Asteria-Studio-NX/apps/asteria-desktop/.cache/golden/bless/runs/golden-v1/overlays/p08_shadow_left-overlay.png",
           "width": 2175,
           "height": 3075
         }
@@ -263,28 +301,32 @@
       "pageId": "p09_shadow_right",
       "filename": "p09_shadow_right.png",
       "layoutProfile": "body",
-      "layoutConfidence": 0.9637859118402752,
+      "layoutConfidence": 0.954884853511017,
       "qualityGate": {
         "accepted": false,
-        "reasons": ["low-shading-confidence", "residual-skew-8.00deg"]
+        "reasons": [
+          "low-shading-confidence",
+          "shading-low-confidence",
+          "confidence-gate"
+        ]
       },
       "reason": "quality-gate",
       "previews": [
         {
           "kind": "source",
-          "path": "/Users/jonathanbotha/GitHub/Asteria-Studio/apps/asteria-desktop/.cache/golden/bless/runs/golden-v1/previews/p09_shadow_right-source.png",
+          "path": "/Volumes/APFS Space/GitHub/Asteria-Studio-NX/apps/asteria-desktop/.cache/golden/bless/runs/golden-v1/previews/p09_shadow_right-source.png",
           "width": 1132,
           "height": 1600
         },
         {
           "kind": "normalized",
-          "path": "/Users/jonathanbotha/GitHub/Asteria-Studio/apps/asteria-desktop/.cache/golden/bless/runs/golden-v1/previews/p09_shadow_right-normalized.png",
+          "path": "/Volumes/APFS Space/GitHub/Asteria-Studio-NX/apps/asteria-desktop/.cache/golden/bless/runs/golden-v1/previews/p09_shadow_right-normalized.png",
           "width": 1132,
           "height": 1600
         },
         {
           "kind": "overlay",
-          "path": "/Users/jonathanbotha/GitHub/Asteria-Studio/apps/asteria-desktop/.cache/golden/bless/runs/golden-v1/overlays/p09_shadow_right-overlay.png",
+          "path": "/Volumes/APFS Space/GitHub/Asteria-Studio-NX/apps/asteria-desktop/.cache/golden/bless/runs/golden-v1/overlays/p09_shadow_right-overlay.png",
           "width": 2175,
           "height": 3075
         }
@@ -295,12 +337,13 @@
       "pageId": "p10_spread_dark_gutter",
       "filename": "p10_spread_dark_gutter.png",
       "layoutProfile": "body",
-      "layoutConfidence": 0.9707144710945428,
+      "layoutConfidence": 0.9599088458701777,
       "qualityGate": {
         "accepted": false,
         "reasons": [
           "low-shading-confidence",
-          "residual-skew-8.00deg",
+          "shading-low-confidence",
+          "confidence-gate",
           "spread-split-low-confidence"
         ]
       },
@@ -308,19 +351,19 @@
       "previews": [
         {
           "kind": "source",
-          "path": "/Users/jonathanbotha/GitHub/Asteria-Studio/apps/asteria-desktop/.cache/golden/bless/runs/golden-v1/previews/p10_spread_dark_gutter-source.png",
+          "path": "/Volumes/APFS Space/GitHub/Asteria-Studio-NX/apps/asteria-desktop/.cache/golden/bless/runs/golden-v1/previews/p10_spread_dark_gutter-source.png",
           "width": 1600,
           "height": 1131
         },
         {
           "kind": "normalized",
-          "path": "/Users/jonathanbotha/GitHub/Asteria-Studio/apps/asteria-desktop/.cache/golden/bless/runs/golden-v1/previews/p10_spread_dark_gutter-normalized.png",
+          "path": "/Volumes/APFS Space/GitHub/Asteria-Studio-NX/apps/asteria-desktop/.cache/golden/bless/runs/golden-v1/previews/p10_spread_dark_gutter-normalized.png",
           "width": 1132,
           "height": 1600
         },
         {
           "kind": "overlay",
-          "path": "/Users/jonathanbotha/GitHub/Asteria-Studio/apps/asteria-desktop/.cache/golden/bless/runs/golden-v1/overlays/p10_spread_dark_gutter-overlay.png",
+          "path": "/Volumes/APFS Space/GitHub/Asteria-Studio-NX/apps/asteria-desktop/.cache/golden/bless/runs/golden-v1/overlays/p10_spread_dark_gutter-overlay.png",
           "width": 2175,
           "height": 3075
         }
@@ -331,28 +374,32 @@
       "pageId": "p11_curved_warp",
       "filename": "p11_curved_warp.png",
       "layoutProfile": "body",
-      "layoutConfidence": 0.9708320425265452,
+      "layoutConfidence": 0.97004886795981,
       "qualityGate": {
         "accepted": false,
-        "reasons": ["low-shading-confidence", "residual-skew-8.00deg"]
+        "reasons": [
+          "low-shading-confidence",
+          "shading-low-confidence",
+          "confidence-gate"
+        ]
       },
       "reason": "quality-gate",
       "previews": [
         {
           "kind": "source",
-          "path": "/Users/jonathanbotha/GitHub/Asteria-Studio/apps/asteria-desktop/.cache/golden/bless/runs/golden-v1/previews/p11_curved_warp-source.png",
+          "path": "/Volumes/APFS Space/GitHub/Asteria-Studio-NX/apps/asteria-desktop/.cache/golden/bless/runs/golden-v1/previews/p11_curved_warp-source.png",
           "width": 1132,
           "height": 1600
         },
         {
           "kind": "normalized",
-          "path": "/Users/jonathanbotha/GitHub/Asteria-Studio/apps/asteria-desktop/.cache/golden/bless/runs/golden-v1/previews/p11_curved_warp-normalized.png",
+          "path": "/Volumes/APFS Space/GitHub/Asteria-Studio-NX/apps/asteria-desktop/.cache/golden/bless/runs/golden-v1/previews/p11_curved_warp-normalized.png",
           "width": 1132,
           "height": 1600
         },
         {
           "kind": "overlay",
-          "path": "/Users/jonathanbotha/GitHub/Asteria-Studio/apps/asteria-desktop/.cache/golden/bless/runs/golden-v1/overlays/p11_curved_warp-overlay.png",
+          "path": "/Volumes/APFS Space/GitHub/Asteria-Studio-NX/apps/asteria-desktop/.cache/golden/bless/runs/golden-v1/overlays/p11_curved_warp-overlay.png",
           "width": 2175,
           "height": 3075
         }
@@ -363,28 +410,179 @@
       "pageId": "p12_rot_perspective",
       "filename": "p12_rot_perspective.png",
       "layoutProfile": "body",
-      "layoutConfidence": 0.969889301348576,
+      "layoutConfidence": 0.9691641325161281,
       "qualityGate": {
         "accepted": false,
-        "reasons": ["low-shading-confidence", "residual-skew-8.00deg"]
+        "reasons": [
+          "low-shading-confidence",
+          "shading-low-confidence",
+          "confidence-gate"
+        ]
       },
       "reason": "quality-gate",
       "previews": [
         {
           "kind": "source",
-          "path": "/Users/jonathanbotha/GitHub/Asteria-Studio/apps/asteria-desktop/.cache/golden/bless/runs/golden-v1/previews/p12_rot_perspective-source.png",
+          "path": "/Volumes/APFS Space/GitHub/Asteria-Studio-NX/apps/asteria-desktop/.cache/golden/bless/runs/golden-v1/previews/p12_rot_perspective-source.png",
           "width": 1132,
           "height": 1600
         },
         {
           "kind": "normalized",
-          "path": "/Users/jonathanbotha/GitHub/Asteria-Studio/apps/asteria-desktop/.cache/golden/bless/runs/golden-v1/previews/p12_rot_perspective-normalized.png",
+          "path": "/Volumes/APFS Space/GitHub/Asteria-Studio-NX/apps/asteria-desktop/.cache/golden/bless/runs/golden-v1/previews/p12_rot_perspective-normalized.png",
           "width": 1132,
           "height": 1600
         },
         {
           "kind": "overlay",
-          "path": "/Users/jonathanbotha/GitHub/Asteria-Studio/apps/asteria-desktop/.cache/golden/bless/runs/golden-v1/overlays/p12_rot_perspective-overlay.png",
+          "path": "/Volumes/APFS Space/GitHub/Asteria-Studio-NX/apps/asteria-desktop/.cache/golden/bless/runs/golden-v1/overlays/p12_rot_perspective-overlay.png",
+          "width": 2175,
+          "height": 3075
+        }
+      ],
+      "suggestedAction": "adjust"
+    },
+    {
+      "pageId": "p13_rotation_only",
+      "filename": "p13_rotation_only.png",
+      "layoutProfile": "body",
+      "layoutConfidence": 0.9648157515302409,
+      "qualityGate": {
+        "accepted": false,
+        "reasons": [
+          "low-shading-confidence",
+          "shading-low-confidence",
+          "confidence-gate"
+        ]
+      },
+      "reason": "quality-gate",
+      "previews": [
+        {
+          "kind": "source",
+          "path": "/Volumes/APFS Space/GitHub/Asteria-Studio-NX/apps/asteria-desktop/.cache/golden/bless/runs/golden-v1/previews/p13_rotation_only-source.png",
+          "width": 1132,
+          "height": 1600
+        },
+        {
+          "kind": "normalized",
+          "path": "/Volumes/APFS Space/GitHub/Asteria-Studio-NX/apps/asteria-desktop/.cache/golden/bless/runs/golden-v1/previews/p13_rotation_only-normalized.png",
+          "width": 1132,
+          "height": 1600
+        },
+        {
+          "kind": "overlay",
+          "path": "/Volumes/APFS Space/GitHub/Asteria-Studio-NX/apps/asteria-desktop/.cache/golden/bless/runs/golden-v1/overlays/p13_rotation_only-overlay.png",
+          "width": 2175,
+          "height": 3075
+        }
+      ],
+      "suggestedAction": "adjust"
+    },
+    {
+      "pageId": "p14_spread_light_gutter",
+      "filename": "p14_spread_light_gutter.png",
+      "layoutProfile": "body",
+      "layoutConfidence": 0.9232165888492081,
+      "qualityGate": {
+        "accepted": false,
+        "reasons": [
+          "low-shading-confidence",
+          "shading-low-confidence",
+          "confidence-gate",
+          "spread-split-low-confidence"
+        ]
+      },
+      "reason": "quality-gate",
+      "previews": [
+        {
+          "kind": "source",
+          "path": "/Volumes/APFS Space/GitHub/Asteria-Studio-NX/apps/asteria-desktop/.cache/golden/bless/runs/golden-v1/previews/p14_spread_light_gutter-source.png",
+          "width": 1600,
+          "height": 1131
+        },
+        {
+          "kind": "normalized",
+          "path": "/Volumes/APFS Space/GitHub/Asteria-Studio-NX/apps/asteria-desktop/.cache/golden/bless/runs/golden-v1/previews/p14_spread_light_gutter-normalized.png",
+          "width": 1132,
+          "height": 1600
+        },
+        {
+          "kind": "overlay",
+          "path": "/Volumes/APFS Space/GitHub/Asteria-Studio-NX/apps/asteria-desktop/.cache/golden/bless/runs/golden-v1/overlays/p14_spread_light_gutter-overlay.png",
+          "width": 2175,
+          "height": 3075
+        }
+      ],
+      "suggestedAction": "adjust"
+    },
+    {
+      "pageId": "p15_crop_adjustment",
+      "filename": "p15_crop_adjustment.png",
+      "layoutProfile": "body",
+      "layoutConfidence": 0.9486300252312868,
+      "qualityGate": {
+        "accepted": false,
+        "reasons": [
+          "noisy-background",
+          "low-shading-confidence",
+          "shading-low-confidence",
+          "confidence-gate"
+        ]
+      },
+      "reason": "quality-gate",
+      "previews": [
+        {
+          "kind": "source",
+          "path": "/Volumes/APFS Space/GitHub/Asteria-Studio-NX/apps/asteria-desktop/.cache/golden/bless/runs/golden-v1/previews/p15_crop_adjustment-source.png",
+          "width": 1132,
+          "height": 1600
+        },
+        {
+          "kind": "normalized",
+          "path": "/Volumes/APFS Space/GitHub/Asteria-Studio-NX/apps/asteria-desktop/.cache/golden/bless/runs/golden-v1/previews/p15_crop_adjustment-normalized.png",
+          "width": 1132,
+          "height": 1600
+        },
+        {
+          "kind": "overlay",
+          "path": "/Volumes/APFS Space/GitHub/Asteria-Studio-NX/apps/asteria-desktop/.cache/golden/bless/runs/golden-v1/overlays/p15_crop_adjustment-overlay.png",
+          "width": 2175,
+          "height": 3075
+        }
+      ],
+      "suggestedAction": "adjust"
+    },
+    {
+      "pageId": "p16_overlay_elements",
+      "filename": "p16_overlay_elements.png",
+      "layoutProfile": "body",
+      "layoutConfidence": 0.9486300252312868,
+      "qualityGate": {
+        "accepted": false,
+        "reasons": [
+          "noisy-background",
+          "low-shading-confidence",
+          "shading-low-confidence",
+          "confidence-gate"
+        ]
+      },
+      "reason": "quality-gate",
+      "previews": [
+        {
+          "kind": "source",
+          "path": "/Volumes/APFS Space/GitHub/Asteria-Studio-NX/apps/asteria-desktop/.cache/golden/bless/runs/golden-v1/previews/p16_overlay_elements-source.png",
+          "width": 1132,
+          "height": 1600
+        },
+        {
+          "kind": "normalized",
+          "path": "/Volumes/APFS Space/GitHub/Asteria-Studio-NX/apps/asteria-desktop/.cache/golden/bless/runs/golden-v1/previews/p16_overlay_elements-normalized.png",
+          "width": 1132,
+          "height": 1600
+        },
+        {
+          "kind": "overlay",
+          "path": "/Volumes/APFS Space/GitHub/Asteria-Studio-NX/apps/asteria-desktop/.cache/golden/bless/runs/golden-v1/overlays/p16_overlay_elements-overlay.png",
           "width": 2175,
           "height": 3075
         }

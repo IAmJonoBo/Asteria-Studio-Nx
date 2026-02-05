@@ -2,11 +2,14 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import path from "node:path";
 
 const readFile = vi.hoisted(() => vi.fn());
+const resolveProjectsRoot = vi.hoisted(() => vi.fn());
 
 vi.mock("node:fs/promises", () => ({
   default: { readFile },
   readFile,
 }));
+
+vi.mock("./preferences", () => ({ resolveProjectsRoot }));
 
 import {
   loadPipelineConfig,
@@ -17,6 +20,8 @@ import {
 describe("pipeline-config", () => {
   beforeEach(() => {
     readFile.mockReset();
+    resolveProjectsRoot.mockReset();
+    resolveProjectsRoot.mockResolvedValue(path.join(process.cwd(), "projects"));
   });
 
   it("loadPipelineConfig returns defaults when missing", async () => {

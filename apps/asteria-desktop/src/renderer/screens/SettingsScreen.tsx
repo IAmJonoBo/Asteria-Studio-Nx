@@ -1,10 +1,12 @@
 import type { JSX } from "react";
 import { useEffect, useState } from "react";
 import type {
+  IpcResult,
   PipelineConfigOverrides,
   PipelineConfigSnapshot,
   RunSummary,
 } from "../../ipc/contracts.js";
+import { unwrapIpcResult, unwrapIpcResultOr } from "../utils/ipc.js";
 
 interface SettingsScreenProps {
   projectId?: string;
@@ -15,6 +17,8 @@ export function SettingsScreen({ projectId }: Readonly<SettingsScreenProps>): JS
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [latestInference, setLatestInference] = useState<RunSummary | null>(null);
+  const [diagnosticsBusy, setDiagnosticsBusy] = useState(false);
+  const [diagnosticsStatus, setDiagnosticsStatus] = useState<string | null>(null);
   const [formState, setFormState] = useState({
     dpi: "",
     width: "",
@@ -38,27 +42,40 @@ export function SettingsScreen({ projectId }: Readonly<SettingsScreenProps>): JS
       }
       try {
         const getConfig = windowRef.asteria.ipc["asteria:get-pipeline-config"] as
-          | ((id?: string) => Promise<PipelineConfigSnapshot>)
+          | ((
+              id?: string
+            ) => Promise<import("../../ipc/contracts.js").IpcResult<PipelineConfigSnapshot>>)
           | undefined;
-        const data = getConfig ? await getConfig(projectId) : null;
-        if (!cancelled && data) {
-          setSnapshot(data);
+        if (!getConfig) {
+          if (!cancelled) setSnapshot(null);
+          return;
+        }
+        const data = await getConfig(projectId);
+        if (!data.ok) {
+          throw new Error(data.error.message);
+        }
+        const resolved = data.value;
+        if (!cancelled && resolved) {
+          setSnapshot(resolved);
           setError(null);
           setFormState({
-            dpi: String(data.resolvedConfig.project.dpi),
-            width: String(data.resolvedConfig.project.target_dimensions.width),
-            height: String(data.resolvedConfig.project.target_dimensions.height),
-            spreadEnabled: data.resolvedConfig.steps.spread_split.enabled,
-            spreadThreshold: String(data.resolvedConfig.steps.spread_split.confidence_threshold),
-            bookPriorsEnabled: data.resolvedConfig.steps.book_priors.enabled,
-            bookPriorsSample: String(data.resolvedConfig.steps.book_priors.sample_pages),
-            qaMaskCoverageMin: String(data.resolvedConfig.steps.qa.mask_coverage_min),
-            qaSemanticBody: String(data.resolvedConfig.steps.qa.semantic_thresholds.body),
+            dpi: String(resolved.resolvedConfig.project.dpi),
+            width: String(resolved.resolvedConfig.project.target_dimensions.width),
+            height: String(resolved.resolvedConfig.project.target_dimensions.height),
+            spreadEnabled: resolved.resolvedConfig.steps.spread_split.enabled,
+            spreadThreshold: String(
+              resolved.resolvedConfig.steps.spread_split.confidence_threshold
+            ),
+            bookPriorsEnabled: resolved.resolvedConfig.steps.book_priors.enabled,
+            bookPriorsSample: String(resolved.resolvedConfig.steps.book_priors.sample_pages),
+            qaMaskCoverageMin: String(resolved.resolvedConfig.steps.qa.mask_coverage_min),
+            qaSemanticBody: String(resolved.resolvedConfig.steps.qa.semantic_thresholds.body),
           });
         }
       } catch (err) {
         if (!cancelled) {
           const message = err instanceof Error ? err.message : "Failed to load config";
+          setSnapshot(null);
           setError(message);
         }
       }
@@ -77,10 +94,13 @@ export function SettingsScreen({ projectId }: Readonly<SettingsScreenProps>): JS
       if (!windowRef.asteria?.ipc) return;
       try {
         const listRuns = windowRef.asteria.ipc["asteria:list-runs"] as
-          | (() => Promise<RunSummary[]>)
+          | (() => Promise<import("../../ipc/contracts.js").IpcResult<RunSummary[]>>)
           | undefined;
-        const data = listRuns ? await listRuns() : [];
-        const scopedRuns = projectId ? data.filter((run) => run.projectId === projectId) : data;
+        const data: IpcResult<RunSummary[]> = listRuns ? await listRuns() : { ok: true, value: [] };
+        const resolvedRuns = unwrapIpcResultOr(data, []);
+        const scopedRuns = projectId
+          ? resolvedRuns.filter((run) => run.projectId === projectId)
+          : resolvedRuns;
         const sortedRuns = [...scopedRuns].sort((a, b) => {
           const aTime = a.generatedAt ? new Date(a.generatedAt).getTime() : 0;
           const bTime = b.generatedAt ? new Date(b.generatedAt).getTime() : 0;
@@ -166,10 +186,14 @@ export function SettingsScreen({ projectId }: Readonly<SettingsScreenProps>): JS
     setSaving(true);
     try {
       const saveConfig = windowRef.asteria.ipc["asteria:save-project-config"] as
-        | ((id: string, overrides: PipelineConfigOverrides) => Promise<void>)
+        | ((
+            id: string,
+            overrides: PipelineConfigOverrides
+          ) => Promise<import("../../ipc/contracts.js").IpcResult<void>>)
         | undefined;
       if (saveConfig) {
-        await saveConfig(projectId, overrides);
+        const result = await saveConfig(projectId, overrides);
+        if (!result.ok) throw new Error(result.error.message);
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to save overrides";
@@ -187,16 +211,53 @@ export function SettingsScreen({ projectId }: Readonly<SettingsScreenProps>): JS
     setSaving(true);
     try {
       const saveConfig = windowRef.asteria.ipc["asteria:save-project-config"] as
-        | ((id: string, overrides: PipelineConfigOverrides) => Promise<void>)
+        | ((
+            id: string,
+            overrides: PipelineConfigOverrides
+          ) => Promise<import("../../ipc/contracts.js").IpcResult<void>>)
         | undefined;
       if (saveConfig) {
-        await saveConfig(projectId, {});
+        const result = await saveConfig(projectId, {});
+        if (!result.ok) throw new Error(result.error.message);
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to clear overrides";
       setError(message);
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleCreateDiagnosticsBundle = async (): Promise<void> => {
+    const windowRef: typeof globalThis & { asteria?: { ipc?: Record<string, unknown> } } =
+      globalThis;
+    if (!windowRef.asteria?.ipc) return;
+    const createBundle = windowRef.asteria.ipc["asteria:create-diagnostics-bundle"] as
+      | (() => Promise<import("../../ipc/contracts.js").IpcResult<{ bundlePath: string }>>)
+      | undefined;
+    const revealPath = windowRef.asteria.ipc["asteria:reveal-path"] as
+      | ((path: string) => Promise<import("../../ipc/contracts.js").IpcResult<void>>)
+      | undefined;
+    if (!createBundle) return;
+    setDiagnosticsBusy(true);
+    setDiagnosticsStatus(null);
+    try {
+      const bundleResult = await createBundle();
+      const { bundlePath } = unwrapIpcResult(bundleResult, "Create diagnostics bundle");
+      const clipboard = globalThis.navigator?.clipboard;
+      if (clipboard?.writeText) {
+        await clipboard.writeText(bundlePath);
+      }
+      if (revealPath) {
+        const revealResult = await revealPath(bundlePath);
+        if (!revealResult.ok) throw new Error(revealResult.error.message);
+      }
+      setDiagnosticsStatus("Diagnostics bundle created and copied to clipboard.");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to create diagnostics bundle";
+      setDiagnosticsStatus(message);
+    } finally {
+      setDiagnosticsBusy(false);
     }
   };
 
@@ -459,6 +520,24 @@ export function SettingsScreen({ projectId }: Readonly<SettingsScreenProps>): JS
                 </button>
               </div>
             </div>
+          </div>
+          <div className="card">
+            <h3 className="card-title">Diagnostics</h3>
+            <p style={{ fontSize: "12px", color: "var(--text-secondary)" }}>
+              Create a diagnostics bundle to share logs, preferences, and the latest run summary.
+            </p>
+            {diagnosticsStatus && (
+              <p style={{ fontSize: "12px", color: "var(--text-secondary)" }}>
+                {diagnosticsStatus}
+              </p>
+            )}
+            <button
+              className="btn btn-secondary"
+              onClick={() => void handleCreateDiagnosticsBundle()}
+              disabled={diagnosticsBusy}
+            >
+              {diagnosticsBusy ? "Creating…" : "Copy debug bundle"}
+            </button>
           </div>
         </div>
       )}

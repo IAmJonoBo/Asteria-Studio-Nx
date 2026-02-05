@@ -1,5 +1,4 @@
 #!/usr/bin/env ts-node
-/* eslint-disable no-console */
 /**
  * Benchmark runner for fixed-size corpus runs.
  * Captures per-stage latency and throughput and writes results to disk.
@@ -9,7 +8,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { runPipeline } from "../src/main/pipeline-runner.ts";
 import { loadEnv } from "../src/main/config.ts";
-import { info, note, section, startStep } from "./cli.ts";
+import { createProgressReporter, devLog, info, note, section, startStep } from "./cli.ts";
 
 type StageTiming = {
   stage: string;
@@ -69,6 +68,7 @@ async function main(): Promise<void> {
   info(`Output Dir: ${outputDir}`);
 
   const stageTimings = new Map<string, StageTiming>();
+  let progress: ReturnType<typeof createProgressReporter> | null = null;
 
   try {
     const verifyStep = startStep("Verify corpus root");
@@ -80,6 +80,8 @@ async function main(): Promise<void> {
 
     const runStep = startStep("Run benchmark pipeline");
     const runStart = Date.now();
+    progress = createProgressReporter("Benchmark progress");
+    let lastStage: string | null = null;
     const result = await runPipeline({
       projectRoot,
       projectId: "mind-myth-magick",
@@ -88,6 +90,16 @@ async function main(): Promise<void> {
       sampleCount,
       outputDir,
       onProgress: (event) => {
+        if (event.stage !== lastStage) {
+          devLog(`Stage: ${event.stage}`);
+          lastStage = event.stage;
+        }
+        progress?.update({
+          processed: event.processed,
+          total: event.total,
+          stage: event.stage,
+          throughput: event.throughput,
+        });
         const now = Date.now();
         const existing = stageTimings.get(event.stage);
         if (existing) {
@@ -111,7 +123,7 @@ async function main(): Promise<void> {
         }
       },
     });
-    const runDurationMs = Date.now() - runStart;
+    progress.end(result.success ? "ok" : "fail");
     runStep.end(result.success ? "ok" : "fail");
 
     if (!result.success) {
@@ -190,6 +202,7 @@ async function main(): Promise<void> {
       process.exit(1);
     }
   } catch (error) {
+    progress?.end("fail", "aborted");
     console.error("Benchmark execution failed:");
     console.error(error instanceof Error ? error.message : String(error));
     process.exit(1);

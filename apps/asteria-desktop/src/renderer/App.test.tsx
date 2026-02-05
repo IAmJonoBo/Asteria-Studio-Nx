@@ -3,6 +3,9 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { App } from "./App.js";
 
+const ok = <T,>(value: T) => ({ ok: true as const, value });
+const err = (message: string) => ({ ok: false as const, error: { message } });
+
 describe("App", () => {
   it("loads projects list", async () => {
     const windowRef = globalThis as typeof globalThis & {
@@ -14,15 +17,17 @@ describe("App", () => {
     const previousAsteria = windowRef.asteria;
     windowRef.asteria = {
       ipc: {
-        "asteria:list-projects": vi.fn().mockResolvedValue([
-          {
-            id: "mind-myth-magick",
-            name: "Mind, Myth and Magick",
-            path: "/projects/mind-myth-and-magick",
-            inputPath: "/projects/mind-myth-and-magick/input/raw",
-            status: "completed",
-          },
-        ]),
+        "asteria:list-projects": vi.fn().mockResolvedValue(
+          ok([
+            {
+              id: "mind-myth-magick",
+              name: "Mind, Myth and Magick",
+              path: "/projects/mind-myth-and-magick",
+              inputPath: "/projects/mind-myth-and-magick/input/raw",
+              status: "completed",
+            },
+          ])
+        ),
       },
     };
 
@@ -44,36 +49,56 @@ describe("App", () => {
       };
     };
     const previousAsteria = windowRef.asteria;
-    const scanCorpus = vi.fn().mockResolvedValue({
-      projectId: "mind-myth-magick",
-      pages: [
-        { id: "p1", filename: "page.png", originalPath: "/tmp/page.png", confidenceScores: {} },
-      ],
-      targetDpi: 300,
-      targetDimensionsMm: { width: 210, height: 297 },
-    });
-    const analyzeCorpus = vi.fn().mockResolvedValue({
-      targetDimensionsMm: { width: 210, height: 297 },
-      dpi: 300,
-      inferredDimensionsMm: { width: 210, height: 297 },
-      inferredDpi: 300,
-      dimensionConfidence: 0.9,
-      dpiConfidence: 0.85,
-    });
-    const startRun = vi.fn().mockResolvedValue({ runId: "run-42", runDir: "/tmp/runs/run-42" });
-    const listRuns = vi.fn().mockResolvedValue([]);
+    const scanCorpus = vi.fn().mockResolvedValue(
+      ok({
+        projectId: "mind-myth-magick",
+        pages: [
+          {
+            id: "p1",
+            filename: "page.png",
+            originalPath: "/tmp/page.png",
+            confidenceScores: {},
+          },
+        ],
+        targetDpi: 300,
+        targetDimensionsMm: { width: 210, height: 297 },
+      })
+    );
+    const analyzeCorpus = vi.fn().mockResolvedValue(
+      ok({
+        targetDimensionsMm: { width: 210, height: 297 },
+        dpi: 300,
+        inferredDimensionsMm: { width: 210, height: 297 },
+        inferredDpi: 300,
+        dimensionConfidence: 0.9,
+        dpiConfidence: 0.85,
+      })
+    );
+    const startRun = vi.fn().mockResolvedValue(
+      ok({
+        runId: "run-42",
+        runDir: "/tmp/runs/run-42",
+        status: "running",
+        pagesProcessed: 0,
+        errors: [],
+        metrics: {},
+      })
+    );
+    const listRuns = vi.fn().mockResolvedValue(ok([]));
     const confirmMock = vi.spyOn(globalThis, "confirm").mockReturnValue(true);
     windowRef.asteria = {
       ipc: {
-        "asteria:list-projects": vi.fn().mockResolvedValue([
-          {
-            id: "mind-myth-magick",
-            name: "Mind, Myth and Magick",
-            path: "/projects/mind-myth-and-magick",
-            inputPath: "/projects/mind-myth-and-magick/input/raw",
-            status: "completed",
-          },
-        ]),
+        "asteria:list-projects": vi.fn().mockResolvedValue(
+          ok([
+            {
+              id: "mind-myth-magick",
+              name: "Mind, Myth and Magick",
+              path: "/projects/mind-myth-and-magick",
+              inputPath: "/projects/mind-myth-and-magick/input/raw",
+              status: "completed",
+            },
+          ])
+        ),
         "asteria:scan-corpus": scanCorpus,
         "asteria:analyze-corpus": analyzeCorpus,
         "asteria:start-run": startRun,
@@ -106,23 +131,41 @@ describe("App", () => {
       };
     };
     const previousAsteria = windowRef.asteria;
-    const scanCorpus = vi.fn().mockResolvedValue({
-      projectId: "mind-myth-magick",
-      pages: [
-        { id: "p1", filename: "page.png", originalPath: "/tmp/page.png", confidenceScores: {} },
-      ],
-      targetDpi: 300,
-      targetDimensionsMm: { width: 210, height: 297 },
-    });
-    const analyzeCorpus = vi.fn().mockResolvedValue({
-      targetDimensionsMm: { width: 210, height: 297 },
-      dpi: 300,
-      inferredDimensionsMm: { width: 220, height: 310 },
-      inferredDpi: 320,
-      dimensionConfidence: 0.9,
-      dpiConfidence: 0.85,
-    });
-    const startRun = vi.fn().mockResolvedValue({ runId: "run-43", runDir: "/tmp/runs/run-43" });
+    const scanCorpus = vi.fn().mockResolvedValue(
+      ok({
+        projectId: "mind-myth-magick",
+        pages: [
+          {
+            id: "p1",
+            filename: "page.png",
+            originalPath: "/tmp/page.png",
+            confidenceScores: {},
+          },
+        ],
+        targetDpi: 300,
+        targetDimensionsMm: { width: 210, height: 297 },
+      })
+    );
+    const analyzeCorpus = vi.fn().mockResolvedValue(
+      ok({
+        targetDimensionsMm: { width: 210, height: 297 },
+        dpi: 300,
+        inferredDimensionsMm: { width: 220, height: 310 },
+        inferredDpi: 320,
+        dimensionConfidence: 0.9,
+        dpiConfidence: 0.85,
+      })
+    );
+    const startRun = vi.fn().mockResolvedValue(
+      ok({
+        runId: "run-43",
+        runDir: "/tmp/runs/run-43",
+        status: "running",
+        pagesProcessed: 0,
+        errors: [],
+        metrics: {},
+      })
+    );
     const confirmMock = vi.spyOn(globalThis, "confirm").mockReturnValue(false);
     const promptMock = vi
       .spyOn(globalThis, "prompt")
@@ -132,15 +175,17 @@ describe("App", () => {
 
     windowRef.asteria = {
       ipc: {
-        "asteria:list-projects": vi.fn().mockResolvedValue([
-          {
-            id: "mind-myth-magick",
-            name: "Mind, Myth and Magick",
-            path: "/projects/mind-myth-and-magick",
-            inputPath: "/projects/mind-myth-and-magick/input/raw",
-            status: "completed",
-          },
-        ]),
+        "asteria:list-projects": vi.fn().mockResolvedValue(
+          ok([
+            {
+              id: "mind-myth-magick",
+              name: "Mind, Myth and Magick",
+              path: "/projects/mind-myth-and-magick",
+              inputPath: "/projects/mind-myth-and-magick/input/raw",
+              status: "completed",
+            },
+          ])
+        ),
         "asteria:scan-corpus": scanCorpus,
         "asteria:analyze-corpus": analyzeCorpus,
         "asteria:start-run": startRun,
@@ -172,16 +217,18 @@ describe("App", () => {
     const previousAsteria = windowRef.asteria;
     windowRef.asteria = {
       ipc: {
-        "asteria:list-projects": vi.fn().mockResolvedValue([
-          {
-            id: "mind-myth-magick",
-            name: "Mind, Myth and Magick",
-            path: "/projects/mind-myth-and-magick",
-            inputPath: "/projects/mind-myth-and-magick/input/raw",
-            status: "completed",
-          },
-        ]),
-        "asteria:list-runs": vi.fn().mockResolvedValue([]),
+        "asteria:list-projects": vi.fn().mockResolvedValue(
+          ok([
+            {
+              id: "mind-myth-magick",
+              name: "Mind, Myth and Magick",
+              path: "/projects/mind-myth-and-magick",
+              inputPath: "/projects/mind-myth-and-magick/input/raw",
+              status: "completed",
+            },
+          ])
+        ),
+        "asteria:list-runs": vi.fn().mockResolvedValue(ok([])),
       },
     };
 
@@ -204,31 +251,35 @@ describe("App", () => {
       };
     };
     const previousAsteria = windowRef.asteria;
-    const listRuns = vi.fn().mockResolvedValue([
-      {
+    const listRuns = vi.fn().mockResolvedValue(
+      ok([
+        {
+          runId: "run-123",
+          runDir: "/tmp/runs/run-123",
+          projectId: "project-a",
+          generatedAt: "2026-01-01",
+          reviewCount: 1,
+        },
+      ])
+    );
+    const fetchReviewQueue = vi.fn().mockResolvedValue(
+      ok({
         runId: "run-123",
-        runDir: "/tmp/runs/run-123",
         projectId: "project-a",
         generatedAt: "2026-01-01",
-        reviewCount: 1,
-      },
-    ]);
-    const fetchReviewQueue = vi.fn().mockResolvedValue({
-      runId: "run-123",
-      projectId: "project-a",
-      generatedAt: "2026-01-01",
-      items: [
-        {
-          pageId: "page-123",
-          filename: "page-123.jpg",
-          layoutProfile: "body",
-          layoutConfidence: 0.6,
-          reason: "semantic-layout",
-          qualityGate: { accepted: true, reasons: [] },
-          previews: [{ kind: "normalized", path: "/tmp/norm.png", width: 16, height: 16 }],
-        },
-      ],
-    });
+        items: [
+          {
+            pageId: "page-123",
+            filename: "page-123.jpg",
+            layoutProfile: "body",
+            layoutConfidence: 0.6,
+            reason: "semantic-layout",
+            qualityGate: { accepted: true, reasons: [] },
+            previews: [{ kind: "normalized", path: "/tmp/norm.png", width: 16, height: 16 }],
+          },
+        ],
+      })
+    );
 
     const onRunProgress = vi.fn(
       (handler: (event: { runId: string; stage: string }) => void): (() => void) => {
@@ -238,7 +289,7 @@ describe("App", () => {
     );
     windowRef.asteria = {
       ipc: {
-        "asteria:list-projects": vi.fn().mockResolvedValue([]),
+        "asteria:list-projects": vi.fn().mockResolvedValue(ok([])),
         "asteria:list-runs": listRuns,
         "asteria:fetch-review-queue": fetchReviewQueue,
       },
@@ -263,7 +314,7 @@ describe("App", () => {
     const previousAsteria = windowRef.asteria;
     windowRef.asteria = {
       ipc: {
-        "asteria:list-projects": vi.fn().mockRejectedValue(new Error("load failed")),
+        "asteria:list-projects": vi.fn().mockResolvedValue(err("load failed")),
       },
     };
 
@@ -297,7 +348,7 @@ describe("App", () => {
     const previousAsteria = windowRef.asteria;
     windowRef.asteria = {
       ipc: {
-        "asteria:list-projects": vi.fn().mockResolvedValue([]),
+        "asteria:list-projects": vi.fn().mockResolvedValue(ok([])),
       },
     };
 
@@ -323,28 +374,32 @@ describe("App", () => {
     const previousAsteria = windowRef.asteria;
     const listProjects = vi
       .fn()
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([
-        {
-          id: "new-project",
-          name: "New Project",
-          path: "/projects/new",
-          inputPath: "/projects/new/input/raw",
-          status: "idle",
-        },
-      ]);
-    const importCorpus = vi.fn().mockResolvedValue({
-      id: "new-project",
-      name: "New Project",
-      path: "/projects/new",
-      inputPath: "/projects/new/input/raw",
-      status: "idle",
-    });
+      .mockResolvedValueOnce(ok([]))
+      .mockResolvedValueOnce(
+        ok([
+          {
+            id: "new-project",
+            name: "New Project",
+            path: "/projects/new",
+            inputPath: "/projects/new/input/raw",
+            status: "idle",
+          },
+        ])
+      );
+    const importCorpus = vi.fn().mockResolvedValue(
+      ok({
+        id: "new-project",
+        name: "New Project",
+        path: "/projects/new",
+        inputPath: "/projects/new/input/raw",
+        status: "idle",
+      })
+    );
 
     windowRef.asteria = {
       ipc: {
         "asteria:list-projects": listProjects,
-        "asteria:pick-corpus-dir": vi.fn().mockResolvedValue("/tmp/corpus"),
+        "asteria:pick-corpus-dir": vi.fn().mockResolvedValue(ok("/tmp/corpus")),
         "asteria:import-corpus": importCorpus,
       },
     };
@@ -382,11 +437,11 @@ describe("App", () => {
     const originalAlert = globalThis.alert;
     globalThis.alert = alertMock;
 
-    const importCorpus = vi.fn().mockRejectedValue(new Error("import failed"));
+    const importCorpus = vi.fn().mockResolvedValue(err("import failed"));
     windowRef.asteria = {
       ipc: {
-        "asteria:list-projects": vi.fn().mockResolvedValue([]),
-        "asteria:pick-corpus-dir": vi.fn().mockResolvedValue("/tmp/corpus"),
+        "asteria:list-projects": vi.fn().mockResolvedValue(ok([])),
+        "asteria:pick-corpus-dir": vi.fn().mockResolvedValue(ok("/tmp/corpus")),
         "asteria:import-corpus": importCorpus,
       },
     };
@@ -403,7 +458,7 @@ describe("App", () => {
     const importButton = await screen.findByRole("button", { name: /import corpus/i });
     await user.click(importButton);
 
-    expect(alertMock).toHaveBeenCalledWith("import failed");
+    expect(alertMock).toHaveBeenCalledWith("Import corpus: import failed");
 
     (
       globalThis as typeof globalThis & {
@@ -422,7 +477,7 @@ describe("App", () => {
       };
     };
     const previousAsteria = windowRef.asteria;
-    const listRuns = vi.fn().mockResolvedValue([]);
+    const listRuns = vi.fn().mockResolvedValue(ok([]));
     const onRunProgress = vi.fn(
       (handler: (event: { runId: string; stage: string }) => void): (() => void) => {
         handler({ runId: "run-99", stage: "complete" });
@@ -432,7 +487,7 @@ describe("App", () => {
 
     windowRef.asteria = {
       ipc: {
-        "asteria:list-projects": vi.fn().mockResolvedValue([]),
+        "asteria:list-projects": vi.fn().mockResolvedValue(ok([])),
         "asteria:list-runs": listRuns,
       },
       onRunProgress,
@@ -457,16 +512,18 @@ describe("App", () => {
 
     windowRef.asteria = {
       ipc: {
-        "asteria:list-projects": vi.fn().mockResolvedValue([
-          {
-            id: "proj",
-            name: "Project",
-            path: "/projects/proj",
-            inputPath: "/projects/proj/input/raw",
-            status: "idle",
-          },
-        ]),
-        "asteria:scan-corpus": vi.fn().mockRejectedValue(new Error("scan failed")),
+        "asteria:list-projects": vi.fn().mockResolvedValue(
+          ok([
+            {
+              id: "proj",
+              name: "Project",
+              path: "/projects/proj",
+              inputPath: "/projects/proj/input/raw",
+              status: "idle",
+            },
+          ])
+        ),
+        "asteria:scan-corpus": vi.fn().mockResolvedValue(err("scan failed")),
         "asteria:start-run": vi.fn(),
       },
     };
@@ -476,7 +533,7 @@ describe("App", () => {
     const startRunButton = await screen.findByRole("button", { name: /start run/i });
     await user.click(startRunButton);
 
-    expect(alertMock).toHaveBeenCalledWith("scan failed");
+    expect(alertMock).toHaveBeenCalledWith("Scan corpus: scan failed");
 
     globalThis.alert = originalAlert;
     windowRef.asteria = previousAsteria;
@@ -494,7 +551,7 @@ describe("App", () => {
 
     windowRef.asteria = {
       ipc: {
-        "asteria:list-projects": vi.fn().mockResolvedValue([]),
+        "asteria:list-projects": vi.fn().mockResolvedValue(ok([])),
       },
     };
 
@@ -516,7 +573,7 @@ describe("App", () => {
     const previousAsteria = windowRef.asteria;
     windowRef.asteria = {
       ipc: {
-        "asteria:list-projects": vi.fn().mockResolvedValue([]),
+        "asteria:list-projects": vi.fn().mockResolvedValue(ok([])),
       },
     };
 
@@ -540,7 +597,7 @@ describe("App", () => {
 
     windowRef.asteria = {
       ipc: {
-        "asteria:list-projects": vi.fn().mockResolvedValue([]),
+        "asteria:list-projects": vi.fn().mockResolvedValue(ok([])),
       },
     };
     globalThis.localStorage?.setItem("asteria-theme", "light");
@@ -604,22 +661,26 @@ describe("App", () => {
     const previousAsteria = windowRef.asteria;
     windowRef.asteria = {
       ipc: {
-        "asteria:list-projects": vi.fn().mockResolvedValue([]),
-        "asteria:list-runs": vi.fn().mockResolvedValue([
-          {
+        "asteria:list-projects": vi.fn().mockResolvedValue(ok([])),
+        "asteria:list-runs": vi.fn().mockResolvedValue(
+          ok([
+            {
+              runId: "run-42",
+              runDir: "/tmp/runs/run-42",
+              projectId: "proj",
+              generatedAt: "2024-01-01",
+              reviewCount: 0,
+            },
+          ])
+        ),
+        "asteria:fetch-review-queue": vi.fn().mockResolvedValue(
+          ok({
             runId: "run-42",
-            runDir: "/tmp/runs/run-42",
             projectId: "proj",
             generatedAt: "2024-01-01",
-            reviewCount: 0,
-          },
-        ]),
-        "asteria:fetch-review-queue": vi.fn().mockResolvedValue({
-          runId: "run-42",
-          projectId: "proj",
-          generatedAt: "2024-01-01",
-          items: [],
-        }),
+            items: [],
+          })
+        ),
       },
     };
 
@@ -639,11 +700,11 @@ describe("App", () => {
       asteria?: { ipc: Record<string, unknown> };
     };
     const previousAsteria = windowRef.asteria;
-    const importCorpus = vi.fn();
+    const importCorpus = vi.fn().mockResolvedValue(ok(undefined));
     windowRef.asteria = {
       ipc: {
-        "asteria:list-projects": vi.fn().mockResolvedValue([]),
-        "asteria:pick-corpus-dir": vi.fn().mockResolvedValue("/tmp/corpus"),
+        "asteria:list-projects": vi.fn().mockResolvedValue(ok([])),
+        "asteria:pick-corpus-dir": vi.fn().mockResolvedValue(ok("/tmp/corpus")),
         "asteria:import-corpus": importCorpus,
       },
     };
@@ -676,12 +737,12 @@ describe("App", () => {
       asteria?: { ipc: Record<string, unknown> };
     };
     const previousAsteria = windowRef.asteria;
-    const pickCorpusDir = vi.fn().mockResolvedValue(null);
-    const importCorpus = vi.fn();
+    const pickCorpusDir = vi.fn().mockResolvedValue(ok(null));
+    const importCorpus = vi.fn().mockResolvedValue(ok(undefined));
 
     windowRef.asteria = {
       ipc: {
-        "asteria:list-projects": vi.fn().mockResolvedValue([]),
+        "asteria:list-projects": vi.fn().mockResolvedValue(ok([])),
         "asteria:pick-corpus-dir": pickCorpusDir,
         "asteria:import-corpus": importCorpus,
       },

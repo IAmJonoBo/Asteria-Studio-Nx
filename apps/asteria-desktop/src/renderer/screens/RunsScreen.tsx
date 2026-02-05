@@ -1,6 +1,7 @@
 import type { JSX } from "react";
 import { useEffect, useState } from "react";
-import type { RunConfigSnapshot, RunSummary } from "../../ipc/contracts.js";
+import type { IpcResult, RunConfigSnapshot, RunSummary } from "../../ipc/contracts.js";
+import { unwrapIpcResultOr } from "../utils/ipc.js";
 
 interface RunsScreenProps {
   selectedRunId?: string;
@@ -36,11 +37,14 @@ export function RunsScreen({
       }
       try {
         const listRuns = windowRef.asteria.ipc["asteria:list-runs"] as
-          | (() => Promise<RunSummary[]>)
+          | (() => Promise<import("../../ipc/contracts.js").IpcResult<RunSummary[]>>)
           | undefined;
-        const data = listRuns ? await listRuns() : [];
+        const data: IpcResult<RunSummary[]> = listRuns ? await listRuns() : { ok: true, value: [] };
+        if (!data.ok) {
+          throw new Error(data.error.message);
+        }
         if (!cancelled) {
-          setRuns(data);
+          setRuns(unwrapIpcResultOr(data, []));
           setIsLoading(false);
         }
       } catch (err) {
@@ -74,11 +78,19 @@ export function RunsScreen({
       }
       try {
         const getRunConfig = windowRef.asteria.ipc["asteria:get-run-config"] as
-          | ((runId: string, runDir: string) => Promise<RunConfigSnapshot | null>)
+          | ((
+              runId: string,
+              runDir: string
+            ) => Promise<import("../../ipc/contracts.js").IpcResult<RunConfigSnapshot | null>>)
           | undefined;
-        const snapshot = getRunConfig ? await getRunConfig(selectedRunId, selectedRunDir) : null;
+        const snapshotResult: IpcResult<RunConfigSnapshot | null> = getRunConfig
+          ? await getRunConfig(selectedRunId, selectedRunDir)
+          : { ok: true, value: null };
+        if (!snapshotResult.ok) {
+          throw new Error(snapshotResult.error.message);
+        }
         if (!cancelled) {
-          setRunConfig(snapshot);
+          setRunConfig(unwrapIpcResultOr(snapshotResult, null));
           setRunConfigError(null);
         }
       } catch (err) {

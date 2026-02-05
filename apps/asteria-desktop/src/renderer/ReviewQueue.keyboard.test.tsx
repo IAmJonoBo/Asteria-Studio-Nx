@@ -3,6 +3,9 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ReviewQueueScreen } from "./screens/ReviewQueueScreen.js";
 
+const ok = <T,>(value: T) => ({ ok: true as const, value });
+const err = (message: string) => ({ ok: false as const, error: { message } });
+
 describe("ReviewQueueScreen - Keyboard Navigation", () => {
   type AsteriaApi = { ipc: Record<string, unknown> };
   const buildQueue = (
@@ -43,7 +46,9 @@ describe("ReviewQueueScreen - Keyboard Navigation", () => {
     const windowRef = globalThis as typeof globalThis & { asteria?: AsteriaApi };
     const previousAsteria = windowRef.asteria;
     windowRef.asteria = {
-      ipc: { "asteria:fetch-review-queue": vi.fn().mockResolvedValue(buildQueue(baseItems)) },
+      ipc: {
+        "asteria:fetch-review-queue": vi.fn().mockResolvedValue(ok(buildQueue(baseItems))),
+      },
     } as AsteriaApi;
 
     render(<ReviewQueueScreen runId="run-1" runDir="/tmp/runs/run-1" />);
@@ -60,7 +65,9 @@ describe("ReviewQueueScreen - Keyboard Navigation", () => {
     const windowRef = globalThis as typeof globalThis & { asteria?: AsteriaApi };
     const previousAsteria = windowRef.asteria;
     windowRef.asteria = {
-      ipc: { "asteria:fetch-review-queue": vi.fn().mockResolvedValue(buildQueue(baseItems)) },
+      ipc: {
+        "asteria:fetch-review-queue": vi.fn().mockResolvedValue(ok(buildQueue(baseItems))),
+      },
     } as AsteriaApi;
 
     render(<ReviewQueueScreen runId="test-run" runDir="/tmp/runs/test-run" />);
@@ -94,12 +101,14 @@ describe("ReviewQueueScreen - Keyboard Navigation", () => {
   it("renders empty state when queue is empty", async () => {
     const windowRef = globalThis as typeof globalThis & { asteria?: AsteriaApi };
     const previousAsteria = windowRef.asteria;
-    const fetchQueue = vi.fn().mockResolvedValue({
-      runId: "run-empty",
-      projectId: "proj",
-      generatedAt: "2026-01-01",
-      items: [],
-    });
+    const fetchQueue = vi.fn().mockResolvedValue(
+      ok({
+        runId: "run-empty",
+        projectId: "proj",
+        generatedAt: "2026-01-01",
+        items: [],
+      })
+    );
     windowRef.asteria = {
       ipc: { "asteria:fetch-review-queue": fetchQueue },
     } as AsteriaApi;
@@ -114,19 +123,21 @@ describe("ReviewQueueScreen - Keyboard Navigation", () => {
     const windowRef = globalThis as typeof globalThis & { asteria?: AsteriaApi };
     const previousAsteria = windowRef.asteria;
     const fetchQueue = vi.fn().mockResolvedValue(
-      buildQueue([
-        {
-          pageId: "page-1",
-          filename: "page-1.jpg",
-          layoutProfile: "body",
-          layoutConfidence: 0.7,
-          reason: "semantic-layout",
-          qualityGate: { accepted: false, reasons: ["low-confidence"] },
-          previews: [{ kind: "normalized", path: "/tmp/normalized.png", width: 16, height: 16 }],
-        },
-      ])
+      ok(
+        buildQueue([
+          {
+            pageId: "page-1",
+            filename: "page-1.jpg",
+            layoutProfile: "body",
+            layoutConfidence: 0.7,
+            reason: "semantic-layout",
+            qualityGate: { accepted: false, reasons: ["low-confidence"] },
+            previews: [{ kind: "normalized", path: "/tmp/normalized.png", width: 16, height: 16 }],
+          },
+        ])
+      )
     );
-    const submitReview = vi.fn().mockRejectedValue(new Error("Network down"));
+    const submitReview = vi.fn().mockResolvedValue(err("Network down"));
     windowRef.asteria = {
       ipc: {
         "asteria:fetch-review-queue": fetchQueue,
@@ -178,7 +189,9 @@ describe("ReviewQueueScreen - Keyboard Navigation", () => {
     const windowRef = globalThis as typeof globalThis & { asteria?: AsteriaApi };
     const previousAsteria = windowRef.asteria;
     windowRef.asteria = {
-      ipc: { "asteria:fetch-review-queue": vi.fn().mockResolvedValue(buildQueue(baseItems)) },
+      ipc: {
+        "asteria:fetch-review-queue": vi.fn().mockResolvedValue(ok(buildQueue(baseItems))),
+      },
     } as AsteriaApi;
 
     render(<ReviewQueueScreen runId="run-1" runDir="/tmp/runs/run-1" />);
@@ -196,7 +209,9 @@ describe("ReviewQueueScreen - Keyboard Navigation", () => {
     const windowRef = globalThis as typeof globalThis & { asteria?: AsteriaApi };
     const previousAsteria = windowRef.asteria;
     windowRef.asteria = {
-      ipc: { "asteria:fetch-review-queue": vi.fn().mockResolvedValue(buildQueue(baseItems)) },
+      ipc: {
+        "asteria:fetch-review-queue": vi.fn().mockResolvedValue(ok(buildQueue(baseItems))),
+      },
     } as AsteriaApi;
 
     render(<ReviewQueueScreen runId="test-run" runDir="/tmp/runs/test-run" />);
@@ -215,7 +230,9 @@ describe("ReviewQueueScreen - Keyboard Navigation", () => {
     const windowRef = globalThis as typeof globalThis & { asteria?: AsteriaApi };
     const previousAsteria = windowRef.asteria;
     windowRef.asteria = {
-      ipc: { "asteria:fetch-review-queue": vi.fn().mockResolvedValue(buildQueue(baseItems)) },
+      ipc: {
+        "asteria:fetch-review-queue": vi.fn().mockResolvedValue(ok(buildQueue(baseItems))),
+      },
     } as AsteriaApi;
 
     render(<ReviewQueueScreen runId="test-run" runDir="/tmp/runs/test-run" />);
@@ -230,7 +247,7 @@ describe("ReviewQueueScreen - Keyboard Navigation", () => {
     const windowRef = globalThis as typeof globalThis & { asteria?: AsteriaApi };
     const previousAsteria = windowRef.asteria;
     windowRef.asteria = {
-      ipc: { "asteria:fetch-review-queue": vi.fn().mockResolvedValue(buildQueue(baseItems)) },
+      ipc: { "asteria:fetch-review-queue": vi.fn().mockResolvedValue(ok(buildQueue(baseItems))) },
     } as AsteriaApi;
 
     render(<ReviewQueueScreen runId="test-run" runDir="/tmp/runs/test-run" />);

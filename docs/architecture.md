@@ -61,7 +61,7 @@ graph TD
 - **Book Priors**: Samples first N pages to derive median trim/content boxes, applies to full corpus
 - **Spread Split Detection**: Identifies two-page scans with confidence gating, splits at gutter
 - **Project Store**: Filesystem-backed storage for inputs, intermediates, outputs, manifests, and sidecars
-- **Sidecar Emission**: JSON sidecars conforming to `spec/page_layout_schema.json` with full element sets
+- **Sidecar Emission**: JSON sidecars conforming to `spec/page_layout_schema.json` with elements + guide layers
 - **Native Utilities**: Projection profiles + dHash integrated via N-API (performance assist)
 - **Native Layout Heuristics**: Local layout element detection via N-API
 

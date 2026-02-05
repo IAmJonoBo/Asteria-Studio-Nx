@@ -110,7 +110,8 @@ export const requestRemoteLayout = async (
         height: data.info.height ?? outputHeight,
         mime: "image/jpeg",
       };
-    } catch {
+    } catch (error) {
+      console.warn("Remote layout: failed to prepare payload", error);
       return null;
     }
   };
@@ -171,7 +172,8 @@ export const requestRemoteLayout = async (
       });
 
     return elements.length > 0 ? elements : null;
-  } catch {
+  } catch (error) {
+    console.warn("Remote layout request failed", error);
     return null;
   } finally {
     globalThis.clearTimeout(timeout);
@@ -217,7 +219,8 @@ const loadRemoteLayoutConfig = async (): Promise<RemoteLayoutConfig> => {
       maxPayloadMb: maxPayloadValue ? Number(maxPayloadValue) : undefined,
       maxDimensionPx: maxDimensionValue ? Number(maxDimensionValue) : undefined,
     };
-  } catch {
+  } catch (error) {
+    console.warn("Failed to load remote layout config", error);
     return {};
   }
 };
@@ -227,8 +230,11 @@ const findExistingPath = async (paths: string[]): Promise<string | null> => {
     try {
       const stats = await fs.stat(candidate);
       if (stats.isFile()) return candidate;
-    } catch {
-      // ignore
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException | undefined)?.code;
+      if (code && code !== "ENOENT") {
+        console.warn(`Failed to stat candidate path: ${candidate}`, error);
+      }
     }
   }
   return null;

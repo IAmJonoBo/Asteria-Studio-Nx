@@ -2,9 +2,8 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import type { ImportCorpusRequest, ProjectSummary } from "../ipc/contracts.js";
+import { resolveOutputDir, resolveProjectsRoot } from "./preferences.js";
 import { readRunIndex, type RunIndexStatus } from "./run-index.js";
-
-const projectsRoot = path.join(process.cwd(), "projects");
 
 type ProjectConfig = {
   id?: string;
@@ -54,7 +53,8 @@ const readProjectConfig = async (projectDir: string): Promise<ProjectConfig | nu
   try {
     const raw = await fs.readFile(configPath, "utf-8");
     return JSON.parse(raw) as ProjectConfig;
-  } catch {
+  } catch (error) {
+    console.warn(`Failed to read project config at ${configPath}`, error);
     return null;
   }
 };
@@ -69,8 +69,11 @@ const findProjectConfigPath = async (projectDir: string): Promise<string | undef
     try {
       const stats = await fs.stat(candidate);
       if (stats.isFile()) return candidate;
-    } catch {
-      // ignore missing files
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException | undefined)?.code;
+      if (code && code !== "ENOENT") {
+        console.warn(`Failed to stat project config at ${candidate}`, error);
+      }
     }
   }
   return undefined;
@@ -91,14 +94,16 @@ const resolveProjectStatus = (status?: RunIndexStatus): ProjectSummary["status"]
 };
 
 export const listProjects = async (): Promise<ProjectSummary[]> => {
+  const projectsRoot = await resolveProjectsRoot();
   let entries: string[] = [];
   try {
     entries = await fs.readdir(projectsRoot);
-  } catch {
+  } catch (error) {
+    console.warn(`Failed to read projects directory at ${projectsRoot}`, error);
     return [];
   }
 
-  const outputDir = process.env.ASTERIA_OUTPUT_DIR ?? path.join(process.cwd(), "pipeline-results");
+  const outputDir = await resolveOutputDir();
   const runs = await readRunIndex(outputDir);
   const latestRunByProject = new Map<string, { updatedAt?: string; status?: RunIndexStatus }>();
   runs.forEach((run) => {
@@ -117,7 +122,8 @@ export const listProjects = async (): Promise<ProjectSummary[]> => {
       try {
         const stats = await fs.stat(projectDir);
         if (!stats.isDirectory()) return null;
-      } catch {
+      } catch (error) {
+        console.warn(`Failed to stat project directory at ${projectDir}`, error);
         return null;
       }
       const config = await readProjectConfig(projectDir);
@@ -142,6 +148,7 @@ export const listProjects = async (): Promise<ProjectSummary[]> => {
 };
 
 export const importCorpus = async (request: ImportCorpusRequest): Promise<ProjectSummary> => {
+  const projectsRoot = await resolveProjectsRoot();
   const resolvedInput = normalizeCorpusPath(request.inputPath);
   const stats = await fs.stat(resolvedInput);
   if (!stats.isDirectory()) {
@@ -162,7 +169,11 @@ export const importCorpus = async (request: ImportCorpusRequest): Promise<Projec
         projectDir = path.join(projectsRoot, slug);
         continue;
       }
-    } catch {
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException | undefined)?.code;
+      if (code && code !== "ENOENT") {
+        console.warn(`Failed to stat project directory at ${projectDir}`, error);
+      }
       break;
     }
   }

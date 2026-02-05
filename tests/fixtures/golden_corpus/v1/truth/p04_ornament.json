@@ -1,7 +1,17 @@
 {
   "pageId": "p04_ornament",
-  "pageBoundsPx": [0, 0, 2174, 3074],
-  "contentBoxPx": [140, 360, 2035, 2935],
+  "pageBoundsPx": [
+    0,
+    0,
+    2174,
+    3074
+  ],
+  "contentBoxPx": [
+    140,
+    360,
+    2035,
+    2935
+  ],
   "gutter": {
     "side": "none",
     "widthPx": 0
@@ -11,10 +21,17 @@
   },
   "ornaments": [
     {
-      "box": [1027, 200, 1147, 320],
+      "box": [
+        1027,
+        200,
+        1147,
+        320
+      ],
       "hash": "86627f2428b7e536"
     }
   ],
   "shouldSplit": false,
-  "expectedReviewReasons": ["low-shading-confidence", "residual-skew-*"]
+  "expectedReviewReasons": [
+    "low-shading-confidence"
+  ]
 }

@@ -45,7 +45,8 @@ export const readRunIndex = async (outputDir: string): Promise<RunIndexEntry[]> 
     const raw = await fs.readFile(indexPath, "utf-8");
     const parsed = JSON.parse(raw) as { runs?: RunIndexEntry[] };
     return Array.isArray(parsed.runs) ? parsed.runs : [];
-  } catch {
+  } catch (error) {
+    console.warn(`Failed to read run index at ${indexPath}`, error);
     return [];
   }
 };

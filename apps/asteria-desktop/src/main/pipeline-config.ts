@@ -6,6 +6,7 @@ import type {
   PipelineConfigOverrides,
   PipelineConfigSources,
 } from "../ipc/contracts.js";
+import { resolveProjectsRoot } from "./preferences.js";
 
 export type { PipelineConfig, PipelineConfigOverrides, PipelineConfigSources };
 
@@ -167,13 +168,15 @@ export const loadPipelineConfig = async (configPath?: string): Promise<LoadedPip
     }
     const merged = mergeDeep(defaultConfig, parsed as Record<string, unknown>);
     return { config: merged, configPath: resolvedPath, loadedFromFile: true };
-  } catch {
+  } catch (error) {
+    console.warn(`Failed to load pipeline config at ${resolvedPath}`, error);
     return { config: defaultConfig, configPath: resolvedPath, loadedFromFile: false };
   }
 };
 
 export const loadProjectOverrides = async (projectId: string): Promise<LoadedProjectOverrides> => {
-  const projectRoot = path.join(process.cwd(), "projects", projectId);
+  const projectsRoot = await resolveProjectsRoot();
+  const projectRoot = path.join(projectsRoot, projectId);
   const candidates = [
     path.join(projectRoot, "pipeline.config.yaml"),
     path.join(projectRoot, "pipeline.config.yml"),
@@ -189,8 +192,11 @@ export const loadProjectOverrides = async (projectId: string): Promise<LoadedPro
       if (overrides && typeof overrides === "object") {
         return { overrides, configPath };
       }
-    } catch {
-      // ignore missing files
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException | undefined)?.code;
+      if (code && code !== "ENOENT") {
+        console.warn(`Failed to load project overrides at ${configPath}`, error);
+      }
     }
   }
 

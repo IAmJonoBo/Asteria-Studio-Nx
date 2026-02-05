@@ -69,8 +69,8 @@ export const loadEnv = (options: { cwd?: string; env?: NodeJS.ProcessEnv } = {})
         }
       }
       loadedFiles.push(filePath);
-    } catch {
-      // ignore parse errors; keep going
+    } catch (error) {
+      console.warn(`Failed to load env file: ${filePath}`, error);
     }
   }
 

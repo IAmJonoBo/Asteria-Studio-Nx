@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { __testables } from "./ReviewQueueScreen.js";
 
-const { calculateOverlayScale, mapClientPointToOutput, snapBoxToPrior } = __testables;
+const { calculateOverlayScale, mapClientPointToOutput, snapBoxToPrior, hitTestGuides } =
+  __testables;
 
 describe("ReviewQueueScreen geometry helpers", () => {
   it("calculates overlay scale from crop box bounds", () => {
@@ -35,5 +36,26 @@ describe("ReviewQueueScreen geometry helpers", () => {
 
     const unsnapped = snapBoxToPrior([10, 10, 100, 100], [20, 8, 100, 96], 3);
     expect(unsnapped).toEqual([10, 10, 100, 100]);
+  });
+
+  it("finds the closest editable guide", () => {
+    const hit = hitTestGuides({
+      point: { x: 12, y: 40 },
+      zoom: 1,
+      guideLayout: {
+        layers: [
+          {
+            id: "margin-guides",
+            guides: [
+              { id: "g1", axis: "x", position: 10, kind: "major" },
+              { id: "g2", axis: "x", position: 190, kind: "major" },
+            ],
+          },
+        ],
+      },
+    });
+
+    expect(hit?.layerId).toBe("margin-guides");
+    expect(hit?.guideId).toBe("g1");
   });
 });

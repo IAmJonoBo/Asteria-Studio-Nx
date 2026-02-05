@@ -3,6 +3,8 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { ReviewQueueScreen } from "./ReviewQueueScreen.js";
 
+const ok = <T,>(value: T) => ({ ok: true as const, value });
+
 describe("ReviewQueueScreen overrides", () => {
   it("reflects applied overrides in the UI", async () => {
     const user = userEvent.setup();
@@ -10,44 +12,48 @@ describe("ReviewQueueScreen overrides", () => {
       asteria?: { ipc?: Record<string, unknown> };
     };
     const previousAsteria = windowRef.asteria;
-    const applyOverride = vi.fn().mockResolvedValue(undefined);
+    const applyOverride = vi.fn().mockResolvedValue(ok(undefined));
 
     windowRef.asteria = {
       ipc: {
-        "asteria:fetch-review-queue": vi.fn().mockResolvedValue({
-          runId: "run-1",
-          projectId: "project-1",
-          generatedAt: "2026-02-02",
-          items: [
-            {
-              pageId: "page-1",
-              filename: "page-1.png",
-              layoutProfile: "body",
-              layoutConfidence: 0.82,
-              qualityGate: { accepted: false, reasons: ["low-mask-coverage"] },
-              reason: "quality-gate",
-              previews: [
-                {
-                  kind: "normalized",
-                  path: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMB/6fYdS0AAAAASUVORK5CYII=",
-                  width: 100,
-                  height: 100,
-                },
-              ],
-              suggestedAction: "adjust",
+        "asteria:fetch-review-queue": vi.fn().mockResolvedValue(
+          ok({
+            runId: "run-1",
+            projectId: "project-1",
+            generatedAt: "2026-02-02",
+            items: [
+              {
+                pageId: "page-1",
+                filename: "page-1.png",
+                layoutProfile: "body",
+                layoutConfidence: 0.82,
+                qualityGate: { accepted: false, reasons: ["low-mask-coverage"] },
+                reason: "quality-gate",
+                previews: [
+                  {
+                    kind: "normalized",
+                    path: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMB/6fYdS0AAAAASUVORK5CYII=",
+                    width: 100,
+                    height: 100,
+                  },
+                ],
+                suggestedAction: "adjust",
+              },
+            ],
+          })
+        ),
+        "asteria:fetch-sidecar": vi.fn().mockResolvedValue(
+          ok({
+            pageId: "page-1",
+            dpi: 300,
+            normalization: {
+              cropBox: [0, 0, 99, 99],
+              pageMask: [0, 0, 99, 99],
+              trim: 0,
             },
-          ],
-        }),
-        "asteria:fetch-sidecar": vi.fn().mockResolvedValue({
-          pageId: "page-1",
-          dpi: 300,
-          normalization: {
-            cropBox: [0, 0, 99, 99],
-            pageMask: [0, 0, 99, 99],
-            trim: 0,
-          },
-          elements: [],
-        }),
+            elements: [],
+          })
+        ),
         "asteria:apply-override": applyOverride,
       },
     };

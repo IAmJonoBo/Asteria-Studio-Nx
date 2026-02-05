@@ -7,6 +7,9 @@ import { MonitorScreen } from "./MonitorScreen.js";
 import { RunsScreen } from "./RunsScreen.js";
 import { SettingsScreen } from "./SettingsScreen.js";
 
+const ok = <T,>(value: T) => ({ ok: true as const, value });
+const err = (message: string) => ({ ok: false as const, error: { message } });
+
 const resetAsteria = (): void => {
   delete (globalThis as typeof globalThis & { asteria?: unknown }).asteria;
 };
@@ -20,28 +23,32 @@ describe("screen flows", () => {
   it("RunsScreen renders run history and config", async () => {
     const onSelectRun = vi.fn();
     const onOpenReviewQueue = vi.fn();
-    const listRuns = vi.fn().mockResolvedValue([
-      {
-        runId: "run-1",
-        runDir: "/tmp/runs/run-1",
-        projectId: "proj",
-        generatedAt: new Date("2024-01-01T00:00:00.000Z").toISOString(),
-        reviewCount: 2,
-        status: "running",
-      },
-    ]);
-    const getRunConfig = vi.fn().mockResolvedValue({
-      resolvedConfig: {
-        project: {
-          target_dimensions: { width: 210, height: 297, unit: "mm" },
-          dpi: 400,
+    const listRuns = vi.fn().mockResolvedValue(
+      ok([
+        {
+          runId: "run-1",
+          runDir: "/tmp/runs/run-1",
+          projectId: "proj",
+          generatedAt: new Date("2024-01-01T00:00:00.000Z").toISOString(),
+          reviewCount: 2,
+          status: "running",
         },
-        steps: {
-          spread_split: { enabled: true, confidence_threshold: 0.7 },
-          qa: { mask_coverage_min: 0.5, semantic_thresholds: { body: 0.88 } },
+      ])
+    );
+    const getRunConfig = vi.fn().mockResolvedValue(
+      ok({
+        resolvedConfig: {
+          project: {
+            target_dimensions: { width: 210, height: 297, unit: "mm" },
+            dpi: 400,
+          },
+          steps: {
+            spread_split: { enabled: true, confidence_threshold: 0.7 },
+            qa: { mask_coverage_min: 0.5, semantic_thresholds: { body: 0.88 } },
+          },
         },
-      },
-    });
+      })
+    );
 
     (globalThis as typeof globalThis & { asteria?: unknown }).asteria = {
       ipc: {
@@ -71,7 +78,7 @@ describe("screen flows", () => {
   });
 
   it("RunsScreen shows empty and error states", async () => {
-    const listRunsEmpty = vi.fn().mockResolvedValue([]);
+    const listRunsEmpty = vi.fn().mockResolvedValue(ok([]));
     (globalThis as typeof globalThis & { asteria?: unknown }).asteria = {
       ipc: { "asteria:list-runs": listRunsEmpty },
     };
@@ -81,7 +88,7 @@ describe("screen flows", () => {
     expect(await screen.findByText(/No runs yet/i)).toBeInTheDocument();
 
     cleanup();
-    const listRunsError = vi.fn().mockRejectedValue(new Error("boom"));
+    const listRunsError = vi.fn().mockResolvedValue(err("boom"));
     (globalThis as typeof globalThis & { asteria?: unknown }).asteria = {
       ipc: { "asteria:list-runs": listRunsError },
     };
@@ -92,20 +99,22 @@ describe("screen flows", () => {
   });
 
   it("RunsScreen shows inferred metrics and config-unavailable state", async () => {
-    const listRuns = vi.fn().mockResolvedValue([
-      {
-        runId: "run-2",
-        runDir: "/tmp/runs/run-2",
-        projectId: "proj",
-        generatedAt: "",
-        reviewCount: 1,
-        inferredDimensionsMm: { width: 210, height: 297 },
-        inferredDpi: 300,
-        dimensionConfidence: 0.82,
-        dpiConfidence: 0.7,
-      },
-    ]);
-    const getRunConfig = vi.fn().mockResolvedValue(null);
+    const listRuns = vi.fn().mockResolvedValue(
+      ok([
+        {
+          runId: "run-2",
+          runDir: "/tmp/runs/run-2",
+          projectId: "proj",
+          generatedAt: "",
+          reviewCount: 1,
+          inferredDimensionsMm: { width: 210, height: 297 },
+          inferredDpi: 300,
+          dimensionConfidence: 0.82,
+          dpiConfidence: 0.7,
+        },
+      ])
+    );
+    const getRunConfig = vi.fn().mockResolvedValue(ok(null));
 
     (globalThis as typeof globalThis & { asteria?: unknown }).asteria = {
       ipc: {
@@ -134,16 +143,18 @@ describe("screen flows", () => {
     expect(await screen.findByText(/No runs yet/i)).toBeInTheDocument();
 
     cleanup();
-    const listRuns = vi.fn().mockResolvedValue([
-      {
-        runId: "run-err",
-        runDir: "/tmp/runs/run-err",
-        projectId: "proj",
-        generatedAt: "",
-        reviewCount: 0,
-      },
-    ]);
-    const getRunConfig = vi.fn().mockRejectedValue("boom");
+    const listRuns = vi.fn().mockResolvedValue(
+      ok([
+        {
+          runId: "run-err",
+          runDir: "/tmp/runs/run-err",
+          projectId: "proj",
+          generatedAt: "",
+          reviewCount: 0,
+        },
+      ])
+    );
+    const getRunConfig = vi.fn().mockResolvedValue(err("boom"));
     (globalThis as typeof globalThis & { asteria?: unknown }).asteria = {
       ipc: {
         "asteria:list-runs": listRuns,
@@ -160,7 +171,7 @@ describe("screen flows", () => {
       />
     );
 
-    expect(await screen.findByText(/Failed to load run config/i)).toBeInTheDocument();
+    expect(await screen.findByText(/boom/i)).toBeInTheDocument();
   });
 
   it("MonitorScreen shows stage progress updates", async () => {
@@ -233,23 +244,27 @@ describe("screen flows", () => {
   });
 
   it("ExportsScreen shows previous manifests and triggers export", async () => {
-    const listRuns = vi.fn().mockResolvedValue([
-      {
+    const listRuns = vi.fn().mockResolvedValue(
+      ok([
+        {
+          runId: "run-9",
+          runDir: "/tmp/runs/run-9",
+          projectId: "proj",
+          generatedAt: "",
+          reviewCount: 0,
+        },
+      ])
+    );
+    const exportRun = vi.fn().mockResolvedValue(ok("/tmp/export"));
+    const getManifest = vi.fn().mockResolvedValue(
+      ok({
         runId: "run-9",
-        runDir: "/tmp/runs/run-9",
-        projectId: "proj",
-        generatedAt: "",
-        reviewCount: 0,
-      },
-    ]);
-    const exportRun = vi.fn().mockResolvedValue("/tmp/export");
-    const getManifest = vi.fn().mockResolvedValue({
-      runId: "run-9",
-      status: "success",
-      exportedAt: new Date("2024-02-01T00:00:00.000Z").toISOString(),
-      sourceRoot: "/data",
-      count: 10,
-    });
+        status: "success",
+        exportedAt: new Date("2024-02-01T00:00:00.000Z").toISOString(),
+        sourceRoot: "/data",
+        count: 10,
+      })
+    );
 
     (globalThis as typeof globalThis & { asteria?: unknown }).asteria = {
       ipc: {
@@ -274,7 +289,7 @@ describe("screen flows", () => {
   });
 
   it("ExportsScreen handles empty runs and format validation", async () => {
-    const listRunsEmpty = vi.fn().mockResolvedValue([]);
+    const listRunsEmpty = vi.fn().mockResolvedValue(ok([]));
 
     (globalThis as typeof globalThis & { asteria?: unknown }).asteria = {
       ipc: { "asteria:list-runs": listRunsEmpty },
@@ -285,15 +300,17 @@ describe("screen flows", () => {
     expect(await screen.findByText(/Run a pipeline to generate exports/i)).toBeInTheDocument();
 
     cleanup();
-    const listRuns = vi.fn().mockResolvedValue([
-      {
-        runId: "run-10",
-        runDir: "/tmp/runs/run-10",
-        projectId: "proj",
-        generatedAt: "",
-        reviewCount: 0,
-      },
-    ]);
+    const listRuns = vi.fn().mockResolvedValue(
+      ok([
+        {
+          runId: "run-10",
+          runDir: "/tmp/runs/run-10",
+          projectId: "proj",
+          generatedAt: "",
+          reviewCount: 0,
+        },
+      ])
+    );
     const exportRun = vi.fn();
 
     (globalThis as typeof globalThis & { asteria?: unknown }).asteria = {
@@ -311,16 +328,18 @@ describe("screen flows", () => {
   });
 
   it("ExportsScreen shows export errors", async () => {
-    const listRuns = vi.fn().mockResolvedValue([
-      {
-        runId: "run-11",
-        runDir: "/tmp/runs/run-11",
-        projectId: "proj",
-        generatedAt: "",
-        reviewCount: 0,
-      },
-    ]);
-    const exportRun = vi.fn().mockRejectedValue(new Error("Export failed"));
+    const listRuns = vi.fn().mockResolvedValue(
+      ok([
+        {
+          runId: "run-11",
+          runDir: "/tmp/runs/run-11",
+          projectId: "proj",
+          generatedAt: "",
+          reviewCount: 0,
+        },
+      ])
+    );
+    const exportRun = vi.fn().mockResolvedValue(err("Export failed"));
 
     (globalThis as typeof globalThis & { asteria?: unknown }).asteria = {
       ipc: { "asteria:list-runs": listRuns, "asteria:export-run": exportRun },
@@ -339,7 +358,7 @@ describe("screen flows", () => {
     expect(await screen.findByText(/Run a pipeline to generate exports/i)).toBeInTheDocument();
 
     cleanup();
-    const listRuns = vi.fn().mockRejectedValue("boom");
+    const listRuns = vi.fn().mockResolvedValue(err("Failed to load runs"));
     (globalThis as typeof globalThis & { asteria?: unknown }).asteria = {
       ipc: { "asteria:list-runs": listRuns },
     };
@@ -349,33 +368,35 @@ describe("screen flows", () => {
   });
 
   it("SettingsScreen saves and clears overrides", async () => {
-    const getConfig = vi.fn().mockResolvedValue({
-      baseConfig: {
-        project: { target_dimensions: { width: 210, height: 297, unit: "mm" }, dpi: 400 },
-        steps: { spread_split: { enabled: false, confidence_threshold: 0.7 } },
-      },
-      resolvedConfig: {
-        project: { target_dimensions: { width: 210, height: 297, unit: "mm" }, dpi: 400 },
-        steps: {
-          spread_split: {
-            enabled: false,
-            confidence_threshold: 0.7,
-            gutter_min_width_px: 12,
-            gutter_max_width_px: 80,
-          },
-          book_priors: {
-            enabled: true,
-            sample_pages: 40,
-            max_trim_drift_px: 18,
-            max_content_drift_px: 24,
-            min_confidence: 0.6,
-          },
-          qa: { mask_coverage_min: 0.5, semantic_thresholds: { body: 0.88 } },
+    const getConfig = vi.fn().mockResolvedValue(
+      ok({
+        baseConfig: {
+          project: { target_dimensions: { width: 210, height: 297, unit: "mm" }, dpi: 400 },
+          steps: { spread_split: { enabled: false, confidence_threshold: 0.7 } },
         },
-      },
-      sources: { configPath: "/tmp/pipeline_config.yaml" },
-    });
-    const saveConfig = vi.fn().mockResolvedValue(undefined);
+        resolvedConfig: {
+          project: { target_dimensions: { width: 210, height: 297, unit: "mm" }, dpi: 400 },
+          steps: {
+            spread_split: {
+              enabled: false,
+              confidence_threshold: 0.7,
+              gutter_min_width_px: 12,
+              gutter_max_width_px: 80,
+            },
+            book_priors: {
+              enabled: true,
+              sample_pages: 40,
+              max_trim_drift_px: 18,
+              max_content_drift_px: 24,
+              min_confidence: 0.6,
+            },
+            qa: { mask_coverage_min: 0.5, semantic_thresholds: { body: 0.88 } },
+          },
+        },
+        sources: { configPath: "/tmp/pipeline_config.yaml" },
+      })
+    );
+    const saveConfig = vi.fn().mockResolvedValue(ok(undefined));
 
     (globalThis as typeof globalThis & { asteria?: unknown }).asteria = {
       ipc: {
@@ -402,53 +423,211 @@ describe("screen flows", () => {
     expect(await screen.findByText(/Config not loaded/i)).toBeInTheDocument();
 
     cleanup();
-    const getConfig = vi.fn().mockRejectedValue(new Error("boom"));
+    const getConfig = vi.fn().mockResolvedValue(err("Config error"));
     (globalThis as typeof globalThis & { asteria?: unknown }).asteria = {
       ipc: { "asteria:get-pipeline-config": getConfig },
     };
 
     render(<SettingsScreen projectId="proj" />);
-    expect(await screen.findByText(/Config error/i)).toBeInTheDocument();
+    const errors = await screen.findAllByText(/Config error/i);
+    expect(errors.length).toBeGreaterThan(0);
+  });
+
+  it("SettingsScreen creates diagnostics bundles", async () => {
+    const getConfig = vi.fn().mockResolvedValue(
+      ok({
+        baseConfig: {
+          project: { target_dimensions: { width: 210, height: 297, unit: "mm" }, dpi: 300 },
+          steps: { spread_split: { enabled: false, confidence_threshold: 0.7 } },
+        },
+        resolvedConfig: {
+          project: { target_dimensions: { width: 210, height: 297, unit: "mm" }, dpi: 300 },
+          steps: {
+            spread_split: {
+              enabled: false,
+              confidence_threshold: 0.7,
+              gutter_min_width_px: 12,
+              gutter_max_width_px: 80,
+            },
+            book_priors: {
+              enabled: false,
+              sample_pages: 0,
+              max_trim_drift_px: 18,
+              max_content_drift_px: 24,
+              min_confidence: 0.6,
+            },
+            qa: { mask_coverage_min: 0.5, semantic_thresholds: { body: 0.88 } },
+          },
+        },
+        sources: { configPath: "/tmp/pipeline_config.yaml" },
+      })
+    );
+    const createBundle = vi.fn().mockResolvedValue(ok({ bundlePath: "/tmp/bundle.zip" }));
+    const revealPath = vi.fn().mockResolvedValue(ok(undefined));
+
+    Object.defineProperty(globalThis.navigator, "clipboard", {
+      value: { writeText: vi.fn().mockResolvedValue(undefined) },
+      configurable: true,
+    });
+
+    (globalThis as typeof globalThis & { asteria?: unknown }).asteria = {
+      ipc: {
+        "asteria:get-pipeline-config": getConfig,
+        "asteria:create-diagnostics-bundle": createBundle,
+        "asteria:reveal-path": revealPath,
+      },
+    };
+
+    const user = userEvent.setup();
+    render(<SettingsScreen projectId="proj" />);
+
+    expect(await screen.findByText(/Resolved config/i)).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /Copy debug bundle/i }));
+    expect(
+      await screen.findByText(/Diagnostics bundle created and copied to clipboard/i)
+    ).toBeInTheDocument();
+  });
+
+  it("SettingsScreen surfaces diagnostics failures", async () => {
+    const getConfig = vi.fn().mockResolvedValue(
+      ok({
+        baseConfig: {
+          project: { target_dimensions: { width: 210, height: 297, unit: "mm" }, dpi: 300 },
+          steps: { spread_split: { enabled: false, confidence_threshold: 0.7 } },
+        },
+        resolvedConfig: {
+          project: { target_dimensions: { width: 210, height: 297, unit: "mm" }, dpi: 300 },
+          steps: {
+            spread_split: {
+              enabled: false,
+              confidence_threshold: 0.7,
+              gutter_min_width_px: 12,
+              gutter_max_width_px: 80,
+            },
+            book_priors: {
+              enabled: false,
+              sample_pages: 0,
+              max_trim_drift_px: 18,
+              max_content_drift_px: 24,
+              min_confidence: 0.6,
+            },
+            qa: { mask_coverage_min: 0.5, semantic_thresholds: { body: 0.88 } },
+          },
+        },
+        sources: { configPath: "/tmp/pipeline_config.yaml" },
+      })
+    );
+    const createBundle = vi.fn().mockResolvedValue(err("boom"));
+
+    (globalThis as typeof globalThis & { asteria?: unknown }).asteria = {
+      ipc: {
+        "asteria:get-pipeline-config": getConfig,
+        "asteria:create-diagnostics-bundle": createBundle,
+      },
+    };
+
+    const user = userEvent.setup();
+    render(<SettingsScreen projectId="proj" />);
+
+    expect(await screen.findByText(/Resolved config/i)).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /Copy debug bundle/i }));
+    expect(await screen.findByText(/Create diagnostics bundle: boom/i)).toBeInTheDocument();
+  });
+
+  it("SettingsScreen surfaces save override failures", async () => {
+    const getConfig = vi.fn().mockResolvedValue(
+      ok({
+        baseConfig: {
+          project: { target_dimensions: { width: 210, height: 297, unit: "mm" }, dpi: 300 },
+          steps: { spread_split: { enabled: false, confidence_threshold: 0.7 } },
+        },
+        resolvedConfig: {
+          project: { target_dimensions: { width: 210, height: 297, unit: "mm" }, dpi: 300 },
+          steps: {
+            spread_split: {
+              enabled: false,
+              confidence_threshold: 0.7,
+              gutter_min_width_px: 12,
+              gutter_max_width_px: 80,
+            },
+            book_priors: {
+              enabled: false,
+              sample_pages: 0,
+              max_trim_drift_px: 18,
+              max_content_drift_px: 24,
+              min_confidence: 0.6,
+            },
+            qa: { mask_coverage_min: 0.5, semantic_thresholds: { body: 0.88 } },
+          },
+        },
+        sources: { configPath: "/tmp/pipeline_config.yaml" },
+      })
+    );
+    const saveConfig = vi.fn().mockResolvedValue(err("save failed"));
+
+    (globalThis as typeof globalThis & { asteria?: unknown }).asteria = {
+      ipc: {
+        "asteria:get-pipeline-config": getConfig,
+        "asteria:save-project-config": saveConfig,
+      },
+    };
+
+    const user = userEvent.setup();
+    render(<SettingsScreen projectId="proj" />);
+
+    expect(await screen.findByText(/Resolved config/i)).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /Save project overrides/i }));
+    expect(await screen.findByText(/save failed/i)).toBeInTheDocument();
   });
 
   it("SettingsScreen renders latest inference details and project override sources", async () => {
-    const getConfig = vi.fn().mockResolvedValue({
-      baseConfig: {
-        project: { target_dimensions: { width: 210, height: 297, unit: "mm" }, dpi: 400 },
-        steps: { spread_split: { enabled: false, confidence_threshold: 0.7 } },
-      },
-      resolvedConfig: {
-        project: { target_dimensions: { width: 210, height: 297, unit: "mm" }, dpi: 400 },
-        steps: {
-          spread_split: {
-            enabled: false,
-            confidence_threshold: 0.7,
-            gutter_min_width_px: 12,
-            gutter_max_width_px: 80,
-          },
-          book_priors: {
-            enabled: true,
-            sample_pages: 40,
-            max_trim_drift_px: 18,
-            max_content_drift_px: 24,
-            min_confidence: 0.6,
-          },
-          qa: { mask_coverage_min: 0.5, semantic_thresholds: { body: 0.88 } },
+    const getConfig = vi.fn().mockResolvedValue(
+      ok({
+        baseConfig: {
+          project: { target_dimensions: { width: 210, height: 297, unit: "mm" }, dpi: 400 },
+          steps: { spread_split: { enabled: false, confidence_threshold: 0.7 } },
         },
-      },
-      sources: { configPath: "/tmp/pipeline_config.yaml", projectConfigPath: "/tmp/project.yaml" },
-    });
-    const listRuns = vi.fn().mockResolvedValue([
-      {
-        runId: "run-a",
-        projectId: "proj",
-        generatedAt: "2024-02-02T00:00:00.000Z",
-        inferredDimensionsMm: { width: 200, height: 300 },
-        inferredDpi: 280,
-        dimensionConfidence: 0.9,
-        dpiConfidence: 0.8,
-      },
-    ]);
+        resolvedConfig: {
+          project: { target_dimensions: { width: 210, height: 297, unit: "mm" }, dpi: 400 },
+          steps: {
+            spread_split: {
+              enabled: false,
+              confidence_threshold: 0.7,
+              gutter_min_width_px: 12,
+              gutter_max_width_px: 80,
+            },
+            book_priors: {
+              enabled: true,
+              sample_pages: 40,
+              max_trim_drift_px: 18,
+              max_content_drift_px: 24,
+              min_confidence: 0.6,
+            },
+            qa: { mask_coverage_min: 0.5, semantic_thresholds: { body: 0.88 } },
+          },
+        },
+        sources: {
+          configPath: "/tmp/pipeline_config.yaml",
+          projectConfigPath: "/tmp/project.yaml",
+        },
+      })
+    );
+    const listRuns = vi.fn().mockResolvedValue(
+      ok([
+        {
+          runId: "run-a",
+          projectId: "proj",
+          generatedAt: "2024-02-02T00:00:00.000Z",
+          inferredDimensionsMm: { width: 200, height: 300 },
+          inferredDpi: 280,
+          dimensionConfidence: 0.9,
+          dpiConfidence: 0.8,
+        },
+      ])
+    );
 
     (globalThis as typeof globalThis & { asteria?: unknown }).asteria = {
       ipc: {
@@ -467,33 +646,35 @@ describe("screen flows", () => {
   });
 
   it("SettingsScreen handles save errors and invalid inputs", async () => {
-    const getConfig = vi.fn().mockResolvedValue({
-      baseConfig: {
-        project: { target_dimensions: { width: 210, height: 297, unit: "mm" }, dpi: 400 },
-        steps: { spread_split: { enabled: false, confidence_threshold: 0.7 } },
-      },
-      resolvedConfig: {
-        project: { target_dimensions: { width: 210, height: 297, unit: "mm" }, dpi: 400 },
-        steps: {
-          spread_split: {
-            enabled: false,
-            confidence_threshold: 0.7,
-            gutter_min_width_px: 12,
-            gutter_max_width_px: 80,
-          },
-          book_priors: {
-            enabled: true,
-            sample_pages: 40,
-            max_trim_drift_px: 18,
-            max_content_drift_px: 24,
-            min_confidence: 0.6,
-          },
-          qa: { mask_coverage_min: 0.5, semantic_thresholds: { body: 0.88 } },
+    const getConfig = vi.fn().mockResolvedValue(
+      ok({
+        baseConfig: {
+          project: { target_dimensions: { width: 210, height: 297, unit: "mm" }, dpi: 400 },
+          steps: { spread_split: { enabled: false, confidence_threshold: 0.7 } },
         },
-      },
-      sources: { configPath: "/tmp/pipeline_config.yaml" },
-    });
-    const saveConfig = vi.fn().mockRejectedValue("boom");
+        resolvedConfig: {
+          project: { target_dimensions: { width: 210, height: 297, unit: "mm" }, dpi: 400 },
+          steps: {
+            spread_split: {
+              enabled: false,
+              confidence_threshold: 0.7,
+              gutter_min_width_px: 12,
+              gutter_max_width_px: 80,
+            },
+            book_priors: {
+              enabled: true,
+              sample_pages: 40,
+              max_trim_drift_px: 18,
+              max_content_drift_px: 24,
+              min_confidence: 0.6,
+            },
+            qa: { mask_coverage_min: 0.5, semantic_thresholds: { body: 0.88 } },
+          },
+        },
+        sources: { configPath: "/tmp/pipeline_config.yaml" },
+      })
+    );
+    const saveConfig = vi.fn().mockResolvedValue(err("Failed to save overrides"));
 
     (globalThis as typeof globalThis & { asteria?: unknown }).asteria = {
       ipc: {

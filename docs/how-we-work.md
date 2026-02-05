@@ -21,3 +21,6 @@
 
 - Lint, test, and build must pass before merge.
 - CI should use Nx affected targets for faster feedback.
+- Desktop gates workflow is authoritative for branch protection.
+- Air-gapped CI mirrors the same invariants; E2E is explicitly skipped offline and documented in the workflow logs.
+- Dead code is removed immediately; quarantine requires a tracked exception entry in [docs/dead_code_quarantine.md](docs/dead_code_quarantine.md).

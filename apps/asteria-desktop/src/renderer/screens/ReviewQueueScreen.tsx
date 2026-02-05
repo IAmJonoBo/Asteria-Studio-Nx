@@ -6,11 +6,20 @@ import type {
   ReviewQueue,
   PageLayoutSidecar,
   PageTemplate,
+  GuideLayout,
+  GuideOverrides,
+  GuideLine,
 } from "../../ipc/contracts.js";
 import type { GuideGroup } from "../guides/registry.js";
-import { getDefaultGuideLayerVisibility, renderGuideLayers } from "../guides/registry.js";
+import {
+  getDefaultGuideLayerVisibility,
+  guideLayerRegistry,
+  renderGuideLayers,
+} from "../guides/registry.js";
+import { applyGuideOverrides } from "../guides/overrides.js";
 import { snapBoxWithSources, getBoxSnapCandidates } from "../utils/snapping.js";
 import type { SnapEdge } from "../utils/snapping.js";
+import { unwrapIpcResult } from "../utils/ipc.js";
 
 type PreviewRef = {
   path: string;
@@ -47,6 +56,25 @@ const GUIDE_GROUP_LABELS: Record<GuideGroup, string> = {
 };
 
 const GUIDE_GROUP_ORDER: GuideGroup[] = ["structural", "detected", "diagnostic"];
+
+const GUIDE_LAYER_LABELS: Record<string, string> = {
+  "baseline-grid": "Baseline grid",
+  rulers: "Rulers",
+  "margin-guides": "Margins",
+  "column-guides": "Columns",
+  "gutter-bands": "Gutter bands",
+  "header-footer-bands": "Header/footer",
+  "ornament-anchors": "Ornament anchors",
+  "detected-guides": "Detected guides",
+  "diagnostic-guides": "Diagnostic",
+};
+
+const resolveGuideLayerLabel = (layerId: string): string =>
+  GUIDE_LAYER_LABELS[layerId] ??
+  layerId
+    .split("-")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
 
 type TemplateSummary = {
   id: string;
@@ -282,7 +310,9 @@ type OverlayHandle = {
  */
 const getIpcChannel = <TArgs extends unknown[], TReturn>(
   channelName: string
-): ((...args: TArgs) => Promise<TReturn>) | undefined => {
+):
+  | ((...args: TArgs) => Promise<import("../../ipc/contracts.js").IpcResult<TReturn>>)
+  | undefined => {
   const windowRef = globalThis as typeof globalThis & {
     asteria?: {
       ipc?: {
@@ -292,7 +322,9 @@ const getIpcChannel = <TArgs extends unknown[], TReturn>(
   };
   const channel = windowRef.asteria?.ipc?.[channelName];
   if (!channel) return undefined;
-  return channel as (...args: TArgs) => Promise<TReturn>;
+  return channel as (
+    ...args: TArgs
+  ) => Promise<import("../../ipc/contracts.js").IpcResult<TReturn>>;
 };
 
 type SnapGuideLine = {
@@ -327,6 +359,9 @@ const getConfidenceColor = (confidence: number): string => {
 
 const isFiniteNumber = (value: unknown): value is number =>
   typeof value === "number" && Number.isFinite(value);
+
+const toOptionalNumber = (value: number | null): number | undefined =>
+  value === null ? undefined : value;
 
 const buildBaselineGridOverrides = (
   sidecar: PageLayoutSidecar | null | undefined
@@ -532,6 +567,74 @@ const mapClientPointToOutput = (params: {
   return { x: rawX / scaleX, y: rawY / scaleY };
 };
 
+type GuideHit = {
+  guideId: string;
+  layerId: string;
+  axis: "x" | "y";
+  role?: GuideLine["role"];
+  position: number;
+};
+
+const clampGuidePosition = (value: number, axis: "x" | "y", bounds: { w: number; h: number }) =>
+  Math.max(0, Math.min(value, axis === "x" ? bounds.w : bounds.h));
+
+const hitTestGuides = (params: {
+  point: { x: number; y: number };
+  guideLayout?: GuideLayout;
+  zoom: number;
+}): GuideHit | null => {
+  const { point, guideLayout, zoom } = params;
+  if (!guideLayout?.layers) return null;
+  const editableLayerIds = new Set([
+    "baseline-grid",
+    "margin-guides",
+    "column-guides",
+    "header-footer-bands",
+    "gutter-bands",
+  ]);
+  const tolerance = Math.max(3, 6 / Math.max(0.5, zoom));
+  let best: { hit: GuideHit; distance: number } | null = null;
+  for (const layer of guideLayout.layers) {
+    if (!editableLayerIds.has(layer.id)) continue;
+    for (const guide of layer.guides) {
+      if (layer.id === "baseline-grid" && guide.kind === "minor") continue;
+      const distance =
+        guide.axis === "x"
+          ? Math.abs(point.x - guide.position)
+          : Math.abs(point.y - guide.position);
+      if (distance > tolerance) continue;
+      if (!best || distance < best.distance) {
+        best = {
+          hit: {
+            guideId: guide.id,
+            layerId: layer.id,
+            axis: guide.axis,
+            role: guide.role,
+            position: guide.position,
+          },
+          distance,
+        };
+      }
+    }
+  }
+  return best?.hit ?? null;
+};
+
+const getLayerGuidePositions = (params: {
+  guideLayout?: GuideLayout;
+  layerId: string;
+  axis: "x" | "y";
+  role?: GuideLine["role"];
+}): number[] => {
+  const { guideLayout, layerId, axis, role } = params;
+  const layer = guideLayout?.layers?.find((entry) => entry.id === layerId);
+  if (!layer) return [];
+  return layer.guides
+    .filter((guide) => guide.axis === axis && (role ? guide.role === role : true))
+    .map((guide) => guide.position)
+    .sort((a, b) => a - b);
+};
+
 const snapBoxToPrior = (prior: Box, box: Box, threshold: number): Box => {
   const [priorLeft, priorTop, priorRight, priorBottom] = prior;
   const [left, top, right, bottom] = box;
@@ -590,10 +693,26 @@ const isSameBox = (a: Box | null, b: Box | null): boolean => {
   return a[0] === b[0] && a[1] === b[1] && a[2] === b[2] && a[3] === b[3];
 };
 
+const hasGuideOverrides = (overrides: GuideOverrides): boolean => {
+  const entries = Object.entries(overrides) as Array<[string, unknown]>;
+  for (const [, value] of entries) {
+    if (value === undefined) continue;
+    if (value && typeof value === "object") {
+      if (Object.values(value as Record<string, unknown>).some((entry) => entry !== undefined)) {
+        return true;
+      }
+    } else {
+      return true;
+    }
+  }
+  return false;
+};
+
 export const __testables = {
   applyHandleDrag,
   calculateOverlayScale,
   clampBox,
+  hitTestGuides,
   mapClientPointToOutput,
   snapBoxToPrior,
 };
@@ -839,7 +958,12 @@ const useReviewQueuePages = (runId?: string, runDir?: string): ReviewPage[] => {
     const loadQueue = async (): Promise<void> => {
       const windowRef: typeof globalThis & {
         asteria?: {
-          ipc?: { [key: string]: (runId: string, runDir: string) => Promise<ReviewQueue> };
+          ipc?: {
+            [key: string]: (
+              runId: string,
+              runDir: string
+            ) => Promise<import("../../ipc/contracts.js").IpcResult<ReviewQueue>>;
+          };
         };
       } = globalThis;
       if (!runId || !runDir || !windowRef.asteria?.ipc) {
@@ -847,9 +971,12 @@ const useReviewQueuePages = (runId?: string, runDir?: string): ReviewPage[] => {
         return;
       }
       try {
-        const queue = await windowRef.asteria.ipc["asteria:fetch-review-queue"](runId, runDir);
+        const queueResult = await windowRef.asteria.ipc["asteria:fetch-review-queue"](
+          runId,
+          runDir
+        );
         if (cancelled) return;
-        setPages(mapReviewQueue(queue));
+        setPages(mapReviewQueue(unwrapIpcResult(queueResult, "Fetch review queue")));
       } catch {
         if (!cancelled) setPages([]);
       }
@@ -979,7 +1106,7 @@ const useSidecarData = (
               runId: string,
               runDir: string,
               pageId: string
-            ) => Promise<PageLayoutSidecar | null>;
+            ) => Promise<import("../../ipc/contracts.js").IpcResult<PageLayoutSidecar | null>>;
           };
         };
       } = globalThis;
@@ -989,13 +1116,18 @@ const useSidecarData = (
         return;
       }
       try {
-        const sidecarData = await windowRef.asteria.ipc["asteria:fetch-sidecar"](
+        const sidecarResult = await windowRef.asteria.ipc["asteria:fetch-sidecar"](
           runId,
           runDir,
           currentPage.id
         );
         if (cancelled) return;
-        setSidecar(sidecarData ?? null);
+        if (!sidecarResult.ok) {
+          setSidecarError(sidecarResult.error.message);
+          setSidecar(null);
+          return;
+        }
+        setSidecar(sidecarResult.value ?? null);
         setSidecarError(null);
       } catch (error) {
         if (cancelled) return;
@@ -1022,6 +1154,7 @@ type OverlayRenderParams = {
   guideGroupVisibility: GuideGroupVisibility;
   guideGroupOpacities: GuideGroupOpacities;
   soloGuideGroup: GuideGroup | null;
+  guideLayout?: GuideLayout;
   overlayScaleX: number;
   overlayScaleY: number;
   zoom: number;
@@ -1036,6 +1169,8 @@ type OverlayRenderParams = {
     event: PointerEvent<globalThis.SVGCircleElement>,
     handle: OverlayHandle
   ) => void;
+  onGuidePointerDown: (event: PointerEvent<globalThis.SVGSVGElement>) => void;
+  activeGuideId?: string;
 };
 
 const buildOverlaySvg = ({
@@ -1047,6 +1182,7 @@ const buildOverlaySvg = ({
   guideGroupVisibility,
   guideGroupOpacities,
   soloGuideGroup,
+  guideLayout,
   overlayScaleX,
   overlayScaleY,
   zoom,
@@ -1058,6 +1194,8 @@ const buildOverlaySvg = ({
   snapTooltip,
   overlaySvgRef,
   onHandlePointerDown,
+  onGuidePointerDown,
+  activeGuideId,
 }: OverlayRenderParams): JSX.Element | null => {
   if (!sidecar || !normalizedPreview || !overlaysVisible) return null;
 
@@ -1119,6 +1257,7 @@ const buildOverlaySvg = ({
       ref={overlaySvgRef}
       style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }}
       viewBox={`0 0 ${normalizedPreview.width} ${normalizedPreview.height}`}
+      onPointerDown={onGuidePointerDown}
     >
       {showSnapGuides &&
         snapGuides.map((guide, index) => {
@@ -1197,7 +1336,7 @@ const buildOverlaySvg = ({
         </g>
       )}
       {renderGuideLayers({
-        guideLayout: sidecar.guides,
+        guideLayout: guideLayout ?? sidecar.guides,
         zoom,
         canvasWidth: normalizedPreview.width,
         canvasHeight: normalizedPreview.height,
@@ -1205,6 +1344,7 @@ const buildOverlaySvg = ({
         groupVisibility: guideGroupVisibility,
         groupOpacities: guideGroupOpacities,
         soloGroup: soloGuideGroup,
+        activeGuideId,
       })}
       {overlayLayers.cropBox && cropBox && (
         <rect
@@ -1307,9 +1447,12 @@ type ReviewQueueLayoutProps = {
   zoom: number;
   rotationDeg: number;
   overlayLayers: OverlayLayersState;
+  guideLayerVisibility: Record<string, boolean>;
+  guidesVisible: boolean;
   guideGroupVisibility: GuideGroupVisibility;
   guideGroupOpacities: GuideGroupOpacities;
   soloGuideGroup: GuideGroup | null;
+  snappingEnabled: boolean;
   selectedIds: Set<string>;
   listRef: RefObject<globalThis.HTMLDivElement | null>;
   scrollTop: number;
@@ -1380,6 +1523,10 @@ type ReviewQueueLayoutProps = {
   onToggleOverlayLayer: (layerKey: OverlayLayerKey, checked: boolean) => void;
   onToggleGuideGroup: (group: GuideGroup, checked: boolean, event: { altKey?: boolean }) => void;
   onGuideGroupOpacityChange: (group: GuideGroup, opacity: number) => void;
+  onToggleGuideLayer: (layerId: string, checked: boolean) => void;
+  onResetGuideVisibility: () => void;
+  onToggleGuidesVisible: () => void;
+  onToggleSnapping: () => void;
   onAccept: () => void;
   onFlag: () => void;
   onReject: () => void;
@@ -1398,9 +1545,12 @@ const ReviewQueueLayout = ({
   zoom,
   rotationDeg,
   overlayLayers,
+  guideLayerVisibility,
+  guidesVisible,
   guideGroupVisibility,
   guideGroupOpacities,
   soloGuideGroup,
+  snappingEnabled,
   selectedIds,
   listRef,
   scrollTop,
@@ -1471,6 +1621,10 @@ const ReviewQueueLayout = ({
   onToggleOverlayLayer,
   onToggleGuideGroup,
   onGuideGroupOpacityChange,
+  onToggleGuideLayer,
+  onResetGuideVisibility,
+  onToggleGuidesVisible,
+  onToggleSnapping,
   onAccept,
   onFlag,
   onReject,
@@ -1846,6 +2000,24 @@ const ReviewQueueLayout = ({
             <div>
               <strong style={{ fontSize: "13px" }}>Guide groups</strong>
               <div style={{ marginTop: "8px", display: "grid", gap: "10px" }}>
+                <label style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                  <input
+                    type="checkbox"
+                    checked={guidesVisible}
+                    onChange={onToggleGuidesVisible}
+                    aria-label="Toggle guides"
+                  />
+                  <span style={{ fontSize: "12px" }}>Guides enabled</span>
+                </label>
+                <label style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                  <input
+                    type="checkbox"
+                    checked={snappingEnabled}
+                    onChange={onToggleSnapping}
+                    aria-label="Toggle snapping"
+                  />
+                  <span style={{ fontSize: "12px" }}>Snapping enabled</span>
+                </label>
                 {GUIDE_GROUP_ORDER.map((group) => {
                   const opacity = guideGroupOpacities[group];
                   const isChecked = soloGuideGroup
@@ -1898,6 +2070,27 @@ const ReviewQueueLayout = ({
               <p style={{ margin: "6px 0 0", fontSize: "11px", color: "var(--text-tertiary)" }}>
                 Alt-click a group to solo it.
               </p>
+              <div style={{ marginTop: "12px" }}>
+                <strong style={{ fontSize: "12px" }}>Guide layers</strong>
+                <div style={{ marginTop: "8px", display: "grid", gap: "6px" }}>
+                  {guideLayerRegistry.map((layer) => (
+                    <label key={layer.id} style={{ display: "flex", gap: "8px" }}>
+                      <input
+                        type="checkbox"
+                        checked={guideLayerVisibility[layer.id] ?? layer.defaultVisible}
+                        onChange={(event) => onToggleGuideLayer(layer.id, event.target.checked)}
+                        aria-label={`${resolveGuideLayerLabel(layer.id)} guide layer`}
+                      />
+                      <span style={{ fontSize: "12px" }}>{resolveGuideLayerLabel(layer.id)}</span>
+                    </label>
+                  ))}
+                </div>
+                <div style={{ marginTop: "8px" }}>
+                  <button className="btn btn-secondary btn-sm" onClick={onResetGuideVisibility}>
+                    Reset guides visibility
+                  </button>
+                </div>
+              </div>
             </div>
 
             <div>
@@ -2470,6 +2663,8 @@ export function ReviewQueueScreen({
   const [baselineAngleDeg, setBaselineAngleDeg] = useState<number | null>(null);
   const [baselineSnapToPeaks, setBaselineSnapToPeaks] = useState(true);
   const [baselineMarkCorrect, setBaselineMarkCorrect] = useState(false);
+  const [guideOverridesDraft, setGuideOverridesDraft] = useState<GuideOverrides>({});
+  const [activeGuideId, setActiveGuideId] = useState<string | undefined>(undefined);
   const overlaySvgRef = useRef<globalThis.SVGSVGElement | null>(null);
   const [snapGuidesState, setSnapGuidesState] = useState<SnapGuidesState>({
     guides: [],
@@ -2477,13 +2672,101 @@ export function ReviewQueueScreen({
     tooltip: null,
   });
   const [isDraggingHandle, setIsDraggingHandle] = useState(false);
+  const [_isDraggingGuide, setIsDraggingGuide] = useState(false);
   const [snapTemporarilyDisabled, setSnapTemporarilyDisabled] = useState(false);
+  const [snapEnabled, setSnapEnabled] = useState(true);
+  const [guidesVisible, setGuidesVisible] = useState(true);
+  const resetView = createResetView(setZoom, setPan);
+  const guideOverrides =
+    sidecar?.overrides && typeof sidecar.overrides === "object" && "guides" in sidecar.overrides
+      ? (sidecar.overrides.guides as GuideOverrides | null)
+      : null;
+  const runtimeGuideOverrides = useMemo(() => {
+    const baselineGrid =
+      baselineSpacingPx !== null ||
+      baselineOffsetPx !== null ||
+      baselineAngleDeg !== null ||
+      baselineSnapToPeaks !== undefined ||
+      baselineMarkCorrect !== undefined
+        ? {
+            spacingPx: toOptionalNumber(baselineSpacingPx),
+            offsetPx: toOptionalNumber(baselineOffsetPx),
+            angleDeg: toOptionalNumber(baselineAngleDeg),
+            snapToPeaks: baselineSnapToPeaks,
+            markCorrect: baselineMarkCorrect,
+          }
+        : undefined;
+    return {
+      ...guideOverridesDraft,
+      ...(baselineGrid ? { baselineGrid } : {}),
+    };
+  }, [
+    baselineAngleDeg,
+    baselineMarkCorrect,
+    baselineOffsetPx,
+    baselineSnapToPeaks,
+    baselineSpacingPx,
+    guideOverridesDraft,
+  ]);
+  const effectiveGuideLayout = useMemo(
+    () =>
+      applyGuideOverrides({
+        guideLayout: sidecar?.guides,
+        overrides: runtimeGuideOverrides ?? guideOverrides ?? undefined,
+        canvasWidth: normalizedPreview?.width ?? 0,
+        canvasHeight: normalizedPreview?.height ?? 0,
+      }),
+    [
+      guideOverrides,
+      normalizedPreview?.height,
+      normalizedPreview?.width,
+      runtimeGuideOverrides,
+      sidecar?.guides,
+    ]
+  );
+
+  useEffect(() => {
+    const listener = (): void => {
+      setOverlaysVisible((prev) => !prev);
+    };
+    globalThis.addEventListener("asteria:toggle-overlays", listener);
+    return () => {
+      globalThis.removeEventListener("asteria:toggle-overlays", listener);
+    };
+  }, []);
+  useEffect(() => {
+    const toggleGuides = (): void => setGuidesVisible((prev) => !prev);
+    const toggleSnapping = (): void => setSnapEnabled((prev) => !prev);
+    const resetViewEvent = (): void => resetView();
+    const toggleRulers = (): void => {
+      setGuideLayerVisibility((prev) => ({
+        ...prev,
+        rulers: !(prev.rulers ?? true),
+      }));
+      setGuidesVisible(true);
+    };
+    globalThis.addEventListener("asteria:toggle-guides", toggleGuides);
+    globalThis.addEventListener("asteria:toggle-snapping", toggleSnapping);
+    globalThis.addEventListener("asteria:reset-view", resetViewEvent);
+    globalThis.addEventListener("asteria:toggle-rulers", toggleRulers);
+    return () => {
+      globalThis.removeEventListener("asteria:toggle-guides", toggleGuides);
+      globalThis.removeEventListener("asteria:toggle-snapping", toggleSnapping);
+      globalThis.removeEventListener("asteria:reset-view", resetViewEvent);
+      globalThis.removeEventListener("asteria:toggle-rulers", toggleRulers);
+    };
+  }, [resetView]);
   const dragHandleRef = useRef<{
     handle: OverlayHandle;
     start: { x: number; y: number };
     box: Box;
-    target: Element;
+    target: globalThis.Element;
     pointerId: number;
+  } | null>(null);
+  const guideDragRef = useRef<{
+    hit: GuideHit;
+    start: { x: number; y: number };
+    baseOffset?: number | null;
   } | null>(null);
   const baselineBoxesRef = useRef<{ crop: Box | null; trim: Box | null }>({
     crop: null,
@@ -2513,7 +2796,13 @@ export function ReviewQueueScreen({
     diagnostic: 1,
   });
   const [soloGuideGroup, setSoloGuideGroup] = useState<GuideGroup | null>(null);
-  const guideLayerVisibility = useMemo(() => getDefaultGuideLayerVisibility(), []);
+  const [guideLayerVisibility, setGuideLayerVisibility] = useState<Record<string, boolean>>(() =>
+    getDefaultGuideLayerVisibility()
+  );
+  const effectiveGuideGroupVisibility = useMemo<GuideGroupVisibility>(() => {
+    if (guidesVisible) return guideGroupVisibility;
+    return { structural: false, detected: false, diagnostic: false };
+  }, [guidesVisible, guideGroupVisibility]);
   const snapSources = useMemo(() => {
     const templateCandidates = [
       ...(sidecar?.bookModel?.runningHeadTemplates?.flatMap((template) =>
@@ -2638,7 +2927,6 @@ export function ReviewQueueScreen({
   const toggleSelected = createToggleSelected(setSelectedIds);
   const applyDecisionToSelection = createApplyDecisionToSelection(selectedIds, setDecisions);
   const acceptSameReason = createAcceptSameReason(currentPage, queuePages, setDecisions);
-  const resetView = createResetView(setZoom, setPan);
   const zoomBy = createZoomBy(setZoom);
   const handleAccept = createDecisionHandler("accept", {
     currentPage,
@@ -2682,6 +2970,9 @@ export function ReviewQueueScreen({
     checked: boolean,
     event: { altKey?: boolean }
   ): void => {
+    if (!guidesVisible && checked) {
+      setGuidesVisible(true);
+    }
     if (event.altKey) {
       setSoloGuideGroup((prev) => (prev === group ? null : group));
       return;
@@ -2694,6 +2985,19 @@ export function ReviewQueueScreen({
   const handleGuideGroupOpacityChange = (group: GuideGroup, opacity: number): void => {
     const clamped = Math.max(0, Math.min(1, opacity));
     setGuideGroupOpacities((prev) => ({ ...prev, [group]: clamped }));
+  };
+  const handleGuideLayerToggle = (layerId: string, checked: boolean): void => {
+    if (!guidesVisible && checked) {
+      setGuidesVisible(true);
+    }
+    setGuideLayerVisibility((prev) => ({ ...prev, [layerId]: checked }));
+  };
+  const handleResetGuideVisibility = (): void => {
+    setGuideLayerVisibility(getDefaultGuideLayerVisibility());
+    setGuideGroupVisibility({ structural: true, detected: true, diagnostic: true });
+    setGuideGroupOpacities({ structural: 1, detected: 1, diagnostic: 1 });
+    setSoloGuideGroup(null);
+    setGuidesVisible(true);
   };
 
   useEffect(() => {
@@ -2765,6 +3069,15 @@ export function ReviewQueueScreen({
     setBaselineAngleDeg(baselineGrid.angleDeg);
     setBaselineSnapToPeaks(baselineGrid.snapToPeaks);
     setBaselineMarkCorrect(baselineGrid.markCorrect);
+    const existingGuideOverrides =
+      sidecar?.overrides && typeof sidecar.overrides === "object" && "guides" in sidecar.overrides
+        ? (sidecar.overrides.guides as GuideOverrides | null)
+        : null;
+    setGuideOverridesDraft({
+      ...(existingGuideOverrides ?? {}),
+      baselineGrid: undefined,
+    });
+    setActiveGuideId(undefined);
     baselineRotationRef.current = 0;
     setAdjustmentMode(null);
     setOverrideError(null);
@@ -2777,7 +3090,10 @@ export function ReviewQueueScreen({
 
   const getSvgPoint = useCallback(
     (
-      event: globalThis.PointerEvent | PointerEvent<globalThis.SVGCircleElement>
+      event:
+        | globalThis.PointerEvent
+        | PointerEvent<globalThis.SVGCircleElement>
+        | PointerEvent<globalThis.SVGSVGElement>
     ): { x: number; y: number } | null => {
       // Note: The SVG overlay is nested inside the rotated container (the div with the rotate
       // transform), so it rotates with the image. getBoundingClientRect() accounts for all CSS
@@ -2821,6 +3137,25 @@ export function ReviewQueueScreen({
     event.currentTarget.setPointerCapture?.(event.pointerId);
   };
 
+  const handleGuidePointerDown = (event: PointerEvent<globalThis.SVGSVGElement>): void => {
+    if (!normalizedPreview || !effectiveGuideLayout) return;
+    if (dragHandleRef.current) return;
+    const point = getSvgPoint(event);
+    if (!point) return;
+    const hit = hitTestGuides({ point, guideLayout: effectiveGuideLayout, zoom });
+    if (!hit) return;
+    event.stopPropagation();
+    event.preventDefault();
+    guideDragRef.current = {
+      hit,
+      start: point,
+      baseOffset: baselineOffsetPx ?? 0,
+    };
+    setActiveGuideId(hit.guideId);
+    setIsDraggingGuide(true);
+    setGuidesVisible(true);
+  };
+
   useEffect(() => {
     const handlePointerMove = (event: globalThis.PointerEvent): void => {
       if (!dragHandleRef.current || !normalizedPreview) return;
@@ -2837,7 +3172,8 @@ export function ReviewQueueScreen({
         : normalizedPreview.height;
       const bounds: Box = [0, 0, outputWidth - 1, outputHeight - 1];
       const dragged = clampBox(applyHandleDrag(box, handle.edge, deltaX, deltaY), bounds);
-      const snapDisabled = snapTemporarilyDisabled || event.ctrlKey || event.metaKey;
+      const snapDisabled =
+        !snapEnabled || snapTemporarilyDisabled || event.ctrlKey || event.metaKey;
       const snapEdges = handleSnapEdges[handle.edge];
       const snapResult = snapDisabled
         ? { box: dragged, guides: [], applied: false }
@@ -2881,13 +3217,163 @@ export function ReviewQueueScreen({
     sidecar?.normalization?.cropBox,
     snapSources,
     snapTemporarilyDisabled,
+    snapEnabled,
   ]);
+
+  useEffect(() => {
+    const handlePointerMove = (event: globalThis.PointerEvent): void => {
+      if (!guideDragRef.current || !normalizedPreview) return;
+      const point = getSvgPoint(event);
+      if (!point) return;
+      const { hit, start, baseOffset } = guideDragRef.current;
+      const delta = hit.axis === "x" ? point.x - start.x : point.y - start.y;
+      const bounds = { w: normalizedPreview.width - 1, h: normalizedPreview.height - 1 };
+      const nextPos = clampGuidePosition(hit.position + delta, hit.axis, bounds);
+
+      if (hit.layerId === "baseline-grid") {
+        setBaselineOffsetPx((baseOffset ?? 0) + delta);
+        return;
+      }
+
+      if (hit.layerId === "margin-guides") {
+        const xPositions = getLayerGuidePositions({
+          guideLayout: effectiveGuideLayout,
+          layerId: "margin-guides",
+          axis: "x",
+        });
+        const yPositions = getLayerGuidePositions({
+          guideLayout: effectiveGuideLayout,
+          layerId: "margin-guides",
+          axis: "y",
+        });
+        const left = xPositions[0];
+        const right = xPositions[xPositions.length - 1];
+        const top = yPositions[0];
+        const bottom = yPositions[yPositions.length - 1];
+        setGuideOverridesDraft((prev) => ({
+          ...prev,
+          margins: {
+            ...prev.margins,
+            ...(hit.axis === "x"
+              ? {
+                  [Math.abs(hit.position - left) <= Math.abs(hit.position - right)
+                    ? "leftPx"
+                    : "rightPx"]: nextPos,
+                }
+              : {
+                  [Math.abs(hit.position - top) <= Math.abs(hit.position - bottom)
+                    ? "topPx"
+                    : "bottomPx"]: nextPos,
+                }),
+          },
+        }));
+        return;
+      }
+
+      if (hit.layerId === "column-guides") {
+        const xPositions = getLayerGuidePositions({
+          guideLayout: effectiveGuideLayout,
+          layerId: "column-guides",
+          axis: "x",
+        });
+        const left = xPositions[0];
+        const right = xPositions[xPositions.length - 1];
+        setGuideOverridesDraft((prev) => ({
+          ...prev,
+          columns: {
+            ...prev.columns,
+            [Math.abs(hit.position - left) <= Math.abs(hit.position - right)
+              ? "leftPx"
+              : "rightPx"]: nextPos,
+          },
+        }));
+        return;
+      }
+
+      if (hit.layerId === "gutter-bands") {
+        const xPositions = getLayerGuidePositions({
+          guideLayout: effectiveGuideLayout,
+          layerId: "gutter-bands",
+          axis: "x",
+        });
+        const start = xPositions[0];
+        const end = xPositions[xPositions.length - 1];
+        setGuideOverridesDraft((prev) => ({
+          ...prev,
+          gutterBand: {
+            ...prev.gutterBand,
+            [Math.abs(hit.position - start) <= Math.abs(hit.position - end) ? "startPx" : "endPx"]:
+              nextPos,
+          },
+        }));
+        return;
+      }
+
+      if (hit.layerId === "header-footer-bands") {
+        const headerPositions = getLayerGuidePositions({
+          guideLayout: effectiveGuideLayout,
+          layerId: "header-footer-bands",
+          axis: "y",
+          role: "header-band",
+        });
+        const footerPositions = getLayerGuidePositions({
+          guideLayout: effectiveGuideLayout,
+          layerId: "header-footer-bands",
+          axis: "y",
+          role: "footer-band",
+        });
+        if (hit.role === "header-band") {
+          const start = headerPositions[0];
+          const end = headerPositions[headerPositions.length - 1];
+          setGuideOverridesDraft((prev) => ({
+            ...prev,
+            headerBand: {
+              ...prev.headerBand,
+              [Math.abs(hit.position - start) <= Math.abs(hit.position - end)
+                ? "startPx"
+                : "endPx"]: nextPos,
+            },
+          }));
+        } else if (hit.role === "footer-band") {
+          const start = footerPositions[0];
+          const end = footerPositions[footerPositions.length - 1];
+          setGuideOverridesDraft((prev) => ({
+            ...prev,
+            footerBand: {
+              ...prev.footerBand,
+              [Math.abs(hit.position - start) <= Math.abs(hit.position - end)
+                ? "startPx"
+                : "endPx"]: nextPos,
+            },
+          }));
+        }
+      }
+    };
+
+    const handlePointerUp = (): void => {
+      if (!guideDragRef.current) return;
+      guideDragRef.current = null;
+      setIsDraggingGuide(false);
+      setActiveGuideId(undefined);
+    };
+
+    globalThis.addEventListener?.("pointermove", handlePointerMove);
+    globalThis.addEventListener?.("pointerup", handlePointerUp);
+    return (): void => {
+      globalThis.removeEventListener?.("pointermove", handlePointerMove);
+      globalThis.removeEventListener?.("pointerup", handlePointerUp);
+    };
+  }, [effectiveGuideLayout, getSvgPoint, normalizedPreview, zoom, baselineOffsetPx]);
 
   const handleSubmitReview = async (): Promise<void> => {
     const windowRef: typeof globalThis & {
       asteria?: {
         ipc?: {
-          [key: string]: (runId: string, runDir: string, payload: unknown) => Promise<unknown>;
+          [key: string]: (
+            runId: string,
+            runDir: string,
+            payload: unknown
+          ) => Promise<import("../../ipc/contracts.js").IpcResult<unknown>>;
         };
       };
     } = globalThis;
@@ -2899,7 +3385,12 @@ export function ReviewQueueScreen({
         pageId,
         decision: decisionValue === "flag" ? "adjust" : decisionValue,
       }));
-      await windowRef.asteria.ipc["asteria:submit-review"](runId, runDir, payload);
+      const submitResult = await windowRef.asteria.ipc["asteria:submit-review"](
+        runId,
+        runDir,
+        payload
+      );
+      unwrapIpcResult(submitResult, "Submit review");
       setDecisions(new Map());
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to submit review";
@@ -2913,13 +3404,21 @@ export function ReviewQueueScreen({
     if (!runId || !runDir || !currentPage) return;
     const overrides: Record<string, unknown> = {};
     const normalization: Record<string, unknown> = {};
-    const baselineGrid: BaselineGridOverrides = {
+    const baselineGridOverrides: BaselineGridOverrides = {
       spacingPx: baselineSpacingPx ?? null,
       offsetPx: baselineOffsetPx ?? null,
       angleDeg: baselineAngleDeg ?? null,
       snapToPeaks: baselineSnapToPeaks,
       markCorrect: baselineMarkCorrect,
     };
+    const baselineGrid = {
+      spacingPx: toOptionalNumber(baselineGridOverrides.spacingPx),
+      offsetPx: toOptionalNumber(baselineGridOverrides.offsetPx),
+      angleDeg: toOptionalNumber(baselineGridOverrides.angleDeg),
+      snapToPeaks: baselineGridOverrides.snapToPeaks,
+      markCorrect: baselineGridOverrides.markCorrect,
+    };
+    const guideOverrides: GuideOverrides = { ...guideOverridesDraft };
     if (rotationDeg !== baselineRotationRef.current) {
       normalization.rotationDeg = rotationDeg;
     }
@@ -2936,8 +3435,11 @@ export function ReviewQueueScreen({
     if (Object.keys(normalization).length > 0) {
       overrides.normalization = normalization;
     }
-    if (!areBaselineGridOverridesEqual(baselineGrid, baselineGuidesRef.current)) {
-      overrides.guides = { baselineGrid };
+    if (!areBaselineGridOverridesEqual(baselineGridOverrides, baselineGuidesRef.current)) {
+      guideOverrides.baselineGrid = baselineGrid;
+    }
+    if (hasGuideOverrides(guideOverrides)) {
+      overrides.guides = guideOverrides;
     }
     if (Object.keys(overrides).length === 0) {
       setOverrideError("No changes to save — adjustments match current values");
@@ -2963,7 +3465,8 @@ export function ReviewQueueScreen({
       const failures: string[] = [];
       for (const targetPage of applyTargets) {
         try {
-          await applyOverrideChannel(runId, runDir, targetPage.id, overrides);
+          const result = await applyOverrideChannel(runId, runDir, targetPage.id, overrides);
+          unwrapIpcResult(result, "Apply override");
         } catch (error) {
           const message = error instanceof Error ? error.message : "Failed to apply override";
           failures.push(`${targetPage.filename}: ${message}`);
@@ -2988,7 +3491,7 @@ export function ReviewQueueScreen({
           trim: trimBox,
         };
         baselineRotationRef.current = rotationDeg;
-        baselineGuidesRef.current = baselineGrid;
+        baselineGuidesRef.current = baselineGridOverrides;
       }
       if (applyScope !== "page") {
         const recordTemplateTrainingChannel = getIpcChannel<
@@ -2997,7 +3500,7 @@ export function ReviewQueueScreen({
         >("asteria:record-template-training");
         if (recordTemplateTrainingChannel) {
           try {
-            await recordTemplateTrainingChannel(runId, {
+            const result = await recordTemplateTrainingChannel(runId, {
               templateId: templateKey,
               scope: applyScope,
               appliedAt,
@@ -3006,6 +3509,7 @@ export function ReviewQueueScreen({
               sourcePageId: currentPage.id,
               layoutProfile: currentPage.layoutProfile,
             });
+            unwrapIpcResult(result, "Record template training");
           } catch (error) {
             const message =
               error instanceof Error ? error.message : "Failed to record template training signal";
@@ -3064,7 +3568,7 @@ export function ReviewQueueScreen({
       },
     };
     try {
-      await recordTemplateTrainingChannel(runId, {
+      const result = await recordTemplateTrainingChannel(runId, {
         templateId: resolvedTemplateId,
         scope: "template",
         appliedAt,
@@ -3073,6 +3577,7 @@ export function ReviewQueueScreen({
         sourcePageId: currentPage.id,
         layoutProfile: currentPage.layoutProfile,
       });
+      unwrapIpcResult(result, "Record template training");
       setTemplateActionStatus(
         action === "confirm" ? "Template assignment confirmed." : "Template correction saved."
       );
@@ -3133,6 +3638,28 @@ export function ReviewQueueScreen({
       key: " ",
       handler: (): void => setOverlaysVisible(!overlaysVisible),
       description: "Toggle overlays",
+    },
+    {
+      key: "g",
+      handler: (): void => setGuidesVisible((prev) => !prev),
+      description: "Toggle guides",
+    },
+    {
+      key: "g",
+      shiftKey: true,
+      handler: (): void => {
+        setGuideLayerVisibility((prev) => ({
+          ...prev,
+          rulers: !(prev.rulers ?? true),
+        }));
+        setGuidesVisible(true);
+      },
+      description: "Toggle rulers",
+    },
+    {
+      key: "s",
+      handler: (): void => setSnapEnabled((prev) => !prev),
+      description: "Toggle snapping",
     },
     {
       key: "+",
@@ -3224,16 +3751,16 @@ export function ReviewQueueScreen({
   const overlayScale = calculateOverlayScale(sidecar, normalizedPreview);
   const overlayScaleX = overlayScale?.x ?? 1;
   const overlayScaleY = overlayScale?.y ?? 1;
-
   const overlaySvg = buildOverlaySvg({
     sidecar,
     normalizedPreview,
     overlaysVisible,
     overlayLayers,
     guideLayerVisibility,
-    guideGroupVisibility,
+    guideGroupVisibility: effectiveGuideGroupVisibility,
     guideGroupOpacities,
     soloGuideGroup,
+    guideLayout: effectiveGuideLayout ?? undefined,
     overlayScaleX,
     overlayScaleY,
     zoom,
@@ -3241,10 +3768,12 @@ export function ReviewQueueScreen({
     trimBox: activeTrimBox,
     adjustmentMode,
     snapGuides: snapGuidesState.guides,
-    showSnapGuides: isDraggingHandle && snapGuidesState.active,
+    showSnapGuides: isDraggingHandle && snapGuidesState.active && snapEnabled,
     snapTooltip: snapGuidesState.tooltip,
     overlaySvgRef,
     onHandlePointerDown: handleHandlePointerDown,
+    onGuidePointerDown: handleGuidePointerDown,
+    activeGuideId,
   });
 
   return (
@@ -3259,9 +3788,12 @@ export function ReviewQueueScreen({
       zoom={zoom}
       rotationDeg={rotationDeg}
       overlayLayers={overlayLayers}
+      guideLayerVisibility={guideLayerVisibility}
+      guidesVisible={guidesVisible}
       guideGroupVisibility={guideGroupVisibility}
       guideGroupOpacities={guideGroupOpacities}
       soloGuideGroup={soloGuideGroup}
+      snappingEnabled={snapEnabled}
       selectedIds={selectedIds}
       listRef={listRef}
       scrollTop={scrollTop}
@@ -3337,6 +3869,10 @@ export function ReviewQueueScreen({
       }
       onToggleGuideGroup={handleGuideGroupToggle}
       onGuideGroupOpacityChange={handleGuideGroupOpacityChange}
+      onToggleGuideLayer={handleGuideLayerToggle}
+      onResetGuideVisibility={handleResetGuideVisibility}
+      onToggleGuidesVisible={() => setGuidesVisible((prev) => !prev)}
+      onToggleSnapping={() => setSnapEnabled((prev) => !prev)}
       onAccept={handleAccept}
       onFlag={handleFlag}
       onReject={handleReject}

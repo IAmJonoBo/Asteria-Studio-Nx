@@ -1,15 +1,26 @@
 {
   "pageId": "p06_blank_verso",
-  "pageBoundsPx": [0, 0, 2174, 3074],
-  "contentBoxPx": [140, 140, 2035, 2935],
+  "pageBoundsPx": [
+    0,
+    0,
+    2174,
+    3074
+  ],
+  "contentBoxPx": [
+    140,
+    140,
+    2035,
+    2935
+  ],
   "gutter": {
     "side": "none",
     "widthPx": 0
   },
-  "baselineGrid": {
-    "medianSpacingPx": 0
-  },
+  "baselineGrid": {},
   "ornaments": [],
   "shouldSplit": false,
-  "expectedReviewReasons": ["low-skew-confidence", "low-shading-confidence"]
+  "expectedReviewReasons": [
+    "low-skew-confidence",
+    "low-shading-confidence"
+  ]
 }

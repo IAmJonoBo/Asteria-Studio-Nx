@@ -25,6 +25,10 @@ vi.mock("node:fs/promises", () => ({
 const readRunIndex = vi.hoisted(() => vi.fn());
 vi.mock("./run-index", () => ({ readRunIndex }));
 
+const resolveProjectsRoot = vi.hoisted(() => vi.fn());
+const resolveOutputDir = vi.hoisted(() => vi.fn());
+vi.mock("./preferences", () => ({ resolveProjectsRoot, resolveOutputDir }));
+
 import { importCorpus, listProjects, normalizeCorpusPath } from "./projects.js";
 
 describe("projects", () => {
@@ -35,6 +39,10 @@ describe("projects", () => {
     mkdir.mockReset();
     writeFile.mockReset();
     readRunIndex.mockReset();
+    resolveProjectsRoot.mockReset();
+    resolveOutputDir.mockReset();
+    resolveProjectsRoot.mockResolvedValue(path.join(process.cwd(), "projects"));
+    resolveOutputDir.mockResolvedValue(path.join(process.cwd(), "pipeline-results"));
   });
 
   it("listProjects resolves config and status", async () => {

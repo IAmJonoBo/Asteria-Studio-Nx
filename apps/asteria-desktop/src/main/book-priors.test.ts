@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -8,6 +8,14 @@ import {
   deriveOrnamentLibrary,
   deriveRunningHeadTemplates,
 } from "./book-priors.js";
+
+const mockNative = vi.hoisted(() => ({
+  dhash9x8: vi.fn(() => "0"),
+}));
+
+vi.mock("./pipeline-core-native.js", () => ({
+  getPipelineCoreNative: () => mockNative,
+}));
 
 type TestImageSpec = {
   width: number;

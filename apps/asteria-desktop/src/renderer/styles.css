@@ -42,11 +42,15 @@
   --snap-glow: rgba(34, 211, 238, 0.35);
   --band-headfoot: rgba(236, 72, 153, 0.08);
   --band-gutter: rgba(239, 68, 68, 0.08);
-  --guide-stroke-major: 1.6;
-  --guide-stroke-minor: 1;
+  --guide-stroke-major: 1.4;
+  --guide-stroke-minor: 0.9;
   --guide-dash-solid: none;
   --guide-dash-dashed: 6 4;
   --guide-dash-dotted: 2 4;
+  --guide-dash-baseline-minor: 1.5 4.5;
+  --guide-dash-margin: 6 4;
+  --guide-dash-column: 4 4;
+  --guide-dash-header: 2 5;
   --guide-dash-gutter: 10 6;
 
   --focus-ring: rgba(59, 130, 246, 0.5);
@@ -93,11 +97,15 @@
   --snap-glow: rgba(34, 211, 238, 0.35);
   --band-headfoot: rgba(236, 72, 153, 0.08);
   --band-gutter: rgba(239, 68, 68, 0.08);
-  --guide-stroke-major: 1.6;
-  --guide-stroke-minor: 1;
+  --guide-stroke-major: 1.4;
+  --guide-stroke-minor: 0.9;
   --guide-dash-solid: none;
   --guide-dash-dashed: 6 4;
   --guide-dash-dotted: 2 4;
+  --guide-dash-baseline-minor: 1.5 4.5;
+  --guide-dash-margin: 6 4;
+  --guide-dash-column: 4 4;
+  --guide-dash-header: 2 5;
   --guide-dash-gutter: 10 6;
 
   --focus-ring: rgba(96, 165, 250, 0.5);

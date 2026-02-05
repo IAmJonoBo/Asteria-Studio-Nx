@@ -75,25 +75,25 @@ Export normalized outputs + JSON sidecars
 - Folios (cyan)
 - Gutter bands (red)
 
-### 2a. Guides Mode (Visual Inspection)
+### 2a. Guides (Visual Inspection)
 
-Guides Mode is a focused inspection layer that emphasizes structural guides and alignment.
-It is used to verify bounds, text baselines, and gutter splits without altering review decisions.
+Guides are a focused inspection layer that emphasizes structural layout intent and alignment.
+They are used to verify margins, columns, baselines, and gutter splits without changing review decisions.
 
 **Behavior**:
 
-- Shows guide layers with a legend and consistent color tokens.
-- Dims the source image slightly to prioritize guide visibility.
-- Keeps review decisions unchanged; it is a read-only inspection mode.
+- Guide layers live in the right inspector (layers, opacity, LOD, snapping toggles).
+- Provenance is explicit: auto/template/user guides are visually distinct and auditable.
+- Rendering uses deterministic ids; styling and LOD are derived at render time.
 
-**Guides Mode shortcuts**:
+**Guides shortcuts**:
 
-| Key            | Action              | Description                           |
-| -------------- | ------------------- | ------------------------------------- |
-| `G`            | Toggle Guides Mode  | Enter/exit guides inspection          |
-| `Shift + G`    | Cycle guide sets    | All → Layout → Text → Baselines       |
-| `Ctrl/Cmd + G` | Toggle guide legend | Show/hide legend for quick inspection |
-| `Esc`          | Exit Guides Mode    | Returns to standard review overlays   |
+| Key         | Action            | Description                     |
+| ----------- | ----------------- | ------------------------------- |
+| `G`         | Toggle guides     | Show/hide guide layers          |
+| `Shift + G` | Toggle rulers     | Show/hide rulers layer          |
+| `S`         | Toggle snapping   | Enable/disable snapping         |
+| `0`         | Reset view        | Reset zoom/pan                  |
 
 ### 3. Run Status & Feedback
 

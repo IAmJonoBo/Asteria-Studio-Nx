@@ -1,7 +1,17 @@
 {
   "pageId": "p05_footnotes_marginalia",
-  "pageBoundsPx": [0, 0, 2174, 3074],
-  "contentBoxPx": [50, 180, 2035, 2935],
+  "pageBoundsPx": [
+    0,
+    0,
+    2174,
+    3074
+  ],
+  "contentBoxPx": [
+    50,
+    180,
+    2035,
+    2935
+  ],
   "gutter": {
     "side": "none",
     "widthPx": 0
@@ -11,5 +21,7 @@
   },
   "ornaments": [],
   "shouldSplit": false,
-  "expectedReviewReasons": ["low-shading-confidence", "residual-skew-*"]
+  "expectedReviewReasons": [
+    "low-shading-confidence"
+  ]
 }

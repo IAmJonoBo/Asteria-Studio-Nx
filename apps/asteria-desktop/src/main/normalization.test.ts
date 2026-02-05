@@ -6,6 +6,35 @@ import type { CorpusSummary, PageBoundsEstimate, PageData } from "../ipc/contrac
 import { normalizePage, normalizePages } from "./normalization.js";
 import { getRunDir } from "./run-paths.js";
 
+const mockNative = vi.hoisted(() => ({
+  estimateSkewAngle: vi.fn(() => ({ angle: 0, confidence: 0.8 })),
+  baselineMetrics: vi.fn(() => ({
+    lineConsistency: 0.6,
+    textLineCount: 6,
+    spacingNorm: 0.05,
+    spacingMadNorm: 0.004,
+    offsetNorm: 0.01,
+    angleDeg: 0,
+    confidence: 0.7,
+    peakSharpness: 1.1,
+    peaksY: [],
+  })),
+  columnMetrics: vi.fn(() => ({ columnCount: 1, columnSeparation: 0.4 })),
+  detectLayoutElements: vi.fn(() => []),
+  projectionProfileX: vi.fn((_data: Buffer, width: number) => new Array(width).fill(0)),
+  projectionProfileY: vi.fn((_data: Buffer, _width: number, height: number) =>
+    new Array(height).fill(0)
+  ),
+  sobelMagnitude: vi.fn((_data: Buffer, width: number, height: number) =>
+    new Array(width * height).fill(0)
+  ),
+  dhash9x8: vi.fn(() => "0"),
+}));
+
+vi.mock("./pipeline-core-native.js", () => ({
+  getPipelineCoreNative: () => mockNative,
+}));
+
 type MockMode = "center" | "shadow-left" | "low-coverage" | "noisy" | "high-coverage" | "shaded";
 
 const mockState = {

@@ -2,6 +2,8 @@ import { app, BrowserWindow, dialog } from "electron";
 import { fileURLToPath } from "url";
 import path from "path";
 import { loadEnv } from "./config.js";
+import { buildAppMenu } from "./menu.js";
+import { loadPreferences, savePreferences } from "./preferences.js";
 
 loadEnv();
 
@@ -93,6 +95,13 @@ app
       app.exit(1);
       return;
     }
+
+    const prefs = await loadPreferences();
+    if (prefs.lastVersion !== app.getVersion()) {
+      await savePreferences({ lastVersion: app.getVersion() });
+    }
+
+    buildAppMenu();
 
     const { registerIpcHandlers } = await import("./ipc.js");
     registerIpcHandlers();

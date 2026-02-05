@@ -21,12 +21,18 @@ const sharpCall = vi.hoisted(() => {
   return { sharpFn, toFile, tiff, pdf, toFormat };
 });
 
+const showItemInFolder = vi.hoisted(() => vi.fn());
+const openPath = vi.hoisted(() => vi.fn());
+const getPath = vi.hoisted(() => vi.fn());
+
 vi.mock("electron", () => ({
   ipcMain: {
     handle: vi.fn((channel: string, handler: (...args: unknown[]) => unknown) => {
       handlers.set(channel, handler);
     }),
   },
+  shell: { showItemInFolder, openPath },
+  app: { getPath },
 }));
 
 vi.mock("node:fs/promises", () => ({
@@ -54,6 +60,13 @@ const loadProjectOverrides = vi.hoisted(() => vi.fn());
 const resolvePipelineConfig = vi.hoisted(() => vi.fn());
 const listProjects = vi.hoisted(() => vi.fn());
 const importCorpus = vi.hoisted(() => vi.fn());
+const loadPreferences = vi.hoisted(() => vi.fn());
+const savePreferences = vi.hoisted(() => vi.fn());
+const resolveOutputDir = vi.hoisted(() => vi.fn());
+const resolveProjectsRoot = vi.hoisted(() => vi.fn());
+const createDiagnosticsBundle = vi.hoisted(() => vi.fn());
+const getAppInfo = vi.hoisted(() => vi.fn());
+const provisionSampleCorpus = vi.hoisted(() => vi.fn());
 
 vi.mock("../ipc/corpusScanner", () => ({ scanCorpus }));
 vi.mock("../ipc/corpusAnalysis", () => ({ analyzeCorpus }));
@@ -64,8 +77,23 @@ vi.mock("./pipeline-config", () => ({
   resolvePipelineConfig,
 }));
 vi.mock("./projects", () => ({ listProjects, importCorpus }));
+vi.mock("./preferences", () => ({
+  loadPreferences,
+  savePreferences,
+  resolveOutputDir,
+  resolveProjectsRoot,
+}));
+vi.mock("./diagnostics", () => ({ createDiagnosticsBundle }));
+vi.mock("./app-info", () => ({ getAppInfo }));
+vi.mock("./sample-corpus", () => ({ provisionSampleCorpus }));
 
 import { buildBundleFileUrl, registerIpcHandlers } from "./ipc.js";
+
+const unwrap = <T>(result: unknown): T => {
+  const resolved = result as { ok: boolean; value?: T; error?: { message?: string } };
+  if (resolved.ok) return resolved.value as T;
+  throw new Error(resolved.error?.message ?? "IPC failed");
+};
 
 describe("IPC handler registration", () => {
   let warnSpy: ReturnType<typeof vi.spyOn> | null = null;
@@ -80,6 +108,9 @@ describe("IPC handler registration", () => {
     readdir.mockReset();
     rm.mockReset();
     rename.mockReset();
+    showItemInFolder.mockReset();
+    openPath.mockReset();
+    getPath.mockReset();
     sharpCall.sharpFn.mockReset();
     sharpCall.toFile.mockReset();
     sharpCall.tiff.mockReset();
@@ -97,9 +128,18 @@ describe("IPC handler registration", () => {
     resolvePipelineConfig.mockReset();
     listProjects.mockReset();
     importCorpus.mockReset();
+    loadPreferences.mockReset();
+    savePreferences.mockReset();
+    resolveOutputDir.mockReset();
+    resolveProjectsRoot.mockReset();
+    createDiagnosticsBundle.mockReset();
+    getAppInfo.mockReset();
+    provisionSampleCorpus.mockReset();
     copyFile.mockResolvedValue(undefined);
     cp.mockResolvedValue(undefined);
     warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    resolveOutputDir.mockResolvedValue(path.join(process.cwd(), "pipeline-results"));
+    resolveProjectsRoot.mockResolvedValue(path.join(process.cwd(), "projects"));
   });
 
   afterEach(() => {
@@ -115,7 +155,7 @@ describe("IPC handler registration", () => {
       { id: "proj", name: "Proj", path: "/tmp/proj", inputPath: "/tmp/proj/input" },
     ]);
 
-    const result = await (handler as (event: unknown) => Promise<unknown>)({});
+    const result = unwrap(await (handler as (event: unknown) => Promise<unknown>)({}));
 
     expect(result).toMatchObject([{ id: "proj" }]);
     expect(listProjects).toHaveBeenCalledOnce();
@@ -133,17 +173,91 @@ describe("IPC handler registration", () => {
       status: "idle",
     });
 
-    const result = await (
-      handler as (event: unknown, request: { inputPath: string; name?: string }) => Promise<unknown>
-    )({}, { inputPath: "/tmp/input", name: "Proj" });
+    const result = unwrap(
+      await (
+        handler as (
+          event: unknown,
+          request: { inputPath: string; name?: string }
+        ) => Promise<unknown>
+      )({}, { inputPath: "/tmp/input", name: "Proj" })
+    );
 
     expect(result).toMatchObject({ id: "proj" });
     expect(importCorpus).toHaveBeenCalledWith({ inputPath: "/tmp/input", name: "Proj" });
   });
 
+  it("get-app-preferences delegates to preferences module", async () => {
+    registerIpcHandlers();
+    const handler = handlers.get("asteria:get-app-preferences");
+    expect(handler).toBeDefined();
+    loadPreferences.mockResolvedValueOnce({
+      outputDir: "/tmp/out",
+      projectsDir: "/tmp/projects",
+      firstRunComplete: true,
+      sampleCorpusInstalled: false,
+    });
+
+    const result = unwrap(await (handler as (event: unknown) => Promise<unknown>)({}));
+
+    expect(loadPreferences).toHaveBeenCalledOnce();
+    expect(result).toMatchObject({ outputDir: "/tmp/out", projectsDir: "/tmp/projects" });
+  });
+
+  it("set-app-preferences saves updates", async () => {
+    registerIpcHandlers();
+    const handler = handlers.get("asteria:set-app-preferences");
+    expect(handler).toBeDefined();
+    savePreferences.mockResolvedValueOnce({
+      outputDir: "/tmp/out",
+      projectsDir: "/tmp/projects",
+      firstRunComplete: false,
+      sampleCorpusInstalled: true,
+    });
+
+    const result = unwrap(
+      await (handler as (event: unknown, prefs: Record<string, unknown>) => Promise<unknown>)(
+        {},
+        { sampleCorpusInstalled: true }
+      )
+    );
+
+    expect(savePreferences).toHaveBeenCalledWith({ sampleCorpusInstalled: true });
+    expect(result).toMatchObject({ sampleCorpusInstalled: true });
+  });
+
+  it("get-app-info delegates to app-info module", async () => {
+    registerIpcHandlers();
+    const handler = handlers.get("asteria:get-app-info");
+    expect(handler).toBeDefined();
+    getAppInfo.mockReturnValueOnce({ version: "0.1.0", platform: "darwin" });
+
+    const result = unwrap(await (handler as (event: unknown) => Promise<unknown>)({}));
+
+    expect(getAppInfo).toHaveBeenCalledOnce();
+    expect(result).toMatchObject({ version: "0.1.0", platform: "darwin" });
+  });
+
+  it("create-diagnostics-bundle delegates to diagnostics module", async () => {
+    registerIpcHandlers();
+    const handler = handlers.get("asteria:create-diagnostics-bundle");
+    expect(handler).toBeDefined();
+    createDiagnosticsBundle.mockResolvedValueOnce({ bundlePath: "/tmp/diag.zip" });
+
+    const result = unwrap(await (handler as (event: unknown) => Promise<unknown>)({}));
+
+    expect(createDiagnosticsBundle).toHaveBeenCalledOnce();
+    expect(result).toMatchObject({ bundlePath: "/tmp/diag.zip" });
+  });
+
   it("registers review queue handlers", async () => {
     registerIpcHandlers();
 
+    expect(handlers.has("asteria:get-app-preferences")).toBe(true);
+    expect(handlers.has("asteria:set-app-preferences")).toBe(true);
+    expect(handlers.has("asteria:get-app-info")).toBe(true);
+    expect(handlers.has("asteria:provision-sample-corpus")).toBe(true);
+    expect(handlers.has("asteria:create-diagnostics-bundle")).toBe(true);
+    expect(handlers.has("asteria:reveal-path")).toBe(true);
     expect(handlers.has("asteria:fetch-review-queue")).toBe(true);
     expect(handlers.has("asteria:submit-review")).toBe(true);
     expect(handlers.has("asteria:list-runs")).toBe(true);
@@ -173,9 +287,8 @@ describe("IPC handler registration", () => {
 
     startRun.mockResolvedValueOnce("run-test");
 
-    const result = await (handler as (event: unknown, cfg: typeof config) => Promise<unknown>)(
-      {},
-      config
+    const result = unwrap(
+      await (handler as (event: unknown, cfg: typeof config) => Promise<unknown>)({}, config)
     );
 
     expect(result).toMatchObject({ status: "running", pagesProcessed: 0, runId: "run-test" });
@@ -229,9 +342,14 @@ describe("IPC handler registration", () => {
       targetDimensionsMm: { width: 210, height: 297 },
     };
 
-    await expect(
-      (handler as (event: unknown, cfg: typeof config) => Promise<unknown>)({}, config)
-    ).rejects.toThrow("Cannot start run: no pages provided");
+    const result = await (handler as (event: unknown, cfg: typeof config) => Promise<unknown>)(
+      {},
+      config
+    );
+    expect(result).toMatchObject({
+      ok: false,
+      error: { message: "Cannot start run: no pages provided" },
+    });
   });
 
   it("analyze-corpus delegates to analyzer", async () => {
@@ -256,9 +374,8 @@ describe("IPC handler registration", () => {
       targetDimensionsMm: { width: 210, height: 297 },
     };
 
-    const result = await (handler as (event: unknown, cfg: typeof config) => Promise<unknown>)(
-      {},
-      config
+    const result = unwrap(
+      await (handler as (event: unknown, cfg: typeof config) => Promise<unknown>)({}, config)
     );
 
     expect(result).toMatchObject({ projectId: "proj" });
@@ -276,9 +393,8 @@ describe("IPC handler registration", () => {
     const handler = handlers.get("asteria:scan-corpus");
     expect(handler).toBeDefined();
 
-    const result = await (handler as (event: unknown, rootPath: string) => Promise<unknown>)(
-      {},
-      "/tmp"
+    const result = unwrap(
+      await (handler as (event: unknown, rootPath: string) => Promise<unknown>)({}, "/tmp")
     );
 
     expect(result).toMatchObject({ projectId: "proj" });
@@ -292,14 +408,16 @@ describe("IPC handler registration", () => {
 
     const outputDir = path.join(process.cwd(), "pipeline-results");
     const runDir = getRunDir(outputDir, "run-1");
-    const result = await (
-      handler as (
-        event: unknown,
-        runId: string,
-        runDir: string,
-        formats: Array<"png">
-      ) => Promise<unknown>
-    )({}, "run-1", runDir, ["png"]);
+    const result = unwrap(
+      await (
+        handler as (
+          event: unknown,
+          runId: string,
+          runDir: string,
+          formats: Array<"png">
+        ) => Promise<unknown>
+      )({}, "run-1", runDir, ["png"])
+    );
     expect(String(result)).toContain(path.join(runDir, "exports"));
   });
 
@@ -316,14 +434,16 @@ describe("IPC handler registration", () => {
       .mockResolvedValueOnce(["page-1.json"])
       .mockResolvedValueOnce(["page1.png", "page2.png", "notes.txt"]);
 
-    await (
-      handler as (
-        event: unknown,
-        runId: string,
-        runDir: string,
-        formats: Array<"png" | "tiff" | "pdf">
-      ) => Promise<unknown>
-    )({}, "run-2", runDir, ["png", "tiff", "pdf"]);
+    unwrap(
+      await (
+        handler as (
+          event: unknown,
+          runId: string,
+          runDir: string,
+          formats: Array<"png" | "tiff" | "pdf">
+        ) => Promise<unknown>
+      )({}, "run-2", runDir, ["png", "tiff", "pdf"])
+    );
     const exportDir = path.join(runDir, "exports", "2024-01-01T00-00-00-000Z");
     const normalizedDir = path.join(runDir, "normalized");
     const sidecarDir = path.join(runDir, "sidecars");
@@ -391,9 +511,16 @@ describe("IPC handler registration", () => {
     expect(handler).toBeDefined();
 
     const runDir = getRunDir(path.join(process.cwd(), "pipeline-results"), "run-1");
-    const result = await (
-      handler as (event: unknown, runId: string, runDir: string, pageId: string) => Promise<unknown>
-    )({}, "run-1", runDir, "p99");
+    const result = unwrap(
+      await (
+        handler as (
+          event: unknown,
+          runId: string,
+          runDir: string,
+          pageId: string
+        ) => Promise<unknown>
+      )({}, "run-1", runDir, "p99")
+    );
 
     expect(result).toMatchObject({ id: "p99", filename: "page-p99.png" });
   });
@@ -405,9 +532,16 @@ describe("IPC handler registration", () => {
     readFile.mockResolvedValueOnce(JSON.stringify({ source: { path: "/tmp/source/page.png" } }));
 
     const runDir = getRunDir(path.join(process.cwd(), "pipeline-results"), "run-1");
-    const result = await (
-      handler as (event: unknown, runId: string, runDir: string, pageId: string) => Promise<unknown>
-    )({}, "run-1", runDir, "p1");
+    const result = unwrap(
+      await (
+        handler as (
+          event: unknown,
+          runId: string,
+          runDir: string,
+          pageId: string
+        ) => Promise<unknown>
+      )({}, "run-1", runDir, "p1")
+    );
 
     expect(result).toMatchObject({ id: "p1", filename: "page.png" });
     expect(readFile).toHaveBeenCalledWith(getRunSidecarPath(runDir, "p1"), "utf-8");
@@ -420,9 +554,16 @@ describe("IPC handler registration", () => {
     readFile.mockResolvedValueOnce(JSON.stringify({ pageId: "p9" }));
 
     const runDir = getRunDir(path.join(process.cwd(), "pipeline-results"), "run-9");
-    const result = await (
-      handler as (event: unknown, runId: string, runDir: string, pageId: string) => Promise<unknown>
-    )({}, "run-9", runDir, "p9");
+    const result = unwrap(
+      await (
+        handler as (
+          event: unknown,
+          runId: string,
+          runDir: string,
+          pageId: string
+        ) => Promise<unknown>
+      )({}, "run-9", runDir, "p9")
+    );
 
     expect(result).toMatchObject({ pageId: "p9" });
     expect(readFile).toHaveBeenCalledWith(getRunSidecarPath(runDir, "p9"), "utf-8");
@@ -435,9 +576,16 @@ describe("IPC handler registration", () => {
     readFile.mockResolvedValueOnce(JSON.stringify({ source: {} }));
 
     const runDir = getRunDir(path.join(process.cwd(), "pipeline-results"), "run-1");
-    const result = await (
-      handler as (event: unknown, runId: string, runDir: string, pageId: string) => Promise<unknown>
-    )({}, "run-1", runDir, "p1");
+    const result = unwrap(
+      await (
+        handler as (
+          event: unknown,
+          runId: string,
+          runDir: string,
+          pageId: string
+        ) => Promise<unknown>
+      )({}, "run-1", runDir, "p1")
+    );
 
     expect(result).toMatchObject({ id: "p1", filename: "p1" });
   });
@@ -451,9 +599,16 @@ describe("IPC handler registration", () => {
     );
 
     const runDir = getRunDir(path.join(process.cwd(), "pipeline-results"), "run-9");
-    const result = await (
-      handler as (event: unknown, runId: string, runDir: string, pageId: string) => Promise<unknown>
-    )({}, "run-9", runDir, "p1");
+    const result = unwrap(
+      await (
+        handler as (
+          event: unknown,
+          runId: string,
+          runDir: string,
+          pageId: string
+        ) => Promise<unknown>
+      )({}, "run-9", runDir, "p1")
+    );
 
     expect(result).toMatchObject({ pageId: "p1" });
     expect(readFile).toHaveBeenCalledWith(getRunSidecarPath(runDir, "p1"), "utf-8");
@@ -467,9 +622,16 @@ describe("IPC handler registration", () => {
 
     const outputDir = path.join(process.cwd(), "pipeline-results");
     const runDir = getRunDir(outputDir, "run-miss");
-    const result = await (
-      handler as (event: unknown, runId: string, runDir: string, pageId: string) => Promise<unknown>
-    )({}, "run-miss", runDir, "p3");
+    const result = unwrap(
+      await (
+        handler as (
+          event: unknown,
+          runId: string,
+          runDir: string,
+          pageId: string
+        ) => Promise<unknown>
+      )({}, "run-miss", runDir, "p3")
+    );
 
     expect(result).toBeNull();
     expect(readFile).toHaveBeenCalledWith(getRunSidecarPath(runDir, "p3"), "utf-8");
@@ -482,16 +644,13 @@ describe("IPC handler registration", () => {
     expect(handler).toBeDefined();
 
     const outputDir = path.join(process.cwd(), "pipeline-results");
-    await expect(
-      (
-        handler as (
-          event: unknown,
-          runId: string,
-          runDir: string,
-          pageId: string
-        ) => Promise<unknown>
-      )({}, "run-1", outputDir, "p1")
-    ).rejects.toThrow("Invalid run directory");
+    const invalidResult = await (
+      handler as (event: unknown, runId: string, runDir: string, pageId: string) => Promise<unknown>
+    )({}, "run-1", outputDir, "p1");
+    expect(invalidResult).toMatchObject({
+      ok: false,
+      error: { message: expect.stringContaining("Invalid run directory") },
+    });
   });
 
   it("apply-override accepts overrides", async () => {
@@ -501,15 +660,17 @@ describe("IPC handler registration", () => {
 
     const outputDir = path.join(process.cwd(), "pipeline-results");
     const runDir = getRunDir(outputDir, "run-1");
-    await (
-      handler as (
-        event: unknown,
-        runId: string,
-        runDir: string,
-        pageId: string,
-        overrides: Record<string, unknown>
-      ) => Promise<void>
-    )({}, "run-1", runDir, "p42", { crop: { x: 1 } });
+    unwrap(
+      await (
+        handler as (
+          event: unknown,
+          runId: string,
+          runDir: string,
+          pageId: string,
+          overrides: Record<string, unknown>
+        ) => Promise<unknown>
+      )({}, "run-1", runDir, "p42", { crop: { x: 1 } })
+    );
     expect(writeFile).toHaveBeenCalled();
     expect(rename).toHaveBeenCalledWith(
       expect.any(String),
@@ -531,17 +692,19 @@ describe("IPC handler registration", () => {
 
     const outputDir = path.join(process.cwd(), "pipeline-results");
     const runDir = getRunDir(outputDir, "run-1");
-    await (
-      handler as (
-        event: unknown,
-        runId: string,
-        runDir: string,
-        pageId: string,
-        overrides: Record<string, unknown>
-      ) => Promise<void>
-    )({}, "run-1", runDir, "p42", {
-      normalization: { rotationDeg: 1.5, cropBox: [0, 0, 150, 150] },
-    });
+    unwrap(
+      await (
+        handler as (
+          event: unknown,
+          runId: string,
+          runDir: string,
+          pageId: string,
+          overrides: Record<string, unknown>
+        ) => Promise<unknown>
+      )({}, "run-1", runDir, "p42", {
+        normalization: { rotationDeg: 1.5, cropBox: [0, 0, 150, 150] },
+      })
+    );
 
     // Check that writeFile was called with updated sidecar
     const writeFileCalls = writeFile.mock.calls;
@@ -579,15 +742,17 @@ describe("IPC handler registration", () => {
 
     const outputDir = path.join(process.cwd(), "pipeline-results");
     const runDir = getRunDir(outputDir, "run-1");
-    await (
-      handler as (
-        event: unknown,
-        runId: string,
-        runDir: string,
-        pageId: string,
-        overrides: Record<string, unknown>
-      ) => Promise<void>
-    )({}, "run-1", runDir, "p42", { normalization: { rotationDeg: -2.0 } });
+    unwrap(
+      await (
+        handler as (
+          event: unknown,
+          runId: string,
+          runDir: string,
+          pageId: string,
+          overrides: Record<string, unknown>
+        ) => Promise<unknown>
+      )({}, "run-1", runDir, "p42", { normalization: { rotationDeg: -2.0 } })
+    );
 
     // Check that writeFile was called (writeJsonAtomic uses writeFile internally)
     expect(writeFile).toHaveBeenCalled();
@@ -598,7 +763,8 @@ describe("IPC handler registration", () => {
       try {
         const data = JSON.parse(call[1]);
         return Array.isArray(data.pages);
-      } catch {
+      } catch (error) {
+        void error;
         return false;
       }
     });
@@ -630,17 +796,17 @@ describe("IPC handler registration", () => {
     const outputDir = path.join(process.cwd(), "pipeline-results");
     const runDir = getRunDir(outputDir, "run-1");
     // Should not throw, should still write override file
-    await expect(
-      (
+    unwrap(
+      await (
         handler as (
           event: unknown,
           runId: string,
           runDir: string,
           pageId: string,
           overrides: Record<string, unknown>
-        ) => Promise<void>
+        ) => Promise<unknown>
       )({}, "run-1", runDir, "p99", { normalization: { rotationDeg: 0.5 } })
-    ).resolves.toBeUndefined();
+    );
 
     expect(rename).toHaveBeenCalledWith(
       expect.any(String),
@@ -660,17 +826,17 @@ describe("IPC handler registration", () => {
     const outputDir = path.join(process.cwd(), "pipeline-results");
     const runDir = getRunDir(outputDir, "run-1");
     // Should not throw, sidecar should still be updated
-    await expect(
-      (
+    unwrap(
+      await (
         handler as (
           event: unknown,
           runId: string,
           runDir: string,
           pageId: string,
           overrides: Record<string, unknown>
-        ) => Promise<void>
+        ) => Promise<unknown>
       )({}, "run-1", runDir, "p42", { normalization: { rotationDeg: 0.5 } })
-    ).resolves.toBeUndefined();
+    );
 
     // Check sidecar was written
     const writeFileCalls = writeFile.mock.calls;
@@ -692,17 +858,17 @@ describe("IPC handler registration", () => {
     const outputDir = path.join(process.cwd(), "pipeline-results");
     const runDir = getRunDir(outputDir, "run-1");
     // Should not throw even with malformed manifest
-    await expect(
-      (
+    unwrap(
+      await (
         handler as (
           event: unknown,
           runId: string,
           runDir: string,
           pageId: string,
           overrides: Record<string, unknown>
-        ) => Promise<void>
+        ) => Promise<unknown>
       )({}, "run-1", runDir, "p42", { normalization: { rotationDeg: 0.5 } })
-    ).resolves.toBeUndefined();
+    );
 
     // Manifest should not be updated (no writeFile call with the manifest content)
     const writeFileCalls = writeFile.mock.calls;
@@ -723,14 +889,16 @@ describe("IPC handler registration", () => {
 
     const outputDir = path.join(process.cwd(), "pipeline-results");
     const runDir = getRunDir(outputDir, "run-missing");
-    const result = await (
-      handler as (
-        event: unknown,
-        runId: string,
-        runDir: string,
-        formats: Array<"png">
-      ) => Promise<unknown>
-    )({}, "run-missing", runDir, ["png"]);
+    const result = unwrap(
+      await (
+        handler as (
+          event: unknown,
+          runId: string,
+          runDir: string,
+          formats: Array<"png">
+        ) => Promise<unknown>
+      )({}, "run-missing", runDir, ["png"])
+    );
 
     expect(String(result)).toContain("exports");
   });
@@ -740,7 +908,7 @@ describe("IPC handler registration", () => {
     const handler = handlers.get("asteria:cancel-run");
     expect(handler).toBeDefined();
 
-    await (handler as (event: unknown, runId: string) => Promise<void>)({}, "run-9");
+    unwrap(await (handler as (event: unknown, runId: string) => Promise<unknown>)({}, "run-9"));
 
     expect(cancelRun).toHaveBeenCalledWith("run-9");
   });
@@ -750,7 +918,7 @@ describe("IPC handler registration", () => {
     const handler = handlers.get("asteria:pause-run");
     expect(handler).toBeDefined();
 
-    await (handler as (event: unknown, runId: string) => Promise<void>)({}, "run-10");
+    unwrap(await (handler as (event: unknown, runId: string) => Promise<unknown>)({}, "run-10"));
 
     expect(pauseRun).toHaveBeenCalledWith("run-10");
   });
@@ -760,7 +928,7 @@ describe("IPC handler registration", () => {
     const handler = handlers.get("asteria:resume-run");
     expect(handler).toBeDefined();
 
-    await (handler as (event: unknown, runId: string) => Promise<void>)({}, "run-11");
+    unwrap(await (handler as (event: unknown, runId: string) => Promise<unknown>)({}, "run-11"));
 
     expect(resumeRun).toHaveBeenCalledWith("run-11");
   });
@@ -780,9 +948,13 @@ describe("IPC handler registration", () => {
 
     const outputDir = path.join(process.cwd(), "pipeline-results");
     const runDir = getRunDir(outputDir, "run-1");
-    const result = await (
-      handler as (event: unknown, runId: string, runDir: string) => Promise<unknown>
-    )({}, "run-1", runDir);
+    const result = unwrap(
+      await (handler as (event: unknown, runId: string, runDir: string) => Promise<unknown>)(
+        {},
+        "run-1",
+        runDir
+      )
+    );
 
     expect(result).toMatchObject({ runId: "run-1", projectId: "proj" });
     expect(readFile).toHaveBeenCalledWith(getRunReviewQueuePath(runDir), "utf-8");
@@ -803,9 +975,13 @@ describe("IPC handler registration", () => {
 
     const outputDir = path.join(process.cwd(), "pipeline-results");
     const runDir = getRunDir(outputDir, "run-5");
-    const result = await (
-      handler as (event: unknown, runId: string, runDir: string) => Promise<unknown>
-    )({}, "run-5", runDir);
+    const result = unwrap(
+      await (handler as (event: unknown, runId: string, runDir: string) => Promise<unknown>)(
+        {},
+        "run-5",
+        runDir
+      )
+    );
 
     expect(result).toMatchObject({ runId: "run-5", projectId: "proj" });
     expect(readFile).toHaveBeenCalledWith(getRunReviewQueuePath(runDir), "utf-8");
@@ -821,9 +997,13 @@ describe("IPC handler registration", () => {
 
     const outputDir = path.join(process.cwd(), "pipeline-results");
     const runDir = getRunDir(outputDir, "run-2");
-    const result = await (
-      handler as (event: unknown, runId: string, runDir: string) => Promise<unknown>
-    )({}, "run-2", runDir);
+    const result = unwrap(
+      await (handler as (event: unknown, runId: string, runDir: string) => Promise<unknown>)(
+        {},
+        "run-2",
+        runDir
+      )
+    );
 
     expect(result).toMatchObject({ runId: "run-2", items: [] });
   });
@@ -835,14 +1015,16 @@ describe("IPC handler registration", () => {
 
     const outputDir = path.join(process.cwd(), "pipeline-results");
     const runDir = getRunDir(outputDir, "run-3");
-    await (
-      handler as (
-        event: unknown,
-        runId: string,
-        runDir: string,
-        decisions: unknown[]
-      ) => Promise<void>
-    )({}, "run-3", runDir, [{ pageId: "p1", decision: "accept" }]);
+    unwrap(
+      await (
+        handler as (
+          event: unknown,
+          runId: string,
+          runDir: string,
+          decisions: unknown[]
+        ) => Promise<unknown>
+      )({}, "run-3", runDir, [{ pageId: "p1", decision: "accept" }])
+    );
   });
 
   it("submit-review creates training directory structure", async () => {
@@ -1012,6 +1194,20 @@ describe("IPC handler registration", () => {
       angleDeg: 0.1,
       snapToPeaks: true,
       markCorrect: false,
+    });
+
+    const guidesHintWrite = writeFile.mock.calls.find(
+      (call) =>
+        String(call[0]).includes(path.join(runDir, "training", "guides")) &&
+        String(call[0]).includes("page-10.json")
+    );
+    expect(guidesHintWrite).toBeDefined();
+    if (!guidesHintWrite) throw new Error("guidesHintWrite not found");
+    const guidesHint = JSON.parse(guidesHintWrite[1] as string);
+    expect(guidesHint.effective?.baselineGrid).toMatchObject({
+      spacingPx: 14,
+      offsetPx: 2,
+      angleDeg: -0.1,
     });
   });
 
@@ -1281,7 +1477,7 @@ describe("IPC handler registration", () => {
       })
     );
 
-    const result = await (handler as (event: unknown) => Promise<unknown>)({});
+    const result = unwrap(await (handler as (event: unknown) => Promise<unknown>)({}));
 
     expect(result).toMatchObject([
       {
@@ -1301,7 +1497,7 @@ describe("IPC handler registration", () => {
     expect(handler).toBeDefined();
     readFile.mockRejectedValueOnce(new Error("missing"));
 
-    const result = await (handler as (event: unknown) => Promise<unknown>)({});
+    const result = unwrap(await (handler as (event: unknown) => Promise<unknown>)({}));
 
     expect(result).toEqual([]);
   });
@@ -1330,9 +1526,8 @@ describe("IPC handler registration", () => {
       },
     });
 
-    const result = await (handler as (event: unknown, projectId: string) => Promise<unknown>)(
-      {},
-      "proj"
+    const result = unwrap(
+      await (handler as (event: unknown, projectId: string) => Promise<unknown>)({}, "proj")
     );
 
     expect(result).toMatchObject({
@@ -1349,9 +1544,13 @@ describe("IPC handler registration", () => {
 
     const outputDir = path.join(process.cwd(), "pipeline-results");
     const runDir = getRunDir(outputDir, "run-4");
-    const result = await (
-      handler as (event: unknown, runId: string, runDir: string) => Promise<unknown>
-    )({}, "run-4", runDir);
+    const result = unwrap(
+      await (handler as (event: unknown, runId: string, runDir: string) => Promise<unknown>)(
+        {},
+        "run-4",
+        runDir
+      )
+    );
 
     expect(result).toBeNull();
   });
@@ -1363,7 +1562,7 @@ describe("IPC handler registration", () => {
     readFile.mockResolvedValueOnce(JSON.stringify({ runs: null }));
     readdir.mockResolvedValueOnce([]);
 
-    const result = await (handler as (event: unknown) => Promise<unknown>)({});
+    const result = unwrap(await (handler as (event: unknown) => Promise<unknown>)({}));
 
     expect(result).toEqual([]);
   });
@@ -1373,13 +1572,15 @@ describe("IPC handler registration", () => {
     const handler = handlers.get("asteria:save-project-config");
     expect(handler).toBeDefined();
 
-    await (
-      handler as (
-        event: unknown,
-        projectId: string,
-        overrides: Record<string, unknown>
-      ) => Promise<void>
-    )({}, "proj", { project: { dpi: 500 } });
+    unwrap(
+      await (
+        handler as (
+          event: unknown,
+          projectId: string,
+          overrides: Record<string, unknown>
+        ) => Promise<unknown>
+      )({}, "proj", { project: { dpi: 500 } })
+    );
 
     expect(writeFile).toHaveBeenCalledOnce();
   });
@@ -1389,15 +1590,14 @@ describe("IPC handler registration", () => {
     const handler = handlers.get("asteria:save-project-config");
     expect(handler).toBeDefined();
 
-    await expect(
-      (
-        handler as (
-          event: unknown,
-          projectId: string,
-          overrides: Record<string, unknown>
-        ) => Promise<void>
-      )({}, "", { project: { dpi: 400 } })
-    ).rejects.toThrow("Invalid project id");
+    const result = await (
+      handler as (
+        event: unknown,
+        projectId: string,
+        overrides: Record<string, unknown>
+      ) => Promise<unknown>
+    )({}, "", { project: { dpi: 400 } });
+    expect(result).toMatchObject({ ok: false, error: { message: "Invalid project id" } });
   });
 
   it("save-project-config clears overrides when empty", async () => {
@@ -1405,13 +1605,15 @@ describe("IPC handler registration", () => {
     const handler = handlers.get("asteria:save-project-config");
     expect(handler).toBeDefined();
 
-    await (
-      handler as (
-        event: unknown,
-        projectId: string,
-        overrides: Record<string, unknown>
-      ) => Promise<void>
-    )({}, "proj", {});
+    unwrap(
+      await (
+        handler as (
+          event: unknown,
+          projectId: string,
+          overrides: Record<string, unknown>
+        ) => Promise<unknown>
+      )({}, "proj", {})
+    );
 
     expect(rm).toHaveBeenCalledOnce();
   });
@@ -1432,9 +1634,13 @@ describe("IPC handler registration", () => {
 
     const outputDir = path.join(process.cwd(), "pipeline-results");
     const runDir = getRunDir(outputDir, "run-1");
-    const result = await (
-      handler as (event: unknown, runId: string, runDir: string) => Promise<unknown>
-    )({}, "run-1", runDir);
+    const result = unwrap(
+      await (handler as (event: unknown, runId: string, runDir: string) => Promise<unknown>)(
+        {},
+        "run-1",
+        runDir
+      )
+    );
 
     expect(result).toMatchObject({
       resolvedConfig: { version: "0.1.0" },
@@ -1450,9 +1656,13 @@ describe("IPC handler registration", () => {
 
     const outputDir = path.join(process.cwd(), "pipeline-results");
     const runDir = getRunDir(outputDir, "run-404");
-    const result = await (
-      handler as (event: unknown, runId: string, runDir: string) => Promise<unknown>
-    )({}, "run-404", runDir);
+    const result = unwrap(
+      await (handler as (event: unknown, runId: string, runDir: string) => Promise<unknown>)(
+        {},
+        "run-404",
+        runDir
+      )
+    );
 
     expect(result).toBeNull();
   });
@@ -1472,10 +1682,12 @@ describe("IPC handler registration", () => {
       layoutProfile: "body",
     };
 
-    await (handler as (event: unknown, runId: string, signal: unknown) => Promise<void>)(
-      {},
-      "run-6",
-      signal
+    unwrap(
+      await (handler as (event: unknown, runId: string, signal: unknown) => Promise<unknown>)(
+        {},
+        "run-6",
+        signal
+      )
     );
 
     const outputDir = path.join(process.cwd(), "pipeline-results");
@@ -1503,13 +1715,15 @@ describe("IPC handler registration", () => {
       overrides: {},
     };
 
-    await expect(
-      (handler as (event: unknown, runId: string, signal: unknown) => Promise<void>)(
-        {},
-        "run-7",
-        invalidSignal
-      )
-    ).rejects.toThrow(/scope must be template or section/);
+    const invalidResult = await (
+      handler as (event: unknown, runId: string, signal: unknown) => Promise<unknown>
+    )({}, "run-7", invalidSignal);
+    expect(invalidResult).toMatchObject({
+      ok: false,
+      error: {
+        message: "Invalid template training signal: scope must be template or section",
+      },
+    });
   });
 
   it("record-template-training sanitizes templateId for filename", async () => {
@@ -1525,10 +1739,12 @@ describe("IPC handler registration", () => {
       overrides: { normalization: { rotationDeg: 0.5 } },
     };
 
-    await (handler as (event: unknown, runId: string, signal: unknown) => Promise<void>)(
-      {},
-      "run-8",
-      signal
+    unwrap(
+      await (handler as (event: unknown, runId: string, signal: unknown) => Promise<unknown>)(
+        {},
+        "run-8",
+        signal
+      )
     );
 
     const outputDir = path.join(process.cwd(), "pipeline-results");

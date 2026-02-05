@@ -16,6 +16,35 @@ import os from "node:os";
 import path from "node:path";
 import sharp from "sharp";
 
+const mockNative = {
+  estimateSkewAngle: vi.fn(() => ({ angle: 0, confidence: 0.8 })),
+  baselineMetrics: vi.fn(() => ({
+    lineConsistency: 0.6,
+    textLineCount: 6,
+    spacingNorm: 0.05,
+    spacingMadNorm: 0.004,
+    offsetNorm: 0.01,
+    angleDeg: 0,
+    confidence: 0.7,
+    peakSharpness: 1.1,
+    peaksY: [],
+  })),
+  columnMetrics: vi.fn(() => ({ columnCount: 1, columnSeparation: 0.4 })),
+  detectLayoutElements: vi.fn(() => []),
+  projectionProfileX: vi.fn((_data: Buffer, width: number) => new Array(width).fill(0)),
+  projectionProfileY: vi.fn((_data: Buffer, _width: number, height: number) =>
+    new Array(height).fill(0)
+  ),
+  sobelMagnitude: vi.fn((_data: Buffer, width: number, height: number) =>
+    new Array(width * height).fill(0)
+  ),
+  dhash9x8: vi.fn(() => "0"),
+};
+
+vi.mock("./pipeline-core-native.js", () => ({
+  getPipelineCoreNative: () => mockNative,
+}));
+
 const createSpreadImage = async (
   dir: string,
   name: string,
@@ -316,6 +345,10 @@ describe("Pipeline Runner", () => {
     const sidecarDir = path.join(runDir, "sidecars");
     const sidecars = await fs.readdir(sidecarDir);
     expect(sidecars.length).toBeGreaterThan(0);
+    const sampleSidecarPath = path.join(sidecarDir, sidecars[0]);
+    const sidecarRaw = await fs.readFile(sampleSidecarPath, "utf-8");
+    const sidecar = JSON.parse(sidecarRaw) as { guides?: { layers?: unknown[] } };
+    expect(sidecar.guides?.layers?.length).toBeGreaterThan(0);
     await expect(fs.stat(path.join(outputDir, "normalized"))).rejects.toThrow();
     await expect(fs.stat(path.join(outputDir, "previews"))).rejects.toThrow();
   }, 20000);

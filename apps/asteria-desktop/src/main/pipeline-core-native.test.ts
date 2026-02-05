@@ -8,7 +8,7 @@ vi.mock("node:module", () => ({
 }));
 
 describe("pipeline-core native loader", () => {
-  it("returns null when native module is unavailable", async () => {
+  it("returns a fallback when native module is unavailable", async () => {
     vi.resetModules();
     createRequireMock.mockReset();
     createRequireMock.mockReturnValue(() => {
@@ -16,7 +16,63 @@ describe("pipeline-core native loader", () => {
     });
 
     const { getPipelineCoreNative } = await import("./pipeline-core-native.js");
-    expect(getPipelineCoreNative()).toBeNull();
+    const fallback = getPipelineCoreNative();
+    expect(typeof fallback.estimateSkewAngle).toBe("function");
+    expect(typeof fallback.dhash9x8).toBe("function");
+  });
+
+  it("fallback algorithms return deterministic outputs", async () => {
+    vi.resetModules();
+    createRequireMock.mockReset();
+    createRequireMock.mockReturnValue(() => {
+      throw new Error("missing native module");
+    });
+
+    const { getPipelineCoreNative } = await import("./pipeline-core-native.js");
+    const fallback = getPipelineCoreNative();
+
+    const width = 8;
+    const height = 8;
+    const data = Buffer.alloc(width * height, 255);
+    for (let x = 0; x < width; x += 1) {
+      data[2 * width + x] = 0;
+      data[5 * width + x] = 0;
+    }
+    for (let y = 0; y < height; y += 1) {
+      data[y * width + 3] = 0;
+    }
+
+    const profileX = fallback.projectionProfileX(data, width, height);
+    const profileY = fallback.projectionProfileY(data, width, height);
+    expect(profileX).toHaveLength(width);
+    expect(profileY).toHaveLength(height);
+
+    const sobel = fallback.sobelMagnitude(data, width, height);
+    expect(sobel).toHaveLength(width * height);
+
+    const skew = fallback.estimateSkewAngle(data, width, height);
+    expect(Number.isFinite(skew.angle)).toBe(true);
+    expect(Number.isFinite(skew.confidence)).toBe(true);
+
+    const baseline = fallback.baselineMetrics(data, width, height);
+    expect(baseline.textLineCount).toBeGreaterThanOrEqual(1);
+    expect(baseline.lineConsistency).toBeGreaterThanOrEqual(0);
+
+    const columns = fallback.columnMetrics(data, width, height);
+    expect(columns.columnCount).toBeGreaterThanOrEqual(1);
+
+    const elements = fallback.detectLayoutElements(data, width, height);
+    expect(elements.length).toBeGreaterThan(0);
+    expect(elements.some((el) => el.id === "page-bounds")).toBe(true);
+
+    const dhashData = Buffer.alloc(9 * 8);
+    for (let y = 0; y < 8; y += 1) {
+      for (let x = 0; x < 9; x += 1) {
+        dhashData[y * 9 + x] = x * 16;
+      }
+    }
+    const hash = fallback.dhash9x8(dhashData);
+    expect(hash).not.toBe("0");
   });
 
   it("returns native module when exports are present", async () => {

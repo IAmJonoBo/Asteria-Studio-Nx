@@ -1,10 +1,9 @@
 #!/usr/bin/env ts-node
-/* eslint-disable no-console */
 import fs from "node:fs/promises";
 import path from "node:path";
 import { getRunDir } from "../src/main/run-paths.ts";
 import { loadEnv } from "../src/main/config.ts";
-import { info, note, section, startStep } from "./cli.ts";
+import { createProgressReporter, info, note, section, startStep } from "./cli.ts";
 
 loadEnv();
 
@@ -65,13 +64,18 @@ async function main(): Promise<void> {
   note(`Exporting ${selected.length} pages to ${outDir}`);
 
   const copyStep = startStep("Copy images");
+  const copyProgress = createProgressReporter("Copy progress");
+  let copied = 0;
   await Promise.all(
     selected.map(async (src) => {
       const dest = path.join(outDir, path.basename(src));
       await fs.copyFile(src, dest);
+      copied += 1;
+      copyProgress.update({ processed: copied, total: selected.length });
       return dest;
     })
   );
+  copyProgress.end("ok");
   copyStep.end("ok");
 
   const manifest = {

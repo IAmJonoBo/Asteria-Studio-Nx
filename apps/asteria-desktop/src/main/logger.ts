@@ -37,7 +37,8 @@ const normalizeLevel = (value: string | undefined): LogLevel => {
 const safeStringify = (payload: unknown): string => {
   try {
     return JSON.stringify(payload);
-  } catch {
+  } catch (error) {
+    console.warn("Failed to serialize log payload", error);
     return JSON.stringify({ message: "Failed to serialize log payload" });
   }
 };
@@ -92,8 +93,8 @@ export const createRunLogger = (runDir: string, config?: LoggerConfig): RunLogge
     if (keepLogs) return;
     try {
       await fs.rm(logDir, { recursive: true, force: true });
-    } catch {
-      // ignore cleanup errors
+    } catch (error) {
+      console.warn("Failed to cleanup run logs", error);
     }
   };
 

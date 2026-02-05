@@ -19,31 +19,16 @@ export const RUNNING_HEAD_BAND: BandSpec = { yStartRatio: 0.02, yEndRatio: 0.14 
 export const FOLIO_BAND: BandSpec = { yStartRatio: 0.86, yEndRatio: 0.98 };
 export const ORNAMENT_BAND: BandSpec = { yStartRatio: 0.14, yEndRatio: 0.24 };
 
-const computeDHash = (data: Uint8Array, width: number, height: number): string => {
-  const native = getPipelineCoreNative();
-  if (native && width === 9 && height === 8 && data.length >= 72) {
-    try {
-      return native.dhash9x8(Buffer.from(data.subarray(0, 72)));
-    } catch {
-      // fall through to JS implementation
-    }
+const computeDHash = (
+  data: Uint8Array,
+  width: number,
+  height: number,
+  native: ReturnType<typeof getPipelineCoreNative>
+): string => {
+  if (width !== 9 || height !== 8 || data.length < 72) {
+    throw new Error("Invalid input for dhash9x8; expected 9x8 grayscale data");
   }
-
-  let bits = "";
-  for (let y = 0; y < height; y++) {
-    for (let x = 0; x < width - 1; x++) {
-      const left = data[y * width + x];
-      const right = data[y * width + x + 1];
-      bits += left < right ? "1" : "0";
-    }
-  }
-
-  let hex = "";
-  for (let i = 0; i < bits.length; i += 4) {
-    const chunk = bits.slice(i, i + 4);
-    hex += Number.parseInt(chunk, 2).toString(16);
-  }
-  return hex;
+  return native.dhash9x8(Buffer.from(data.subarray(0, 72)));
 };
 
 const computeVariance = (data: Uint8Array): number => {
@@ -57,6 +42,7 @@ export const hashBand = async (
   imagePath: string,
   band: BandSpec
 ): Promise<{ hash: string; variance: number } | null> => {
+  const native = getPipelineCoreNative();
   try {
     await fs.access(imagePath);
     const meta = await sharp(imagePath).metadata();
@@ -77,10 +63,11 @@ export const hashBand = async (
 
     const bytes = new Uint8Array(data);
     return {
-      hash: computeDHash(bytes, 9, 8),
+      hash: computeDHash(bytes, 9, 8, native),
       variance: computeVariance(bytes),
     };
-  } catch {
+  } catch (error) {
+    console.warn(`Failed to hash band for ${imagePath}`, error);
     return null;
   }
 };

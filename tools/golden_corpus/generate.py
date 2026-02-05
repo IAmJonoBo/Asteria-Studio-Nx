@@ -4,9 +4,18 @@ import json
 import math
 import os
 import random
+import sys
+import time
+import traceback
 from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Optional, Tuple
+
+OBS_PATH = Path(__file__).resolve().parents[1] / "observability"
+if str(OBS_PATH) not in sys.path:
+    sys.path.append(str(OBS_PATH))
+
+from py_reporter import create_run_reporter
 
 import cv2
 import imagehash
@@ -375,7 +384,7 @@ def build_clean_double(
         baselineGrid=BaselineGrid(medianSpacingPx=28.67),
         ornaments=[],
         shouldSplit=False,
-        expectedReviewReasons=["low-shading-confidence", "residual-skew-*"],
+        expectedReviewReasons=["low-shading-confidence"],
     )
     manifest = ManifestEntry(
         id="p02_clean_double",
@@ -407,7 +416,7 @@ def build_running_head(
         baselineGrid=BaselineGrid(medianSpacingPx=18.71),
         ornaments=[],
         shouldSplit=False,
-        expectedReviewReasons=["low-shading-confidence", "residual-skew-*"],
+        expectedReviewReasons=["low-shading-confidence"],
     )
     manifest = ManifestEntry(
         id="p03_running_head_folio",
@@ -438,7 +447,7 @@ def build_ornament(
         baselineGrid=BaselineGrid(medianSpacingPx=16.85),
         ornaments=[Ornament(box=list(ornament_box), hash=ornament_hash)],
         shouldSplit=False,
-        expectedReviewReasons=["low-shading-confidence", "residual-skew-*"],
+        expectedReviewReasons=["low-shading-confidence"],
     )
     manifest = ManifestEntry(
         id="p04_ornament",
@@ -471,7 +480,7 @@ def build_footnotes_marginalia(
         baselineGrid=BaselineGrid(medianSpacingPx=25.76),
         ornaments=[],
         shouldSplit=False,
-        expectedReviewReasons=["low-shading-confidence", "residual-skew-*"],
+        expectedReviewReasons=["low-shading-confidence"],
     )
     manifest = ManifestEntry(
         id="p05_footnotes_marginalia",
@@ -499,7 +508,6 @@ def build_blank_verso(
         expectedReviewReasons=[
             "low-skew-confidence",
             "low-shading-confidence",
-            "residual-skew-*",
         ],
     )
     manifest = ManifestEntry(
@@ -575,7 +583,7 @@ def build_shadow_page(
         baselineGrid=BaselineGrid(medianSpacingPx=baseline_spacing),
         ornaments=[],
         shouldSplit=False,
-        expectedReviewReasons=["low-shading-confidence", "residual-skew-*"],
+        expectedReviewReasons=["low-shading-confidence"],
     )
     manifest = ManifestEntry(
         id=page_id,
@@ -641,7 +649,6 @@ def build_spread(
         shouldSplit=True,
         expectedReviewReasons=[
             "low-shading-confidence",
-            "residual-skew-*",
             "spread-split-low-confidence",
         ],
     )
@@ -672,7 +679,7 @@ def build_curved_warp(
         baselineGrid=BaselineGrid(medianSpacingPx=34.85),
         ornaments=[],
         shouldSplit=False,
-        expectedReviewReasons=["low-shading-confidence", "residual-skew-*"],
+        expectedReviewReasons=["low-shading-confidence"],
     )
     manifest = ManifestEntry(
         id="p11_curved_warp",
@@ -701,7 +708,7 @@ def build_rotation_perspective(
         baselineGrid=BaselineGrid(medianSpacingPx=23.86),
         ornaments=[],
         shouldSplit=False,
-        expectedReviewReasons=["low-shading-confidence", "residual-skew-*"],
+        expectedReviewReasons=["low-shading-confidence"],
     )
     manifest = ManifestEntry(
         id="p12_rot_perspective",
@@ -730,7 +737,7 @@ def build_rotation_only(
         baselineGrid=BaselineGrid(medianSpacingPx=24.11),
         ornaments=[],
         shouldSplit=False,
-        expectedReviewReasons=["low-shading-confidence", "residual-skew-*"],
+        expectedReviewReasons=["low-shading-confidence"],
     )
     manifest = ManifestEntry(
         id="p13_rotation_only",
@@ -795,7 +802,6 @@ def build_spread_light_gutter(
         shouldSplit=True,
         expectedReviewReasons=[
             "low-shading-confidence",
-            "residual-skew-*",
             "spread-split-low-confidence",
         ],
     )
@@ -833,7 +839,7 @@ def build_crop_adjustment(
         baselineGrid=BaselineGrid(medianSpacingPx=27.35),
         ornaments=[],
         shouldSplit=False,
-        expectedReviewReasons=["low-shading-confidence", "residual-skew-*"],
+        expectedReviewReasons=["low-shading-confidence"],
     )
     manifest = ManifestEntry(
         id="p15_crop_adjustment",
@@ -872,7 +878,7 @@ def build_overlay_element_classes(
         baselineGrid=BaselineGrid(medianSpacingPx=23.02),
         ornaments=[],
         shouldSplit=False,
-        expectedReviewReasons=["low-shading-confidence", "residual-skew-*"],
+        expectedReviewReasons=["low-shading-confidence"],
     )
     manifest = ManifestEntry(
         id="p16_overlay_elements",
@@ -950,38 +956,78 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Generate golden corpus v1")
     parser.add_argument("--seed", type=int, default=1337)
     parser.add_argument("--out", type=str, required=True)
+    parser.add_argument("--run-id", type=str, default=None)
     args = parser.parse_args()
 
-    rng = seed_everything(args.seed)
+    run_id = args.run_id or f"golden-{args.seed}-{int(time.time() * 1000)}"
+    reporter = create_run_reporter("golden_corpus", run_id=run_id)
 
-    out_root = Path(args.out)
-    inputs_dir = out_root / "inputs"
-    truth_dir = out_root / "truth"
-    expected_dir = out_root / "expected"
-    inputs_dir.mkdir(parents=True, exist_ok=True)
-    truth_dir.mkdir(parents=True, exist_ok=True)
-    expected_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        with reporter.phase("prepare") as phase:
+            rng = seed_everything(args.seed)
+            out_root = Path(args.out)
+            inputs_dir = out_root / "inputs"
+            truth_dir = out_root / "truth"
+            expected_dir = out_root / "expected"
+            inputs_dir.mkdir(parents=True, exist_ok=True)
+            truth_dir.mkdir(parents=True, exist_ok=True)
+            expected_dir.mkdir(parents=True, exist_ok=True)
+            phase.set(1, 1)
 
-    pages = build_pages(rng)
+        with reporter.phase("generate") as phase:
+            pages = build_pages(rng)
+            phase.set(len(pages), len(pages))
 
-    for img, truth, entry in pages:
-        img_path = inputs_dir / f"{truth.pageId}.png"
-        save_image(img, img_path)
-        truth_path = truth_dir / entry.truthFile
-        save_json(truth, truth_path)
+        with reporter.phase("write-truth", total=len(pages)) as phase:
+            for img, truth, entry in pages:
+                img_path = inputs_dir / f"{truth.pageId}.png"
+                save_image(img, img_path)
+                truth_path = truth_dir / entry.truthFile
+                save_json(truth, truth_path)
+                phase.tick(1, attrs={"pageId": truth.pageId, "image": str(img_path)})
 
-    manifest = Manifest(
-        version="1",
-        seed=args.seed,
-        dpi=DPI,
-        imageSizePx={"width": WIDTH, "height": HEIGHT},
-        pages=[entry for _img, _truth, entry in pages],
-    )
-    manifest_path = out_root / "manifest.json"
-    save_json(manifest, manifest_path)
+        with reporter.phase("validate", total=len(pages)) as phase:
+            missing = []
+            for _img, truth, entry in pages:
+                img_path = inputs_dir / f"{truth.pageId}.png"
+                truth_path = truth_dir / entry.truthFile
+                if not img_path.exists() or not truth_path.exists():
+                    missing.append((truth.pageId, str(img_path), str(truth_path)))
+                phase.tick(1)
+            if missing:
+                raise RuntimeError(f"Missing outputs for {len(missing)} page(s)")
 
-    print(f"Golden corpus written to {out_root}")
+        with reporter.phase("manifest") as phase:
+            manifest = Manifest(
+                version="1",
+                seed=args.seed,
+                dpi=DPI,
+                imageSizePx={"width": WIDTH, "height": HEIGHT},
+                pages=[entry for _img, _truth, entry in pages],
+            )
+            manifest_path = out_root / "manifest.json"
+            save_json(manifest, manifest_path)
+            phase.set(1, 1)
+
+        print(f"Golden corpus written to {out_root}")
+        reporter.finalize({"pages": len(pages), "output": str(out_root)})
+    except Exception as exc:
+        tb = traceback.extract_tb(exc.__traceback__)
+        location = tb[-1] if tb else None
+        reporter.error(
+            "GOLDEN_GENERATE_FAILED",
+            str(exc),
+            file=location.filename if location else str(Path.cwd() / "UNKNOWN"),
+            line=location.lineno if location else 0,
+            col=0,
+            exc=exc,
+        )
+        reporter.finalize({"status": "fail"})
+        raise
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception:
+        sys.exit(1)

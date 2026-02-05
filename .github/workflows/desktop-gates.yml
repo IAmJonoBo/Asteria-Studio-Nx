@@ -1,0 +1,121 @@
+name: Desktop Gates
+
+on:
+  workflow_call:
+    inputs:
+      offline:
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  actions: read
+  pull-requests: read
+
+env:
+  PNPM_STORE_DIR: .pnpm-store
+
+jobs:
+  desktop-gates:
+    runs-on: ubuntu-latest
+    env:
+      NX_CACHE_MODE: ${{ vars.NX_CACHE_MODE }}
+      NX_REMOTE_CACHE_URL: ${{ vars.NX_REMOTE_CACHE_URL }}
+      NX_REMOTE_CACHE_ACCESS_TOKEN: ${{ secrets.NX_REMOTE_CACHE_ACCESS_TOKEN }}
+      NX_CLOUD_ACCESS_TOKEN: ${{ github.event_name == 'pull_request' && secrets.NX_CLOUD_ACCESS_TOKEN_RO || secrets.NX_CLOUD_ACCESS_TOKEN_RW }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.28.2
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Cache pnpm store
+        uses: actions/cache@v4
+        with:
+          path: .pnpm-store
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-store-
+
+      - name: Cache Nx
+        uses: actions/cache@v4
+        with:
+          path: .nx/cache
+          key: ${{ runner.os }}-nx-${{ github.ref }}-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-nx-${{ github.ref }}-
+            ${{ runner.os }}-nx-
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Set Nx SHAs
+        uses: nrwl/nx-set-shas@v4
+        with:
+          main-branch-name: main
+
+      - name: Nx Cloud start (self-healing)
+        if: ${{ env.NX_CLOUD_ACCESS_TOKEN != '' }}
+        run: pnpm exec nx start-ci-run --no-distribution --fix-tasks="*lint*,*test*,*build*,*format*" --auto-apply-fixes="*lint*,*format*"
+
+      - name: Format check (affected)
+        run: pnpm exec nx format:check --base=$NX_BASE --head=$NX_HEAD
+
+      - name: Dead code (Knip)
+        run: pnpm ci:knip
+
+      - name: IPC channel gate
+        run: pnpm ci:ipc
+
+      - name: Silent catch gate
+        run: pnpm ci:catch
+
+      - name: Release zip artifact gate
+        run: pnpm ci:zip
+
+      - name: Lint (affected)
+        run: pnpm ci:lint
+
+      - name: Test (affected)
+        run: pnpm ci:test
+
+      - name: Build (affected)
+        run: pnpm ci:build
+
+      - name: Golden corpus regression
+        run: pnpm golden:test
+        env:
+          CI: true
+
+      - name: Install Playwright browsers
+        if: ${{ inputs.offline == false }}
+        run: pnpm -C apps/asteria-desktop exec playwright install --with-deps
+
+      - name: Run E2E tests (affected)
+        if: ${{ inputs.offline == false }}
+        run: pnpm nx -- affected -t e2e
+        env:
+          CI: true
+
+      - name: Upload coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: apps/asteria-desktop/coverage/
+
+      - name: Nx Cloud fix (self-healing)
+        if: ${{ always() && env.NX_CLOUD_ACCESS_TOKEN != '' }}
+        run: pnpm exec nx fix-ci

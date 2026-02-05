@@ -93,27 +93,27 @@ export const guidePaletteByGroup: Record<GuideGroup, string> = {
 const guideDashTokensByLayer: Record<string, { major: string; minor: string }> = {
   "baseline-grid": {
     major: "var(--guide-dash-solid)",
-    minor: "var(--guide-dash-solid)",
+    minor: "var(--guide-dash-baseline-minor)",
   },
   rulers: {
     major: "var(--guide-dash-solid)",
     minor: "var(--guide-dash-solid)",
   },
   "margin-guides": {
-    major: "var(--guide-dash-dashed)",
-    minor: "var(--guide-dash-dashed)",
+    major: "var(--guide-dash-margin)",
+    minor: "var(--guide-dash-margin)",
   },
   "column-guides": {
-    major: "var(--guide-dash-dashed)",
-    minor: "var(--guide-dash-dashed)",
+    major: "var(--guide-dash-column)",
+    minor: "var(--guide-dash-column)",
   },
   "gutter-bands": {
     major: "var(--guide-dash-gutter)",
     minor: "var(--guide-dash-gutter)",
   },
   "header-footer-bands": {
-    major: "var(--guide-dash-dashed)",
-    minor: "var(--guide-dash-dotted)",
+    major: "var(--guide-dash-header)",
+    minor: "var(--guide-dash-header)",
   },
   "ornament-anchors": {
     major: "var(--guide-dash-dotted)",

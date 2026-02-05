@@ -1,3 +1,5 @@
+/* eslint-disable no-console */
+
 type StepStatus = "ok" | "warn" | "fail";
 
 type Step = {
@@ -5,6 +7,10 @@ type Step = {
 };
 
 const supportsColor = Boolean(process.stdout.isTTY);
+const devLogs =
+  process.env.ASTERIA_DEV_LOGS === "1" ||
+  process.env.ASTERIA_DEV_LOGS === "true" ||
+  process.env.DEBUG === "1";
 
 const colorize = (code: string) => (value: string) =>
   supportsColor ? `\u001b[${code}m${value}\u001b[0m` : value;
@@ -50,6 +56,73 @@ export const info = (message: string): void => {
 
 export const note = (message: string): void => {
   console.log(dim(`  ${message}`));
+};
+
+export const devLog = (message: string): void => {
+  if (!devLogs) return;
+  console.log(dim(`  [dev] ${message}`));
+};
+
+type ProgressUpdate = {
+  processed: number;
+  total: number;
+  stage?: string;
+  throughput?: number;
+};
+
+type ProgressReporter = {
+  update: (update: ProgressUpdate, force?: boolean) => void;
+  end: (status?: StepStatus, detail?: string) => void;
+};
+
+const formatThroughput = (throughput?: number): string => {
+  if (!throughput || !Number.isFinite(throughput)) return "";
+  return ` • ${throughput.toFixed(2)} pages/sec`;
+};
+
+const formatProgress = (label: string, update: ProgressUpdate): string => {
+  const { processed, total, stage } = update;
+  const pct = total > 0 ? Math.min(100, Math.max(0, (processed / total) * 100)) : 0;
+  const stageLabel = stage ? ` • ${stage}` : "";
+  return `${label}: ${processed}/${total} (${pct.toFixed(1)}%)${stageLabel}${formatThroughput(
+    update.throughput
+  )}`;
+};
+
+export const createProgressReporter = (
+  label: string,
+  options?: { minIntervalMs?: number }
+): ProgressReporter => {
+  const minIntervalMs = options?.minIntervalMs ?? 250;
+  let lastEmit = 0;
+  let lastLine = "";
+  const writeLine = (line: string): void => {
+    if (process.stdout.isTTY) {
+      process.stdout.clearLine(0);
+      process.stdout.cursorTo(0);
+      process.stdout.write(line);
+    } else {
+      console.log(`  ${line}`);
+    }
+  };
+  const update = (progress: ProgressUpdate, force = false): void => {
+    const now = Date.now();
+    if (!force && now - lastEmit < minIntervalMs) return;
+    const line = formatProgress(label, progress);
+    if (line === lastLine && !force) return;
+    lastEmit = now;
+    lastLine = line;
+    writeLine(line);
+  };
+  const end = (status: StepStatus = "ok", detail?: string): void => {
+    if (process.stdout.isTTY) {
+      process.stdout.clearLine(0);
+      process.stdout.cursorTo(0);
+    }
+    const suffix = detail ? ` - ${detail}` : "";
+    console.log(`${dim(timestamp())} [${statusLabel(status)}] ${label}${suffix}`);
+  };
+  return { update, end };
 };
 
 export const startStep = (label: string): Step => {

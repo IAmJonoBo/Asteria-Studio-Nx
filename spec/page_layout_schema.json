@@ -130,6 +130,53 @@
         }
       }
     },
+    "guides": {
+      "type": "object",
+      "properties": {
+        "layers": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "guides"],
+            "properties": {
+              "id": { "type": "string" },
+              "guides": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": ["id", "axis", "position", "kind"],
+                  "properties": {
+                    "id": { "type": "string" },
+                    "axis": { "type": "string", "enum": ["x", "y"] },
+                    "position": { "type": "number" },
+                    "kind": { "type": "string", "enum": ["major", "minor"] },
+                    "label": { "type": "string" },
+                    "role": {
+                      "type": "string",
+                      "enum": [
+                        "baseline",
+                        "margin",
+                        "column",
+                        "gutter",
+                        "header-band",
+                        "footer-band",
+                        "ornament",
+                        "diagnostic",
+                        "ruler",
+                        "detected"
+                      ]
+                    },
+                    "source": { "type": "string", "enum": ["auto", "template", "user"] },
+                    "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+                    "locked": { "type": "boolean" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "metrics": {
       "type": "object",
       "properties": {
@@ -153,6 +200,65 @@
             "peaksY": {
               "type": "array",
               "items": { "type": "number", "minimum": 0, "maximum": 1 }
+            }
+          }
+        }
+      }
+    },
+    "overrides": {
+      "type": "object",
+      "properties": {
+        "guides": {
+          "type": "object",
+          "properties": {
+            "baselineGrid": {
+              "type": "object",
+              "properties": {
+                "spacingPx": { "type": ["number", "null"] },
+                "offsetPx": { "type": ["number", "null"] },
+                "angleDeg": { "type": ["number", "null"] },
+                "snapToPeaks": { "type": "boolean" },
+                "markCorrect": { "type": "boolean" }
+              }
+            },
+            "margins": {
+              "type": "object",
+              "properties": {
+                "topPx": { "type": ["number", "null"] },
+                "rightPx": { "type": ["number", "null"] },
+                "bottomPx": { "type": ["number", "null"] },
+                "leftPx": { "type": ["number", "null"] }
+              }
+            },
+            "columns": {
+              "type": "object",
+              "properties": {
+                "count": { "type": ["number", "null"] },
+                "leftPx": { "type": ["number", "null"] },
+                "rightPx": { "type": ["number", "null"] },
+                "gutterPx": { "type": ["number", "null"] }
+              }
+            },
+            "headerBand": {
+              "type": "object",
+              "properties": {
+                "startPx": { "type": ["number", "null"] },
+                "endPx": { "type": ["number", "null"] }
+              }
+            },
+            "footerBand": {
+              "type": "object",
+              "properties": {
+                "startPx": { "type": ["number", "null"] },
+                "endPx": { "type": ["number", "null"] }
+              }
+            },
+            "gutterBand": {
+              "type": "object",
+              "properties": {
+                "startPx": { "type": ["number", "null"] },
+                "endPx": { "type": ["number", "null"] }
+              }
             }
           }
         }

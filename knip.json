@@ -1,0 +1,55 @@
+{
+  "$schema": "https://unpkg.com/knip@5/schema.json",
+  "workspaces": {
+    "apps/asteria-desktop": {
+      "entry": [
+        "src/main/main.ts",
+        "src/main/ipc.ts",
+        "src/preload/index.ts",
+        "src/renderer/main.tsx"
+      ],
+      "project": ["tsconfig.json", "tsconfig.build.json"],
+      "ignore": [
+        "dist/**",
+        "dist-app/**",
+        "coverage/**",
+        "playwright-report/**",
+        "test-results/**",
+        "pipeline-results/**",
+        "build/**",
+        "resources/**",
+        "scripts/**",
+        "**/*.test.ts",
+        "**/*.spec.ts"
+      ]
+    },
+    "packages/ui-kit": {
+      "entry": ["src/index.ts"],
+      "project": ["tsconfig.json"],
+      "ignore": ["dist/**", "coverage/**", "**/*.test.ts", "**/*.spec.ts"]
+    }
+  },
+  "ignore": [
+    ".trunk/**",
+    "artifacts/**",
+    "pipeline-results/**",
+    "release_review/**",
+    "tools/observability/nodeReporter.d.mts",
+    "tools/observability/nodeReporter.d.ts",
+    "tools/preflight/run-pipeline.mjs",
+    "**/*.md"
+  ],
+  "ignoreDependencies": [
+    "archiver",
+    "@types/archiver",
+    "@types/pixelmatch",
+    "@typescript-eslint/eslint-plugin",
+    "@typescript-eslint/parser",
+    "typescript-eslint"
+  ],
+  "ignoreBinaries": [
+    "affected",
+    "build:main",
+    "playwright"
+  ]
+}

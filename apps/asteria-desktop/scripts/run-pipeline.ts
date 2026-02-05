@@ -1,5 +1,4 @@
 #!/usr/bin/env ts-node
-/* eslint-disable no-console */
 /**
  * CLI runner for executing the pipeline on the Mind, Myth and Magick corpus
  * and generating evaluation reports.
@@ -8,9 +7,11 @@
 import { runPipeline, evaluateResults } from "../src/main/pipeline-runner.ts";
 import fs from "node:fs/promises";
 import path from "node:path";
+import crypto from "node:crypto";
 import { getRunDir } from "../src/main/run-paths.ts";
 import { loadEnv } from "../src/main/config.ts";
-import { info, note, section, startStep } from "./cli.ts";
+import { createProgressReporter, devLog, info, note, section, startStep } from "./cli.ts";
+import { createRunReporter } from "../../tools/observability/nodeReporter.mjs";
 
 loadEnv();
 
@@ -19,6 +20,13 @@ async function main(): Promise<void> {
     process.argv[2] || path.join(process.cwd(), "projects/mind-myth-and-magick/input/raw");
   const sampleCount = process.argv[3] ? Number.parseInt(process.argv[3], 10) : undefined;
   const outputDir = path.join(process.cwd(), "pipeline-results");
+  const runId =
+    process.env.ASTERIA_RUN_ID ?? `run-${Date.now()}-${crypto.randomUUID().split("-")[0]}`;
+  const reporter = createRunReporter({
+    tool: "pipeline",
+    runId,
+    outputDir: process.env.ASTERIA_OBS_DIR ?? undefined,
+  });
 
   section("ASTERIA PIPELINE EXECUTION");
   info(`Project Root: ${projectRoot}`);
@@ -37,15 +45,48 @@ async function main(): Promise<void> {
     // Run pipeline
     const runStep = startStep("Run pipeline");
     const startTime = Date.now();
+    const progress = createProgressReporter("Pipeline progress");
+    let activeStage: string | null = null;
+    const stagePhases = new Map<string, ReturnType<typeof reporter.phase>>();
+    const getStagePhase = (stage: string, total?: number) => {
+      if (!stagePhases.has(stage)) {
+        const phase = reporter.phase(stage, total ?? 0);
+        phase.start();
+        stagePhases.set(stage, phase);
+      }
+      return stagePhases.get(stage)!;
+    };
     const result = await runPipeline({
       projectRoot,
       projectId: "mind-myth-magick",
+      runId,
       targetDpi: 300,
       targetDimensionsMm: { width: 184.15, height: 260.35 },
       sampleCount,
       outputDir,
+      onProgress: (event) => {
+        if (event.stage && event.stage !== activeStage) {
+          if (activeStage && stagePhases.has(activeStage)) {
+            stagePhases.get(activeStage)!.end("ok");
+          }
+          devLog(`Stage: ${event.stage}`);
+          activeStage = event.stage;
+        }
+        progress.update({
+          processed: event.processed ?? 0,
+          total: event.total ?? 0,
+          stage: event.stage,
+          throughput: event.throughput,
+        });
+        const phase = getStagePhase(event.stage ?? "progress", event.total ?? 0);
+        phase.set(event.processed ?? 0, event.total ?? 0, {
+          stage: event.stage,
+          throughput: event.throughput,
+        });
+      },
     });
     const totalTime = Date.now() - startTime;
+    progress.end(result.success ? "ok" : "fail");
     runStep.end(result.success ? "ok" : "fail");
 
     section("PIPELINE RESULTS");
@@ -59,7 +100,15 @@ async function main(): Promise<void> {
       note("Errors:");
       result.errors.forEach((e) => {
         info(`[${e.phase}] ${e.message}`);
+        reporter.error("PIPELINE_FAILED", `[${e.phase}] ${e.message}`, {
+          phase: e.phase,
+          file: path.join(getRunDir(outputDir, result.runId), "report.json"),
+          line: 1,
+          col: 0,
+        });
       });
+      reporter.finalize({ status: "fail" });
+      await reporter.flush();
       process.exit(1);
     }
 
@@ -97,9 +146,28 @@ async function main(): Promise<void> {
       JSON.stringify({ executedAt: new Date().toISOString(), result, evaluation }, null, 2)
     );
     writeStep.end("ok", reportPath);
+
+    if (activeStage && stagePhases.has(activeStage)) {
+      stagePhases.get(activeStage)!.end("ok");
+    }
+    reporter.finalize({
+      status: "ok",
+      outputPaths: [path.join(getRunDir(outputDir, result.runId), "report.json"), reportPath],
+    });
+    await reporter.flush();
   } catch (error) {
     console.error("Pipeline execution failed:");
-    console.error(error instanceof Error ? error.message : String(error));
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(message);
+    reporter.error("PIPELINE_EXECUTION_FAILED", message, {
+      phase: "pipeline",
+      file: path.join(process.cwd(), "apps", "asteria-desktop", "scripts", "run-pipeline.ts"),
+      line: 1,
+      col: 0,
+      attrs: { projectRoot },
+    });
+    reporter.finalize({ status: "fail" });
+    await reporter.flush();
     process.exit(1);
   }
 }

@@ -99,7 +99,8 @@ const updateRunManifestStatus = async (
     const parsed = JSON.parse(raw) as Record<string, unknown>;
     const updated = { ...parsed, status };
     await writeJsonAtomic(manifestPath, updated);
-  } catch {
+  } catch (error) {
+    console.warn(`Failed to read manifest at ${manifestPath}`, error);
     await writeJsonAtomic(manifestPath, {
       runId,
       status,
@@ -127,7 +128,8 @@ const updateRunReportStatus = async (
       status,
       updatedAt: new Date().toISOString(),
     });
-  } catch {
+  } catch (error) {
+    console.warn(`Failed to read report at ${reportPath}`, error);
     await writeJsonAtomic(reportPath, {
       runId,
       projectId,
