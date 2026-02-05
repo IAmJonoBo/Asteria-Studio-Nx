@@ -1,4 +1,6 @@
 import { createRequire } from "node:module";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 export type PipelineCoreNative = {
   estimateSkewAngle: (
@@ -400,9 +402,12 @@ const createFallbackNative = (): PipelineCoreNative => {
 const loadPipelineCoreNative = (): PipelineCoreNative => {
   if (cached) return cached;
   const require = createRequire(import.meta.url);
+  const moduleDir = path.dirname(fileURLToPath(import.meta.url));
+  const appRoot = path.resolve(moduleDir, "..", "..");
+  const repoRoot = path.resolve(appRoot, "..", "..");
   const candidates = [
-    "../../../packages/pipeline-core",
-    "../../../../packages/pipeline-core",
+    path.join(repoRoot, "packages", "pipeline-core"),
+    path.join(appRoot, "..", "packages", "pipeline-core"),
     "pipeline-core",
   ];
   let lastError: unknown = null;

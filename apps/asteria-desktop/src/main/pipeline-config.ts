@@ -1,5 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import YAML from "yaml";
 import type {
   PipelineConfig,
@@ -122,10 +123,19 @@ const defaultConfig: PipelineConfig = {
   logging: { level: "info", per_page_logs: true, keep_logs: true },
 };
 
-const resolveConfigPath = (configPath?: string): string =>
-  configPath ??
-  process.env.ASTERIA_PIPELINE_CONFIG_PATH ??
-  path.join(process.cwd(), "spec", "pipeline_config.yaml");
+const resolveConfigPath = (configPath?: string): string => {
+  if (configPath) return configPath;
+  const envPath = process.env.ASTERIA_PIPELINE_CONFIG_PATH;
+  if (envPath) return envPath;
+  const cwd = process.cwd();
+  const cwdPath = path.join(cwd, "spec", "pipeline_config.yaml");
+  const moduleDir = path.dirname(fileURLToPath(import.meta.url));
+  const appRoot = path.resolve(moduleDir, "..", "..");
+  const repoRoot = path.resolve(appRoot, "..", "..");
+  const isAppRoot =
+    path.basename(cwd) === "asteria-desktop" && path.basename(path.dirname(cwd)) === "apps";
+  return isAppRoot ? path.join(repoRoot, "spec", "pipeline_config.yaml") : cwdPath;
+};
 
 const mergeDeep = <T extends object>(target: T, source: Record<string, unknown>): T => {
   const output = { ...(target as Record<string, unknown>) } as Record<string, unknown>;
