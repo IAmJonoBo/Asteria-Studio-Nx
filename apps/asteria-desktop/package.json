@@ -39,9 +39,11 @@
     "dist": "pnpm run build && pnpm run vendor:sharp && pnpm exec electron-builder install-app-deps && electron-builder --publish=never"
   },
   "dependencies": {
+    "archiver": "^7.0.1",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "sharp": "^0.34.5",
+    "wrap-ansi": "^7.0.0",
     "yaml": "^2.8.2"
   },
   "devDependencies": {
@@ -49,6 +51,7 @@
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
     "@testing-library/user-event": "^14.6.1",
+    "@types/archiver": "^7.0.0",
     "@types/node": "^25.2.0",
     "@types/pixelmatch": "^5.2.6",
     "@types/react": "^19.2.10",
@@ -62,6 +65,7 @@
     "concurrently": "^9.2.1",
     "electron": "^40.1.0",
     "electron-builder": "^26.7.0",
+    "@electron/notarize": "^2.5.0",
     "eslint": "^9.39.2",
     "eslint-plugin-react": "^7.37.5",
     "eslint-plugin-react-hooks": "^7.0.1",
@@ -88,7 +92,8 @@
     "directories": {
       "output": "dist-app"
     },
-    "icon": "build/icon.png",
+    "afterSign": "scripts/notarize.mjs",
+    "icon": "resources/icons/icon.png",
     "asarUnpack": [
       "**/*.node",
       "node_modules/sharp/**",
@@ -99,17 +104,27 @@
       "package.json",
       "node_modules/**"
     ],
+    "extraResources": [
+      {
+        "from": "resources/sample-corpus",
+        "to": "sample-corpus"
+      }
+    ],
     "asar": true,
     "mac": {
-      "icon": "build/icon.icns",
+      "icon": "resources/icons/icon.icns",
+      "hardenedRuntime": true,
+      "entitlements": "resources/entitlements.mac.plist",
+      "entitlementsInherit": "resources/entitlements.mac.plist",
+      "gatekeeperAssess": false,
       "target": "dmg"
     },
     "win": {
-      "icon": "build/icon.ico",
+      "icon": "resources/icons/icon.ico",
       "target": "nsis"
     },
     "linux": {
-      "icon": "build/icon.png",
+      "icon": "resources/icons/icon.png",
       "target": "AppImage"
     }
   }
