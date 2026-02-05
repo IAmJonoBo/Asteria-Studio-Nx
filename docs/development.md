@@ -10,6 +10,8 @@ pnpm test
 pnpm test:e2e
 pnpm build
 pnpm validate
+pnpm validate:fix
+pnpm validate:affected
 ```
 
 ## Nx Usage
@@ -29,9 +31,15 @@ pnpm nx -- run-many -t lint,test,build
 
 ## Formatting
 
-- Check formatting: `pnpm format`
+- Check formatting: `pnpm format` (or `pnpm format:check`)
 - Apply formatting: `pnpm format:write`
-- Trunk format check: `pnpm trunk:fmt`
+- Apply Trunk formatting: `pnpm trunk:fmt`
+
+## Validation
+
+- `pnpm validate`: non-mutating CI-style checks
+- `pnpm validate:fix`: apply formatting then run checks
+- `pnpm validate:affected`: fast path using Nx affected targets
 
 ## Golden Corpus Tests
 
