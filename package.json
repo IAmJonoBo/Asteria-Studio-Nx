@@ -41,6 +41,10 @@
     "ci:lint": "node tools/nx/run.mjs affected -t lint",
     "ci:test": "node tools/nx/run.mjs affected -t test",
     "ci:build": "node tools/nx/run.mjs affected -t build",
+    "ci:knip": "pnpm exec knip --config knip.json",
+    "ci:ipc": "node tools/quality/check-orphan-ipc.mjs",
+    "ci:catch": "node tools/quality/check-empty-catch.mjs",
+    "ci:zip": "node tools/quality/check-release-artifacts.mjs",
     "ci:quality": "pnpm trunk:check && pnpm format && pnpm lint && pnpm typecheck && pnpm build && pnpm build:verify && pnpm test",
     "ci:e2e": "pnpm test:e2e",
     "ci:desktop": "pnpm build && pnpm build:verify && pnpm package:full",
@@ -60,7 +64,8 @@
     "eslint": "9.39.2",
     "eslint-plugin-react": "7.37.5",
     "eslint-plugin-react-hooks": "7.0.1",
-    "typescript-eslint": "8.54.0",
-    "nx": "22.4.5"
+    "knip": "5.83.0",
+    "nx": "22.4.5",
+    "typescript-eslint": "8.54.0"
   }
 }

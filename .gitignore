@@ -25,6 +25,7 @@ pnpm-debug.log*
 apps/asteria-desktop/dist/
 apps/asteria-desktop/dist-app/
 apps/asteria-desktop/.vite/
+apps/asteria-desktop/build/
 apps/asteria-desktop/node_modules/
 apps/asteria-desktop/pipeline-results/
 pipeline-results/
