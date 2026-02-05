@@ -15,6 +15,11 @@ coverage/
 package-lock.json
 .pnpm-store/
 pnpm-debug.log*
+.venv/
+.continue/
+.vscode/
+**/__pycache__/
+*.py[cod]
 
 # App build outputs
 apps/asteria-desktop/dist/
@@ -25,10 +30,20 @@ apps/asteria-desktop/pipeline-results/
 pipeline-results/
 apps/asteria-desktop/playwright-report/
 apps/asteria-desktop/test-results/
+apps/asteria-desktop/benchmark-results/
+release_review/
 apps/asteria-desktop/.cache/golden/
+.cache/
 packages/ui-kit/dist/
 packages/ui-kit/node_modules/
 packages/pipeline-core/target/
+tmp/
+
+# Local Asteria runtime data
+.asteria/
+
+# Local sample corpus
+apps/asteria-desktop/resources/sample-corpus/
 
 # Local env
 .env
@@ -43,6 +58,9 @@ projects/mind-myth-and-magick/input/**/Pages/
 # Golden corpus artifacts
 .golden-artifacts/
 artifacts/
+artifacts/observability/
+tools/observability/nodeReporter.*
+tools/quality/
 
 
 
