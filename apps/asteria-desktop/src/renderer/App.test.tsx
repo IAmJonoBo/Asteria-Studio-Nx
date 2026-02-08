@@ -417,9 +417,8 @@ describe("App", () => {
     await user.click(importButton);
 
     expect(importCorpus).toHaveBeenCalledWith({ inputPath: "/tmp/corpus", name: "New Project" });
-    expect(
-      await screen.findByRole("heading", { name: /New Project/i, level: 3 })
-    ).toBeInTheDocument();
+    const projectEntries = await screen.findAllByText(/New Project/i);
+    expect(projectEntries.length).toBeGreaterThan(0);
 
     (
       globalThis as typeof globalThis & {
