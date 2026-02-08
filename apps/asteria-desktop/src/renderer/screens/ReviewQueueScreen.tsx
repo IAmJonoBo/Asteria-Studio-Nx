@@ -20,6 +20,7 @@ import { applyGuideOverrides } from "../guides/overrides.js";
 import { snapBoxWithSources, getBoxSnapCandidates } from "../utils/snapping.js";
 import type { SnapEdge, SnapSourceConfig } from "../utils/snapping.js";
 import { unwrapIpcResult } from "../utils/ipc.js";
+import { Icon } from "../components/Icon.js";
 
 type PreviewRef = {
   path: string;
@@ -1638,7 +1639,7 @@ const ReviewQueueLayout = ({
     return (
       <div className="empty-state">
         <div className="empty-state-icon" aria-hidden="true">
-          ✓
+          <Icon name="check" size={48} />
         </div>
         <h2 className="empty-state-title">No pages need review</h2>
         <p className="empty-state-description">
@@ -3735,7 +3736,7 @@ export function ReviewQueueScreen({
     return (
       <div className="empty-state">
         <div className="empty-state-icon" aria-hidden="true">
-          🗂️
+          <Icon name="stack" size={48} />
         </div>
         <h2 className="empty-state-title">Select a run to review</h2>
         <p className="empty-state-description">

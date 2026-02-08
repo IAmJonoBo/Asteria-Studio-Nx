@@ -1,5 +1,6 @@
 import type { JSX } from "react";
 import type { ProjectSummary } from "../../ipc/contracts.js";
+import { Icon } from "../components/Icon.js";
 
 interface ProjectsScreenProps {
   onImportCorpus: () => void;
@@ -22,7 +23,7 @@ export function ProjectsScreen({
     return (
       <div className="empty-state">
         <div className="empty-state-icon" aria-hidden="true">
-          ⏳
+          <Icon name="loader" size={48} />
         </div>
         <h2 className="empty-state-title">Loading projects…</h2>
         <p className="empty-state-description">Fetching available corpora.</p>
@@ -34,7 +35,7 @@ export function ProjectsScreen({
     return (
       <div className="empty-state">
         <div className="empty-state-icon" aria-hidden="true">
-          ⚠️
+          <Icon name="alert" size={48} />
         </div>
         <h2 className="empty-state-title">Projects unavailable</h2>
         <p className="empty-state-description">{error}</p>
@@ -49,7 +50,7 @@ export function ProjectsScreen({
     return (
       <div className="empty-state">
         <div className="empty-state-icon" aria-hidden="true">
-          📚
+          <Icon name="book" size={48} />
         </div>
         <h2 className="empty-state-title">No projects yet</h2>
         <p className="empty-state-description">

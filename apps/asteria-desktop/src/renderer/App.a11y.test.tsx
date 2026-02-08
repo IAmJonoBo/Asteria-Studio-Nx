@@ -79,6 +79,15 @@ describe("App - Navigation & Accessibility", () => {
     expect(screen.queryByRole("dialog", { name: /command palette/i })).not.toBeInTheDocument();
   });
 
+  it("opens command palette from navigation button", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(screen.getByRole("button", { name: /command palette/i }));
+
+    expect(screen.getByRole("dialog", { name: /command palette/i })).toBeInTheDocument();
+  });
+
   it("supports theme toggle", async () => {
     const user = userEvent.setup();
     render(<App />);
