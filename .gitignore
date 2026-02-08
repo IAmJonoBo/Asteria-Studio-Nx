@@ -64,7 +64,6 @@ apps/asteria-desktop/src/ipc/corpusScanner.js
 .golden-artifacts/
 artifacts/
 artifacts/observability/
-tools/observability/nodeReporter.*
 tools/quality/
 
 
