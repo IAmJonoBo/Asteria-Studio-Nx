@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { App } from "./App.js";
@@ -417,7 +417,8 @@ describe("App", () => {
     await user.click(importButton);
 
     expect(importCorpus).toHaveBeenCalledWith({ inputPath: "/tmp/corpus", name: "New Project" });
-    expect(await screen.findByText(/New Project/i)).toBeInTheDocument();
+    const projectEntries = await screen.findAllByText(/New Project/i);
+    expect(projectEntries.length).toBeGreaterThan(0);
 
     (
       globalThis as typeof globalThis & {
@@ -497,6 +498,121 @@ describe("App", () => {
 
     expect(await screen.findByText(/no runs yet/i)).toBeInTheDocument();
 
+    windowRef.asteria = previousAsteria;
+  });
+
+  it("handles menu actions and view toggles", async () => {
+    const windowRef = globalThis as typeof globalThis & {
+      asteria?: {
+        ipc?: Record<string, unknown>;
+        onMenuAction?: (handler: (actionId: string) => void) => () => void;
+      };
+    };
+    const previousAsteria = windowRef.asteria;
+    const alertMock = vi.fn();
+    const originalAlert = globalThis.alert;
+    globalThis.alert = alertMock;
+    const originalPrompt = globalThis.prompt;
+    (
+      globalThis as typeof globalThis & {
+        prompt: ((message?: string) => string | null) | undefined;
+      }
+    ).prompt = vi.fn().mockReturnValue("Menu Project");
+
+    const listProjects = vi.fn().mockResolvedValue(ok([]));
+    const pickCorpusDir = vi.fn().mockResolvedValue(ok("/tmp/corpus"));
+    const importCorpus = vi.fn().mockResolvedValue(
+      ok({
+        id: "menu-project",
+        name: "Menu Project",
+        path: "/projects/menu",
+        inputPath: "/projects/menu/input/raw",
+        status: "idle",
+      })
+    );
+    const createBundle = vi
+      .fn()
+      .mockResolvedValue(ok({ bundlePath: "/tmp/bundle.zip" }));
+    const revealPath = vi.fn().mockResolvedValue(ok(undefined));
+
+    Object.defineProperty(globalThis.navigator, "clipboard", {
+      value: { writeText: vi.fn().mockResolvedValue(undefined) },
+      configurable: true,
+    });
+
+    let menuHandler: ((actionId: string) => void) | null = null;
+    const onMenuAction = vi.fn((handler: (actionId: string) => void) => {
+      menuHandler = handler;
+      return () => {};
+    });
+
+    windowRef.asteria = {
+      ipc: {
+        "asteria:list-projects": listProjects,
+        "asteria:pick-corpus-dir": pickCorpusDir,
+        "asteria:import-corpus": importCorpus,
+        "asteria:create-diagnostics-bundle": createBundle,
+        "asteria:reveal-path": revealPath,
+      },
+      onMenuAction,
+    };
+
+    const reviewHandler = vi.fn();
+    globalThis.addEventListener("asteria:toggle-guides", reviewHandler);
+
+    render(<App />);
+
+    await screen.findByText(/No projects yet/i);
+    expect(menuHandler).toBeTruthy();
+
+    await act(async () => {
+      menuHandler?.("app:preferences");
+    });
+    expect(await screen.findByText(/Config not loaded/i)).toBeInTheDocument();
+
+    await act(async () => {
+      menuHandler?.("file:export-run");
+    });
+    expect(await screen.findByText(/Run a pipeline to generate exports/i)).toBeInTheDocument();
+
+    await act(async () => {
+      menuHandler?.("file:open-current-run");
+    });
+    expect(alertMock).toHaveBeenCalledWith("Select a run to open its folder.");
+
+    await act(async () => {
+      menuHandler?.("view:toggle-guides");
+      menuHandler?.("view:toggle-overlays");
+      menuHandler?.("view:toggle-rulers");
+      menuHandler?.("view:toggle-snapping");
+      menuHandler?.("view:reset-view");
+    });
+    expect(reviewHandler).toHaveBeenCalled();
+
+    await act(async () => {
+      menuHandler?.("help:open-logs");
+      menuHandler?.("help:diagnostics");
+      menuHandler?.("help:shortcuts");
+    });
+    expect(revealPath).toHaveBeenCalledWith("logs");
+    expect(createBundle).toHaveBeenCalled();
+    expect(alertMock).toHaveBeenCalledWith(expect.stringContaining("Keyboard shortcuts"));
+
+    menuHandler?.("file:import-corpus");
+    await waitFor(() =>
+      expect(importCorpus).toHaveBeenCalledWith({
+        inputPath: "/tmp/corpus",
+        name: "Menu Project",
+      })
+    );
+
+    globalThis.removeEventListener("asteria:toggle-guides", reviewHandler);
+    (
+      globalThis as typeof globalThis & {
+        prompt: ((message?: string) => string | null) | undefined;
+      }
+    ).prompt = originalPrompt;
+    globalThis.alert = originalAlert;
     windowRef.asteria = previousAsteria;
   });
 

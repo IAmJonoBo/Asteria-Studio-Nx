@@ -422,7 +422,9 @@ export function SettingsScreen({ projectId }: Readonly<SettingsScreenProps>): JS
                   and you can save overrides per project.
                 </p>
               </div>
-              {!projectId && <span className="config-pill">Select a project to save</span>}
+              {!projectId && (
+                <span className="config-pill">Select a project to save overrides</span>
+              )}
             </div>
             <div className="config-builder-grid">
               <div className="config-builder-controls">
