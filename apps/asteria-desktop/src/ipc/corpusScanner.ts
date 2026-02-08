@@ -32,6 +32,26 @@ const listFilesRecursive = async (root: string): Promise<string[]> => {
   return results;
 };
 
+const buildPageId = (
+  filePath: string,
+  rootPath: string,
+  index: number,
+  usedIds: Set<string>
+): string => {
+  const relative = path.relative(rootPath, filePath);
+  const withoutExt = relative.replace(path.extname(relative), "");
+  const normalized = withoutExt.replace(/[\\/]+/g, "-");
+  const baseId = normalized || `page-${index + 1}`;
+  let id = baseId;
+  let suffix = 1;
+  while (usedIds.has(id)) {
+    suffix += 1;
+    id = `${baseId}-${suffix}`;
+  }
+  usedIds.add(id);
+  return id;
+};
+
 export const scanCorpus = async (
   rootPath: string,
   options?: ScanCorpusOptions
@@ -54,11 +74,12 @@ export const scanCorpus = async (
   }
 
   const sortedFiles = imageFiles.slice().sort((a: string, b: string) => a.localeCompare(b));
+  const usedIds = new Set<string>();
   const pages = await Promise.all(
     sortedFiles.map(async (file: string, index: number) => {
       const confidenceScores: Record<string, number> = {};
       const checksum = options?.includeChecksums ? await hashFile(file) : undefined;
-      const id = path.basename(file, path.extname(file)) || `page-${index + 1}`;
+      const id = buildPageId(file, resolvedRoot, index, usedIds);
       return {
         id,
         filename: path.basename(file),

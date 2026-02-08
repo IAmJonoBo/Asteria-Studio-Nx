@@ -40,4 +40,18 @@ describe("corpusScanner", () => {
 
     await expect(scanCorpus(root)).rejects.toThrow(/No supported page images/);
   });
+
+  it("generates unique page ids for duplicate filenames", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "asteria-scan-"));
+    const nested = path.join(root, "chapter-1");
+    await fs.mkdir(nested);
+    await writeDummy(root, "page-1.jpg");
+    await writeDummy(nested, "page-1.jpg");
+
+    const config = await scanCorpus(root);
+
+    const ids = config.pages.map((page) => page.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(ids.some((id) => id.includes("chapter-1"))).toBe(true);
+  });
 });

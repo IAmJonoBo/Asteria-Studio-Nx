@@ -17,6 +17,9 @@ import type {
   RunSummary,
 } from "../ipc/contracts.js";
 
+const safePrompt = (message: string, defaultValue?: string): string | null =>
+  typeof globalThis.prompt === "function" ? globalThis.prompt(message, defaultValue) : null;
+
 export function App(): JSX.Element {
   const [theme, setTheme] = useTheme();
   const [activeScreen, setActiveScreen] = useState<NavItem>("projects");
@@ -217,7 +220,7 @@ export function App(): JSX.Element {
           }, 3000) as unknown as number;
           return null;
         }
-        const rawName = globalThis.prompt("Project name (optional)") ?? "";
+        const rawName = safePrompt("Project name (optional)") ?? "";
         const trimmedName = rawName.trim();
         const name = trimmedName.length > 0 ? trimmedName : undefined;
         const summary = await importCorpus({ inputPath, name });
@@ -464,15 +467,15 @@ export function App(): JSX.Element {
               targetDpi: inferredDpi,
             };
           } else {
-            const widthOverride = globalThis.prompt(
+            const widthOverride = safePrompt(
               "Override target width (mm)",
               String(scanConfig.targetDimensionsMm.width)
             );
-            const heightOverride = globalThis.prompt(
+            const heightOverride = safePrompt(
               "Override target height (mm)",
               String(scanConfig.targetDimensionsMm.height)
             );
-            const dpiOverride = globalThis.prompt(
+            const dpiOverride = safePrompt(
               "Override target DPI",
               String(scanConfig.targetDpi)
             );
