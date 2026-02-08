@@ -9,6 +9,10 @@ interface ProjectsScreenProps {
   projects?: ProjectSummary[];
   isLoading?: boolean;
   error?: string | null;
+  importState?: {
+    status: "idle" | "working" | "success" | "error";
+    message?: string;
+  };
 }
 
 export function ProjectsScreen({
@@ -18,7 +22,18 @@ export function ProjectsScreen({
   projects = [],
   isLoading = false,
   error = null,
+  importState,
 }: Readonly<ProjectsScreenProps>): JSX.Element {
+  const isImporting = importState?.status === "working";
+  const importMessage = importState?.message;
+  const noticeTone =
+    importState?.status === "error"
+      ? "error"
+      : importState?.status === "success"
+        ? "success"
+        : importState?.status === "working"
+          ? "working"
+          : "info";
   if (isLoading) {
     return (
       <div className="empty-state">
@@ -39,9 +54,14 @@ export function ProjectsScreen({
         </div>
         <h2 className="empty-state-title">Projects unavailable</h2>
         <p className="empty-state-description">{error}</p>
-        <button className="btn btn-primary btn-lg" onClick={onImportCorpus}>
-          Import Corpus
+        <button className="btn btn-primary btn-lg" onClick={onImportCorpus} disabled={isImporting}>
+          {isImporting ? "Importing…" : "Import Corpus"}
         </button>
+        {importMessage && (
+          <div className={`notice notice-${noticeTone}`} role="status">
+            {importMessage}
+          </div>
+        )}
       </div>
     );
   }
@@ -58,9 +78,14 @@ export function ProjectsScreen({
           folder of page images, and Asteria will normalize page geometry, detect elements, and
           prepare publication-ready outputs with confidence scoring and QA workflows.
         </p>
-        <button className="btn btn-primary btn-lg" onClick={onImportCorpus}>
-          Import Corpus
+        <button className="btn btn-primary btn-lg" onClick={onImportCorpus} disabled={isImporting}>
+          {isImporting ? "Importing…" : "Import Corpus"}
         </button>
+        {importMessage && (
+          <div className={`notice notice-${noticeTone}`} role="status">
+            {importMessage}
+          </div>
+        )}
         <div style={{ marginTop: "24px", fontSize: "12px", color: "var(--text-tertiary)" }}>
           <p style={{ margin: "0 0 8px" }}>
             <strong>What you need:</strong>
@@ -98,10 +123,15 @@ export function ProjectsScreen({
             Manage your corpus libraries and processing workflows with the directory picker
           </p>
         </div>
-        <button className="btn btn-primary" onClick={onImportCorpus}>
-          Import Corpus
+        <button className="btn btn-primary" onClick={onImportCorpus} disabled={isImporting}>
+          {isImporting ? "Importing…" : "Import Corpus"}
         </button>
       </div>
+      {importMessage && (
+        <div className={`notice notice-${noticeTone}`} role="status">
+          {importMessage}
+        </div>
+      )}
 
       <div style={{ display: "grid", gap: "16px" }}>
         {projects.map((project) => (

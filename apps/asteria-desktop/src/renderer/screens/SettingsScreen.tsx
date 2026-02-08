@@ -20,6 +20,7 @@ export function SettingsScreen({ projectId }: Readonly<SettingsScreenProps>): JS
   const [latestInference, setLatestInference] = useState<RunSummary | null>(null);
   const [diagnosticsBusy, setDiagnosticsBusy] = useState(false);
   const [diagnosticsStatus, setDiagnosticsStatus] = useState<string | null>(null);
+  const [sizePreset, setSizePreset] = useState<"custom" | "a4" | "a5" | "letter">("custom");
   const [formState, setFormState] = useState({
     dpi: "",
     width: "",
@@ -59,6 +60,21 @@ export function SettingsScreen({ projectId }: Readonly<SettingsScreenProps>): JS
         if (!cancelled && resolved) {
           setSnapshot(resolved);
           setError(null);
+          const normalizedWidth = Math.round(
+            resolved.resolvedConfig.project.target_dimensions.width
+          );
+          const normalizedHeight = Math.round(
+            resolved.resolvedConfig.project.target_dimensions.height
+          );
+          const preset =
+            normalizedWidth === 210 && normalizedHeight === 297
+              ? "a4"
+              : normalizedWidth === 148 && normalizedHeight === 210
+                ? "a5"
+                : normalizedWidth === 216 && normalizedHeight === 279
+                  ? "letter"
+                  : "custom";
+          setSizePreset(preset);
           setFormState({
             dpi: String(resolved.resolvedConfig.project.dpi),
             width: String(resolved.resolvedConfig.project.target_dimensions.width),
@@ -128,6 +144,38 @@ export function SettingsScreen({ projectId }: Readonly<SettingsScreenProps>): JS
     const parsed = Number(value);
     return Number.isFinite(parsed) ? parsed : fallback;
   };
+
+  const handlePresetChange = (preset: "custom" | "a4" | "a5" | "letter"): void => {
+    setSizePreset(preset);
+    if (preset === "custom") return;
+    const presetMap = {
+      a4: { width: 210, height: 297 },
+      a5: { width: 148, height: 210 },
+      letter: { width: 216, height: 279 },
+    } as const;
+    const selection = presetMap[preset];
+    setFormState((prev) => ({
+      ...prev,
+      width: String(selection.width),
+      height: String(selection.height),
+    }));
+  };
+
+  const previewDpi = snapshot
+    ? parseNumberOrDefault(formState.dpi, snapshot.resolvedConfig.project.dpi)
+    : 0;
+  const previewWidth = snapshot
+    ? parseNumberOrDefault(formState.width, snapshot.resolvedConfig.project.target_dimensions.width)
+    : 1;
+  const previewHeight = snapshot
+    ? parseNumberOrDefault(
+        formState.height,
+        snapshot.resolvedConfig.project.target_dimensions.height
+      )
+    : 1;
+  const previewRatio = previewWidth > 0 && previewHeight > 0 ? previewWidth / previewHeight : 1;
+  const previewHeightPx = 180;
+  const previewWidthPx = Math.max(110, Math.min(220, previewHeightPx * previewRatio));
 
   const handleSaveOverrides = async (): Promise<void> => {
     if (!projectId || !snapshot) return;
@@ -363,163 +411,247 @@ export function SettingsScreen({ projectId }: Readonly<SettingsScreenProps>): JS
             </div>
           </div>
 
-          <div className="card">
-            <h3 className="card-title">Project overrides</h3>
-            {!projectId && (
-              <p style={{ fontSize: "12px", color: "var(--text-secondary)" }}>
-                Select a project to save overrides.
-              </p>
-            )}
-            <div style={{ display: "grid", gap: "12px" }}>
-              <label style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-                <span style={{ fontSize: "13px", fontWeight: 500 }}>Target DPI</span>
-                <input
-                  type="number"
-                  className="input"
-                  value={formState.dpi}
-                  onChange={(event) =>
-                    setFormState((prev) => ({ ...prev, dpi: event.target.value }))
-                  }
-                  min={72}
-                  max={1200}
-                  aria-label="Project target DPI"
-                />
-              </label>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
-                <label style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-                  <span style={{ fontSize: "13px", fontWeight: 500 }}>Width (mm)</span>
-                  <input
-                    type="number"
-                    className="input"
-                    value={formState.width}
-                    onChange={(event) =>
-                      setFormState((prev) => ({ ...prev, width: event.target.value }))
-                    }
-                    aria-label="Project target width"
-                  />
-                </label>
-                <label style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-                  <span style={{ fontSize: "13px", fontWeight: 500 }}>Height (mm)</span>
-                  <input
-                    type="number"
-                    className="input"
-                    value={formState.height}
-                    onChange={(event) =>
-                      setFormState((prev) => ({ ...prev, height: event.target.value }))
-                    }
-                    aria-label="Project target height"
-                  />
-                </label>
+          <div className="card config-builder">
+            <div className="config-builder-header">
+              <div>
+                <h3 className="card-title" style={{ marginBottom: "4px" }}>
+                  Config Builder
+                </h3>
+                <p className="config-hint">
+                  Tune the pipeline with guided controls. Values update immediately in the preview,
+                  and you can save overrides per project.
+                </p>
               </div>
-              <label style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-                <input
-                  type="checkbox"
-                  checked={formState.spreadEnabled}
-                  onChange={(event) =>
-                    setFormState((prev) => ({ ...prev, spreadEnabled: event.target.checked }))
-                  }
-                  aria-label="Enable spread split"
-                />
-                <span style={{ fontSize: "13px" }}>Enable spread split</span>
-              </label>
-              <label style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-                <span style={{ fontSize: "13px", fontWeight: 500 }}>
-                  Spread split confidence threshold
-                </span>
-                <input
-                  type="number"
-                  step="0.01"
-                  min={0}
-                  max={1}
-                  className="input"
-                  value={formState.spreadThreshold}
-                  onChange={(event) =>
-                    setFormState((prev) => ({ ...prev, spreadThreshold: event.target.value }))
-                  }
-                  aria-label="Spread split confidence threshold"
-                />
-              </label>
-              <label style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-                <input
-                  type="checkbox"
-                  checked={formState.bookPriorsEnabled}
-                  onChange={(event) =>
-                    setFormState((prev) => ({ ...prev, bookPriorsEnabled: event.target.checked }))
-                  }
-                  aria-label="Enable book priors"
-                />
-                <span style={{ fontSize: "13px" }}>Enable book priors</span>
-              </label>
-              <label style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-                <span style={{ fontSize: "13px", fontWeight: 500 }}>Book priors sample pages</span>
-                <input
-                  type="number"
-                  className="input"
-                  value={formState.bookPriorsSample}
-                  onChange={(event) =>
-                    setFormState((prev) => ({ ...prev, bookPriorsSample: event.target.value }))
-                  }
-                  aria-label="Book priors sample pages"
-                />
-              </label>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
-                <label style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-                  <span style={{ fontSize: "13px", fontWeight: 500 }}>
-                    QA mask coverage minimum
-                  </span>
-                  <input
-                    type="number"
-                    step="0.01"
-                    min={0}
-                    max={1}
-                    className="input"
-                    value={formState.qaMaskCoverageMin}
-                    onChange={(event) =>
-                      setFormState((prev) => ({
-                        ...prev,
-                        qaMaskCoverageMin: event.target.value,
-                      }))
-                    }
-                    aria-label="QA mask coverage minimum"
-                  />
-                </label>
-                <label style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-                  <span style={{ fontSize: "13px", fontWeight: 500 }}>
-                    Semantic threshold (body)
-                  </span>
-                  <input
-                    type="number"
-                    step="0.01"
-                    min={0}
-                    max={1}
-                    className="input"
-                    value={formState.qaSemanticBody}
-                    onChange={(event) =>
-                      setFormState((prev) => ({
-                        ...prev,
-                        qaSemanticBody: event.target.value,
-                      }))
-                    }
-                    aria-label="Semantic threshold for body layout"
-                  />
-                </label>
+              {!projectId && <span className="config-pill">Select a project to save</span>}
+            </div>
+            <div className="config-builder-grid">
+              <div className="config-builder-controls">
+                <div className="config-section">
+                  <div className="config-section-title">Target page</div>
+                  <label className="config-field">
+                    <span>Preset</span>
+                    <select
+                      className="input"
+                      value={sizePreset}
+                      onChange={(event) =>
+                        handlePresetChange(event.target.value as "custom" | "a4" | "a5" | "letter")
+                      }
+                      aria-label="Select a target page preset"
+                    >
+                      <option value="custom">Custom</option>
+                      <option value="a4">A4 (210 × 297 mm)</option>
+                      <option value="a5">A5 (148 × 210 mm)</option>
+                      <option value="letter">US Letter (216 × 279 mm)</option>
+                    </select>
+                  </label>
+                  <div className="config-grid">
+                    <label className="config-field">
+                      <span>Width (mm)</span>
+                      <input
+                        type="number"
+                        className="input"
+                        value={formState.width}
+                        onChange={(event) =>
+                          setFormState((prev) => ({ ...prev, width: event.target.value }))
+                        }
+                        aria-label="Project target width"
+                      />
+                    </label>
+                    <label className="config-field">
+                      <span>Height (mm)</span>
+                      <input
+                        type="number"
+                        className="input"
+                        value={formState.height}
+                        onChange={(event) =>
+                          setFormState((prev) => ({ ...prev, height: event.target.value }))
+                        }
+                        aria-label="Project target height"
+                      />
+                    </label>
+                  </div>
+                  <label className="config-field">
+                    <span>DPI</span>
+                    <input
+                      type="range"
+                      min={150}
+                      max={600}
+                      step={10}
+                      value={Number(formState.dpi || previewDpi || 300)}
+                      onChange={(event) =>
+                        setFormState((prev) => ({ ...prev, dpi: event.target.value }))
+                      }
+                      aria-label="Project target DPI"
+                    />
+                    <div className="config-value-row">
+                      <span>{formState.dpi || previewDpi} DPI</span>
+                      <span className="config-subtle">Recommended 300–450</span>
+                    </div>
+                  </label>
+                </div>
+
+                <div className="config-section">
+                  <div className="config-section-title">Layout intelligence</div>
+                  <label className="config-toggle">
+                    <input
+                      type="checkbox"
+                      checked={formState.spreadEnabled}
+                      onChange={(event) =>
+                        setFormState((prev) => ({ ...prev, spreadEnabled: event.target.checked }))
+                      }
+                      aria-label="Enable spread split"
+                    />
+                    <div>
+                      <span>Enable spread split</span>
+                      <small>Detect two-page scans and split automatically.</small>
+                    </div>
+                  </label>
+                  <label className="config-field">
+                    <span>Spread confidence threshold</span>
+                    <input
+                      type="range"
+                      min={0}
+                      max={1}
+                      step={0.01}
+                      value={Number(formState.spreadThreshold || 0)}
+                      onChange={(event) =>
+                        setFormState((prev) => ({ ...prev, spreadThreshold: event.target.value }))
+                      }
+                      aria-label="Spread split confidence threshold"
+                    />
+                    <div className="config-value-row">
+                      <span>{formState.spreadThreshold || "0"}</span>
+                      <span className="config-subtle">Higher = fewer splits</span>
+                    </div>
+                  </label>
+                  <label className="config-toggle">
+                    <input
+                      type="checkbox"
+                      checked={formState.bookPriorsEnabled}
+                      onChange={(event) =>
+                        setFormState((prev) => ({
+                          ...prev,
+                          bookPriorsEnabled: event.target.checked,
+                        }))
+                      }
+                      aria-label="Enable book priors"
+                    />
+                    <div>
+                      <span>Enable book priors</span>
+                      <small>Stabilize trim and content bounds from sample pages.</small>
+                    </div>
+                  </label>
+                  <label className="config-field">
+                    <span>Book priors sample pages</span>
+                    <input
+                      type="number"
+                      className="input"
+                      value={formState.bookPriorsSample}
+                      onChange={(event) =>
+                        setFormState((prev) => ({ ...prev, bookPriorsSample: event.target.value }))
+                      }
+                      aria-label="Book priors sample pages"
+                    />
+                  </label>
+                </div>
+
+                <div className="config-section">
+                  <div className="config-section-title">Quality thresholds</div>
+                  <label className="config-field">
+                    <span>Mask coverage minimum</span>
+                    <input
+                      type="range"
+                      min={0}
+                      max={1}
+                      step={0.01}
+                      value={Number(formState.qaMaskCoverageMin || 0)}
+                      onChange={(event) =>
+                        setFormState((prev) => ({
+                          ...prev,
+                          qaMaskCoverageMin: event.target.value,
+                        }))
+                      }
+                      aria-label="QA mask coverage minimum"
+                    />
+                    <div className="config-value-row">
+                      <span>{formState.qaMaskCoverageMin || "0"}</span>
+                      <span className="config-subtle">Lower = more warnings</span>
+                    </div>
+                  </label>
+                  <label className="config-field">
+                    <span>Semantic threshold (body)</span>
+                    <input
+                      type="range"
+                      min={0}
+                      max={1}
+                      step={0.01}
+                      value={Number(formState.qaSemanticBody || 0)}
+                      onChange={(event) =>
+                        setFormState((prev) => ({
+                          ...prev,
+                          qaSemanticBody: event.target.value,
+                        }))
+                      }
+                      aria-label="Semantic threshold for body layout"
+                    />
+                    <div className="config-value-row">
+                      <span>{formState.qaSemanticBody || "0"}</span>
+                      <span className="config-subtle">Balance recall vs precision</span>
+                    </div>
+                  </label>
+                </div>
               </div>
-              <div style={{ display: "flex", gap: "8px" }}>
-                <button
-                  className="btn btn-primary"
-                  onClick={() => void handleSaveOverrides()}
-                  disabled={!projectId || saving}
-                >
-                  {saving ? "Saving…" : "Save project overrides"}
-                </button>
-                <button
-                  className="btn btn-secondary"
-                  onClick={() => void handleClearOverrides()}
-                  disabled={!projectId || saving}
-                >
-                  Clear overrides
-                </button>
+              <div className="config-builder-preview">
+                <div className="config-preview-card">
+                  <div className="config-preview-frame" aria-hidden="true">
+                    <div
+                      className="config-preview-page"
+                      style={{ width: `${previewWidthPx}px`, height: `${previewHeightPx}px` }}
+                    >
+                      <div className="config-preview-guides" />
+                    </div>
+                  </div>
+                  <div className="config-preview-meta">
+                    <div>
+                      <strong>Target size</strong>
+                      <div>
+                        {previewWidth} × {previewHeight} mm
+                      </div>
+                    </div>
+                    <div>
+                      <strong>DPI</strong>
+                      <div>{previewDpi}</div>
+                    </div>
+                    <div>
+                      <strong>Spread split</strong>
+                      <div>{formState.spreadEnabled ? "Enabled" : "Disabled"}</div>
+                    </div>
+                    <div>
+                      <strong>QA thresholds</strong>
+                      <div>
+                        Mask {formState.qaMaskCoverageMin || "0"} • Body{" "}
+                        {formState.qaSemanticBody || "0"}
+                      </div>
+                    </div>
+                  </div>
+                </div>
               </div>
+            </div>
+            <div className="config-actions">
+              <button
+                className="btn btn-primary"
+                onClick={() => void handleSaveOverrides()}
+                disabled={!projectId || saving}
+              >
+                {saving ? "Saving…" : "Save project overrides"}
+              </button>
+              <button
+                className="btn btn-secondary"
+                onClick={() => void handleClearOverrides()}
+                disabled={!projectId || saving}
+              >
+                Clear overrides
+              </button>
             </div>
           </div>
           <div className="card">

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { JSX } from "react";
 import { Navigation, type NavItem } from "./components/Navigation.js";
 import { CommandPalette } from "./components/CommandPalette.js";
@@ -31,6 +31,11 @@ export function App(): JSX.Element {
   const [onboardingVisible, setOnboardingVisible] = useState(false);
   const [onboardingBusy, setOnboardingBusy] = useState(false);
   const [onboardingError, setOnboardingError] = useState<string | null>(null);
+  const [importState, setImportState] = useState<{
+    status: "idle" | "working" | "success" | "error";
+    message?: string;
+  }>({ status: "idle" });
+  const importResetTimer = useRef<number | null>(null);
 
   useKeyboardShortcut({
     key: "k",
@@ -168,22 +173,50 @@ export function App(): JSX.Element {
     async (options?: { markFirstRunComplete?: boolean }): Promise<ProjectSummary | null> => {
       const windowRef: typeof globalThis & { asteria?: { ipc?: Record<string, unknown> } } =
         globalThis;
-      if (!windowRef.asteria?.ipc) return null;
+      if (importResetTimer.current) {
+        globalThis.clearTimeout(importResetTimer.current);
+      }
+      setImportState({ status: "working", message: "Opening folder picker..." });
+      if (!windowRef.asteria?.ipc) {
+        setImportState({
+          status: "error",
+          message: "IPC bridge unavailable. Restart the app to enable imports.",
+        });
+        return null;
+      }
       const pickCorpusDir = windowRef.asteria.ipc["asteria:pick-corpus-dir"] as
         | (() => Promise<import("../ipc/contracts.js").IpcResult<string | null>>)
         | undefined;
-      if (!pickCorpusDir) return null;
+      if (!pickCorpusDir) {
+        setImportState({
+          status: "error",
+          message: "Import is unavailable. IPC channel not registered.",
+        });
+        return null;
+      }
       const importCorpus = windowRef.asteria.ipc["asteria:import-corpus"] as
         | ((request: {
             inputPath: string;
             name?: string;
           }) => Promise<import("../ipc/contracts.js").IpcResult<ProjectSummary>>)
         | undefined;
-      if (!importCorpus) return null;
+      if (!importCorpus) {
+        setImportState({
+          status: "error",
+          message: "Import is unavailable. IPC channel not registered.",
+        });
+        return null;
+      }
       try {
         const inputPathResult = await pickCorpusDir();
         const inputPath = unwrapIpcResult(inputPathResult, "Pick corpus");
-        if (!inputPath) return null;
+        if (!inputPath) {
+          setImportState({ status: "idle", message: "Import canceled." });
+          importResetTimer.current = globalThis.setTimeout(() => {
+            setImportState({ status: "idle" });
+          }, 3000) as unknown as number;
+          return null;
+        }
         const rawName = globalThis.prompt("Project name (optional)") ?? "";
         const trimmedName = rawName.trim();
         const name = trimmedName.length > 0 ? trimmedName : undefined;
@@ -193,9 +226,17 @@ export function App(): JSX.Element {
         if (options?.markFirstRunComplete) {
           await updatePreferences({ firstRunComplete: true });
         }
+        setImportState({
+          status: "success",
+          message: `Imported ${resolved.name ?? "corpus"}.`,
+        });
+        importResetTimer.current = globalThis.setTimeout(() => {
+          setImportState({ status: "idle" });
+        }, 4000) as unknown as number;
         return resolved;
       } catch (error) {
         const message = error instanceof Error ? error.message : "Failed to import corpus";
+        setImportState({ status: "error", message });
         globalThis.alert(message);
         return null;
       }
@@ -679,6 +720,7 @@ export function App(): JSX.Element {
               projects={projects}
               isLoading={projectsLoading}
               error={projectsError}
+              importState={importState}
             />
           )}
           {activeScreen === "runs" && (

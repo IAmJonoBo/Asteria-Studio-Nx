@@ -1,4 +1,4 @@
-import { app, dialog, ipcMain, shell } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, shell } from "electron";
 import type { IpcMainInvokeEvent } from "electron";
 import type {
   PipelineRunConfig,
@@ -705,7 +705,8 @@ export function registerIpcHandlers(): void {
   ipcMain.handle(
     "asteria:pick-corpus-dir",
     wrapIpcHandler("asteria:pick-corpus-dir", async (): Promise<string | null> => {
-      const result = await dialog.showOpenDialog({
+      const parentWindow = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
+      const result = await dialog.showOpenDialog(parentWindow ?? undefined, {
         properties: ["openDirectory"],
       });
       if (result.canceled || result.filePaths.length === 0) {

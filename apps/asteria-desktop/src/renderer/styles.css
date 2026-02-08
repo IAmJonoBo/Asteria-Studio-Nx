@@ -233,6 +233,41 @@ textarea:focus-visible {
   padding: 24px;
 }
 
+/* Notices and inline feedback */
+.notice {
+  margin-top: 16px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  font-size: 12px;
+  border: 1px solid var(--border);
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+}
+
+.notice-success {
+  border-color: var(--color-success);
+  background: var(--color-success-bg);
+  color: var(--color-success-text);
+}
+
+.notice-error {
+  border-color: var(--color-error);
+  background: var(--color-error-bg);
+  color: var(--color-error-text);
+}
+
+.notice-working {
+  border-color: var(--color-info);
+  background: var(--color-info-bg);
+  color: var(--color-info-text);
+}
+
+.notice-info {
+  border-color: var(--border);
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+}
+
 /* Button components */
 .btn {
   display: inline-flex;
@@ -337,6 +372,173 @@ textarea:focus-visible {
   font-weight: 600;
   margin: 0 0 12px 0;
   color: var(--text-primary);
+}
+
+/* Config builder */
+.config-builder {
+  position: relative;
+  overflow: hidden;
+}
+
+.config-builder::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.08), rgba(16, 185, 129, 0.08));
+  pointer-events: none;
+}
+
+.config-builder > * {
+  position: relative;
+}
+
+.config-builder-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.config-hint {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.config-pill {
+  font-size: 11px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  border: 1px dashed var(--border);
+  color: var(--text-tertiary);
+  background: var(--bg-primary);
+}
+
+.config-builder-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 260px;
+  gap: 16px;
+}
+
+.config-builder-controls {
+  display: grid;
+  gap: 16px;
+}
+
+.config-section {
+  display: grid;
+  gap: 12px;
+  padding: 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-primary);
+}
+
+.config-section-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.config-field {
+  display: grid;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.config-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.config-toggle {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 12px;
+  align-items: start;
+  font-size: 13px;
+  color: var(--text-primary);
+}
+
+.config-toggle small {
+  display: block;
+  color: var(--text-secondary);
+  font-size: 11px;
+  margin-top: 2px;
+}
+
+.config-value-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+
+.config-subtle {
+  color: var(--text-tertiary);
+}
+
+.config-builder-preview {
+  display: flex;
+  justify-content: center;
+}
+
+.config-preview-card {
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-surface);
+  border-radius: 12px;
+  padding: 12px;
+  display: grid;
+  gap: 12px;
+  box-shadow: var(--shadow-sm);
+  width: 100%;
+}
+
+.config-preview-frame {
+  display: grid;
+  place-items: center;
+  padding: 12px;
+  background: var(--bg-primary);
+  border-radius: 10px;
+  border: 1px solid var(--border-subtle);
+}
+
+.config-preview-page {
+  border-radius: 8px;
+  background: linear-gradient(180deg, rgba(148, 163, 184, 0.1), rgba(148, 163, 184, 0.02));
+  border: 1px solid var(--border);
+  position: relative;
+  overflow: hidden;
+}
+
+.config-preview-guides {
+  position: absolute;
+  inset: 12%;
+  border: 1px dashed rgba(59, 130, 246, 0.45);
+  border-radius: 6px;
+}
+
+.config-preview-meta {
+  display: grid;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.config-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+@media (max-width: 960px) {
+  .config-builder-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 /* Status badges */
