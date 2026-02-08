@@ -530,9 +530,7 @@ describe("App", () => {
         status: "idle",
       })
     );
-    const createBundle = vi
-      .fn()
-      .mockResolvedValue(ok({ bundlePath: "/tmp/bundle.zip" }));
+    const createBundle = vi.fn().mockResolvedValue(ok({ bundlePath: "/tmp/bundle.zip" }));
     const revealPath = vi.fn().mockResolvedValue(ok(undefined));
 
     Object.defineProperty(globalThis.navigator, "clipboard", {
@@ -598,7 +596,10 @@ describe("App", () => {
     expect(createBundle).toHaveBeenCalled();
     expect(alertMock).toHaveBeenCalledWith(expect.stringContaining("Keyboard shortcuts"));
 
-    menuHandler?.("file:import-corpus");
+    const recordedMenuHandler = onMenuAction.mock.calls[0]?.[0] as
+      | ((actionId: string) => void)
+      | undefined;
+    recordedMenuHandler?.("file:import-corpus");
     await waitFor(() =>
       expect(importCorpus).toHaveBeenCalledWith({
         inputPath: "/tmp/corpus",

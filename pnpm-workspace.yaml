@@ -1,3 +1,10 @@
 packages:
   - apps/*
   - packages/*
+
+ignoredBuiltDependencies:
+  - esbuild
+
+onlyBuiltDependencies:
+  - nx
+  - sharp

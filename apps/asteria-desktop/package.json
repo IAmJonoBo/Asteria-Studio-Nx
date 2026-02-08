@@ -18,7 +18,7 @@
     "build": "pnpm run build:renderer && pnpm run build:main && pnpm run build:preload && pnpm run build:launcher",
     "build:renderer": "vite build",
     "build:main": "tsc --project tsconfig.build.json",
-    "build:preload": "esbuild src/preload/index.ts --bundle --platform=node --format=cjs --outfile=dist/preload/index.cjs",
+    "build:preload": "esbuild src/preload/index.ts --bundle --platform=node --format=cjs --external:electron --outfile=dist/preload/index.cjs",
     "build:launcher": "node scripts/create-launcher.mjs",
     "build:verify": "node scripts/verify-build.mjs",
     "typecheck": "tsc --noEmit",

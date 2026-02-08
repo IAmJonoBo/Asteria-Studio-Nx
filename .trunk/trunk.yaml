@@ -24,7 +24,7 @@ lint:
     - isort@7.0.0
     - oxipng@10.1.0
     - ruff@0.15.0
-    - renovate@43.3.4
+    - renovate@43.4.3
     - osv-scanner@2.3.2
     - actionlint@1.7.10
     - eslint@9.39.0

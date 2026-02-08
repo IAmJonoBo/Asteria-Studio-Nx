@@ -73,6 +73,7 @@ async function createWindow(): Promise<void> {
       preload: path.join(__dirname, "../preload/index.cjs"),
       contextIsolation: true,
       nodeIntegration: false,
+      sandbox: false,
     },
   });
 

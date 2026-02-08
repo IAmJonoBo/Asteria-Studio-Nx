@@ -71,8 +71,7 @@ export class RunReporter {
 
   async _initPaths() {
     if (this.outputPaths.length > 0) return;
-    const baseDir =
-      this.outputDir ?? process.env.ASTERIA_OBS_DIR ?? DEFAULT_BASE_DIR;
+    const baseDir = this.outputDir ?? process.env.ASTERIA_OBS_DIR ?? DEFAULT_BASE_DIR;
     const outputDir = path.resolve(baseDir);
     const outputPath = path.join(outputDir, this.tool, `${this.runId}.jsonl`);
     this.outputPaths = [outputPath];
@@ -195,9 +194,7 @@ export class RunReporter {
     const file = options.file ?? path.join(process.cwd(), "UNKNOWN");
     const line = Number.isFinite(options.line) ? options.line : 0;
     const col = Number.isFinite(options.col) ? options.col : 0;
-    process.stderr.write(
-      `ASTERIA_ERROR ${file}:${line}:${col} ${code} ${message}\n`
-    );
+    process.stderr.write(`ASTERIA_ERROR ${file}:${line}:${col} ${code} ${message}\n`);
     const attrs = {
       code,
       message,
