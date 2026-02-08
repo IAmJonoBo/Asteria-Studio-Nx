@@ -43,10 +43,10 @@ const buildPageId = (
   const normalized = withoutExt.replace(/[\\/]+/g, "-");
   const baseId = normalized || `page-${index + 1}`;
   let id = baseId;
-  let suffix = 1;
+  let suffix = 2;
   while (usedIds.has(id)) {
-    suffix += 1;
     id = `${baseId}-${suffix}`;
+    suffix += 1;
   }
   usedIds.add(id);
   return id;
