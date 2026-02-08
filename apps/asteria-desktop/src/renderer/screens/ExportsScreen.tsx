@@ -2,6 +2,7 @@ import type { JSX } from "react";
 import { useEffect, useMemo, useState } from "react";
 import type { IpcResult, RunManifestSummary, RunSummary } from "../../ipc/contracts.js";
 import { unwrapIpcResult, unwrapIpcResultOr } from "../utils/ipc.js";
+import { Icon } from "../components/Icon.js";
 
 const exportFormats = ["png", "tiff", "pdf"] as const;
 
@@ -120,7 +121,7 @@ export function ExportsScreen(): JSX.Element {
     return (
       <div className="empty-state">
         <div className="empty-state-icon" aria-hidden="true">
-          📦
+          <Icon name="package" size={48} />
         </div>
         <h2 className="empty-state-title">Exports</h2>
         <p className="empty-state-description">

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { JSX } from "react";
 import { Navigation, type NavItem } from "./components/Navigation.js";
 import { CommandPalette } from "./components/CommandPalette.js";
+import { Icon } from "./components/Icon.js";
 import { ProjectsScreen } from "./screens/ProjectsScreen.js";
 import { ReviewQueueScreen } from "./screens/ReviewQueueScreen.js";
 import { RunsScreen, MonitorScreen, ExportsScreen, SettingsScreen } from "./screens/index.js";
@@ -589,7 +590,11 @@ export function App(): JSX.Element {
 
   return (
     <div className="app-layout">
-      <Navigation active={activeScreen} onNavigate={setActiveScreen} />
+      <Navigation
+        active={activeScreen}
+        onNavigate={setActiveScreen}
+        onOpenCommandPalette={() => setCommandPaletteOpen(true)}
+      />
 
       <div className="app-main">
         <header className="app-header">
@@ -604,7 +609,7 @@ export function App(): JSX.Element {
             onClick={() => setTheme(theme === "light" ? "dark" : "light")}
             aria-label={`Switch to ${theme === "light" ? "dark" : "light"} theme`}
           >
-            {theme === "light" ? "🌙" : "☀️"}
+            <Icon name={theme === "light" ? "moon" : "sun"} size={16} />
           </button>
         </header>
 

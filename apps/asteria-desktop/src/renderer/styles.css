@@ -20,6 +20,7 @@
   --color-primary: #3b82f6;
   --color-primary-hover: #2563eb;
   --color-primary-text: #ffffff;
+  --color-accent: var(--color-primary);
 
   --color-success: #10b981;
   --color-success-bg: #d1fae5;
@@ -75,6 +76,7 @@
   --color-primary: #3b82f6;
   --color-primary-hover: #60a5fa;
   --color-primary-text: #ffffff;
+  --color-accent: var(--color-primary);
 
   --color-success: #10b981;
   --color-success-bg: #064e3b;
@@ -382,9 +384,13 @@ textarea:focus-visible {
 }
 
 .empty-state-icon {
-  font-size: 48px;
+  width: 48px;
+  height: 48px;
   margin-bottom: 16px;
-  opacity: 0.5;
+  color: var(--text-tertiary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .empty-state-title {

@@ -7,6 +7,7 @@ import type {
   RunSummary,
 } from "../../ipc/contracts.js";
 import { unwrapIpcResult, unwrapIpcResultOr } from "../utils/ipc.js";
+import { Icon } from "../components/Icon.js";
 
 interface SettingsScreenProps {
   projectId?: string;
@@ -279,7 +280,7 @@ export function SettingsScreen({ projectId }: Readonly<SettingsScreenProps>): JS
       {!snapshot && !error && (
         <div className="empty-state">
           <div className="empty-state-icon" aria-hidden="true">
-            🧭
+            <Icon name="compass" size={48} />
           </div>
           <h2 className="empty-state-title">Config not loaded</h2>
           <p className="empty-state-description">Connect to the pipeline to view config.</p>

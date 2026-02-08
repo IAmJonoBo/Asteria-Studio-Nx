@@ -2,6 +2,7 @@ import type { JSX } from "react";
 import { useEffect, useState } from "react";
 import type { IpcResult, RunConfigSnapshot, RunSummary } from "../../ipc/contracts.js";
 import { unwrapIpcResultOr } from "../utils/ipc.js";
+import { Icon } from "../components/Icon.js";
 
 interface RunsScreenProps {
   selectedRunId?: string;
@@ -110,7 +111,7 @@ export function RunsScreen({
     return (
       <div className="empty-state">
         <div className="empty-state-icon" aria-hidden="true">
-          ⏳
+          <Icon name="loader" size={48} />
         </div>
         <h2 className="empty-state-title">Loading runs…</h2>
         <p className="empty-state-description">Fetching recent pipeline runs.</p>
@@ -122,7 +123,7 @@ export function RunsScreen({
     return (
       <div className="empty-state">
         <div className="empty-state-icon" aria-hidden="true">
-          ⚠️
+          <Icon name="alert" size={48} />
         </div>
         <h2 className="empty-state-title">Run history unavailable</h2>
         <p className="empty-state-description">{error}</p>
@@ -134,7 +135,7 @@ export function RunsScreen({
     return (
       <div className="empty-state">
         <div className="empty-state-icon" aria-hidden="true">
-          📊
+          <Icon name="chart" size={48} />
         </div>
         <h2 className="empty-state-title">No runs yet</h2>
         <p className="empty-state-description">

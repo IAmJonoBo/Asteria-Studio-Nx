@@ -1,6 +1,7 @@
 import type { JSX } from "react";
 import { useEffect, useMemo, useState } from "react";
 import type { RunProgressEvent } from "../../ipc/contracts.js";
+import { Icon } from "../components/Icon.js";
 
 interface RunProgressState {
   latest: RunProgressEvent;
@@ -50,7 +51,7 @@ export function MonitorScreen(): JSX.Element {
     return (
       <div className="empty-state">
         <div className="empty-state-icon" aria-hidden="true">
-          ⚡
+          <Icon name="bolt" size={48} />
         </div>
         <h2 className="empty-state-title">Live Run Monitor</h2>
         <p className="empty-state-description">

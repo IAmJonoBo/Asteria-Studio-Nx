@@ -1,27 +1,33 @@
 import type { JSX } from "react";
+import { Icon, type IconName } from "./Icon.js";
 
 export type NavItem = "projects" | "runs" | "monitor" | "review" | "exports" | "settings";
 
 interface NavigationProps {
   active: NavItem;
   onNavigate: (item: NavItem) => void;
+  onOpenCommandPalette: () => void;
 }
 
 const navItems: Array<{
   id: NavItem;
   label: string;
-  icon: string;
+  icon: IconName;
   shortcut?: string;
 }> = [
-  { id: "projects", label: "Projects", icon: "📁", shortcut: "1" },
-  { id: "runs", label: "Run History", icon: "📊", shortcut: "2" },
-  { id: "monitor", label: "Live Monitor", icon: "⚡", shortcut: "3" },
-  { id: "review", label: "Review Queue", icon: "🔍", shortcut: "4" },
-  { id: "exports", label: "Exports", icon: "📦", shortcut: "5" },
-  { id: "settings", label: "Settings", icon: "⚙️", shortcut: "6" },
+  { id: "projects", label: "Projects", icon: "folder", shortcut: "1" },
+  { id: "runs", label: "Run History", icon: "chart", shortcut: "2" },
+  { id: "monitor", label: "Live Monitor", icon: "bolt", shortcut: "3" },
+  { id: "review", label: "Review Queue", icon: "search", shortcut: "4" },
+  { id: "exports", label: "Exports", icon: "package", shortcut: "5" },
+  { id: "settings", label: "Settings", icon: "settings", shortcut: "6" },
 ];
 
-export function Navigation({ active, onNavigate }: Readonly<NavigationProps>): JSX.Element {
+export function Navigation({
+  active,
+  onNavigate,
+  onOpenCommandPalette,
+}: Readonly<NavigationProps>): JSX.Element {
   return (
     <nav className="app-nav" role="navigation" aria-label="Main navigation">
       <div
@@ -87,9 +93,7 @@ export function Navigation({ active, onNavigate }: Readonly<NavigationProps>): J
               }
             }}
           >
-            <span style={{ fontSize: "18px" }} aria-hidden="true">
-              {item.icon}
-            </span>
+            <Icon name={item.icon} size={18} />
             <span style={{ flex: 1 }}>{item.label}</span>
             {item.shortcut && (
               <kbd
@@ -120,6 +124,7 @@ export function Navigation({ active, onNavigate }: Readonly<NavigationProps>): J
           className="btn btn-ghost"
           style={{ width: "100%", fontSize: "12px" }}
           aria-label="Open command palette (Ctrl+K or Cmd+K)"
+          onClick={onOpenCommandPalette}
         >
           <span>⌘</span>
           <span>Command Palette</span>
