@@ -428,6 +428,56 @@ describe("App", () => {
     windowRef.asteria = previousAsteria;
   }, 10000);
 
+  it("imports a corpus when prompt is unavailable", async () => {
+    const user = userEvent.setup();
+    const windowRef = globalThis as typeof globalThis & {
+      asteria?: { ipc: Record<string, unknown> };
+    };
+    const previousAsteria = windowRef.asteria;
+    const listProjects = vi
+      .fn()
+      .mockResolvedValueOnce(ok([]))
+      .mockResolvedValueOnce(ok([]));
+    const importCorpus = vi.fn().mockResolvedValue(
+      ok({
+        id: "new-project",
+        name: "New Project",
+        path: "/projects/new",
+        inputPath: "/projects/new/input/raw",
+        status: "idle",
+      })
+    );
+
+    windowRef.asteria = {
+      ipc: {
+        "asteria:list-projects": listProjects,
+        "asteria:pick-corpus-dir": vi.fn().mockResolvedValue(ok("/tmp/corpus")),
+        "asteria:import-corpus": importCorpus,
+      },
+    };
+
+    const originalPrompt = globalThis.prompt;
+    (
+      globalThis as typeof globalThis & {
+        prompt: ((message?: string) => string | null) | undefined;
+      }
+    ).prompt = undefined;
+
+    render(<App />);
+
+    const importButton = await screen.findByRole("button", { name: /import corpus/i });
+    await user.click(importButton);
+
+    expect(importCorpus).toHaveBeenCalledWith({ inputPath: "/tmp/corpus", name: undefined });
+
+    (
+      globalThis as typeof globalThis & {
+        prompt: ((message?: string) => string | null) | undefined;
+      }
+    ).prompt = originalPrompt;
+    windowRef.asteria = previousAsteria;
+  });
+
   it("alerts when import corpus fails", async () => {
     const user = userEvent.setup();
     const windowRef = globalThis as typeof globalThis & {
