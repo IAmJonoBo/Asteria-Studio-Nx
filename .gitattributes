@@ -70,3 +70,45 @@ id_rsa*                export-ignore
 
 *.sh text eol=lf
 *.md text eol=lf
+
+# --- Additional large binaries / build artefacts ---
+pipeline-results/      export-ignore
+**/target/             export-ignore
+packages/pipeline-core/target/ export-ignore
+apps/asteria-desktop/dist-app/ export-ignore
+
+# Common compiled/native binaries
+**/*.exe               export-ignore
+**/*.dll               export-ignore
+**/*.so                export-ignore
+**/*.dylib             export-ignore
+**/*.jar               export-ignore
+
+# Common archive/compressed formats
+**/*.zip               export-ignore
+**/*.tar               export-ignore
+**/*.tgz               export-ignore
+**/*.7z                export-ignore
+
+# Mobile packages
+**/*.apk               export-ignore
+**/*.ipa               export-ignore
+
+# --- Project inputs/outputs and large fixtures ---
+projects/**/input/**   export-ignore
+projects/**/output/**  export-ignore
+
+# Golden-test fixtures / heavy test assets
+tests/fixtures/golden_corpus/** export-ignore
+
+# Release review artefacts
+release_review/        export-ignore
+
+# Common raster image formats (exclude from archives to reduce zip size)
+**/*.png               export-ignore
+**/*.jpg               export-ignore
+**/*.jpeg              export-ignore
+**/*.tif               export-ignore
+**/*.tiff              export-ignore
+**/*.webp              export-ignore
+**/*.heic              export-ignore
