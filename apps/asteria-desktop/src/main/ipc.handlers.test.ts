@@ -1525,10 +1525,9 @@ describe("IPC handler registration", () => {
     clearRunHistory.mockResolvedValueOnce({ removedRuns: 2, removedArtifacts: true });
 
     const result = unwrap(
-      await (handler as (event: unknown, options?: { removeArtifacts?: boolean }) => Promise<unknown>)(
-        {},
-        { removeArtifacts: true }
-      )
+      await (
+        handler as (event: unknown, options?: { removeArtifacts?: boolean }) => Promise<unknown>
+      )({}, { removeArtifacts: true })
     );
 
     expect(clearRunHistory).toHaveBeenCalledWith("/tmp/out", { removeArtifacts: true });

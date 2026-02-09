@@ -99,12 +99,12 @@ export function RunsScreen({
     const windowRef: typeof globalThis & { asteria?: { ipc?: Record<string, unknown> } } =
       globalThis;
     const clearHistory = windowRef.asteria?.ipc?.["asteria:clear-run-history"] as
-      | ((
-          options?: { removeArtifacts?: boolean }
-        ) => Promise<import("../../ipc/contracts.js").IpcResult<{
-          removedRuns: number;
-          removedArtifacts: boolean;
-        }>>)
+      | ((options?: { removeArtifacts?: boolean }) => Promise<
+          import("../../ipc/contracts.js").IpcResult<{
+            removedRuns: number;
+            removedArtifacts: boolean;
+          }>
+        >)
       | undefined;
     if (!clearHistory) return;
     setBulkBusy(removeArtifacts ? "delete" : "history");

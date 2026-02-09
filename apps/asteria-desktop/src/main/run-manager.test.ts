@@ -106,7 +106,9 @@ describe("run-manager", () => {
 
     await startRun(config, "/tmp/project", "/tmp/output");
 
-    await expect(startRun(config, "/tmp/project", "/tmp/output")).rejects.toThrow(/already active/i);
+    await expect(startRun(config, "/tmp/project", "/tmp/output")).rejects.toThrow(
+      /already active/i
+    );
   });
 
   it("deleteRunArtifacts rejects active runs", async () => {

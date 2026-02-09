@@ -216,9 +216,7 @@ export function App(): JSX.Element {
         ].slice(0, 6);
         return { ...prev, [event.runId]: next };
       });
-      setRunModalHiddenForRunId((current) =>
-        current && current !== event.runId ? null : current
-      );
+      setRunModalHiddenForRunId((current) => (current && current !== event.runId ? null : current));
       if (event.stage === "complete" || event.stage === "cancelled" || event.stage === "error") {
         setActiveRunId((current) => (current === event.runId ? null : current));
       } else {
@@ -250,17 +248,19 @@ export function App(): JSX.Element {
     };
   }, []);
 
-  const activeRunProgress = activeRunId ? runProgressById[activeRunId] ?? null : null;
-  const activeRunStages = activeRunId ? runStageEventsById[activeRunId] ?? {} : {};
+  const activeRunProgress = activeRunId ? (runProgressById[activeRunId] ?? null) : null;
+  const activeRunStages = activeRunId ? (runStageEventsById[activeRunId] ?? {}) : {};
   const activeRunRecentPages = activeRunId
-    ? runRecentPagesById[activeRunId] ?? activeRunProgress?.recentPageIds ?? []
+    ? (runRecentPagesById[activeRunId] ?? activeRunProgress?.recentPageIds ?? [])
     : [];
   const activeRunStageEntries = Object.values(activeRunStages).sort((a, b) => {
     const aIndex = STAGE_ORDER.indexOf(a.stage);
     const bIndex = STAGE_ORDER.indexOf(b.stage);
     if (aIndex !== -1 || bIndex !== -1) {
-      return (aIndex === -1 ? STAGE_ORDER.length : aIndex) -
-        (bIndex === -1 ? STAGE_ORDER.length : bIndex);
+      return (
+        (aIndex === -1 ? STAGE_ORDER.length : aIndex) -
+        (bIndex === -1 ? STAGE_ORDER.length : bIndex)
+      );
     }
     return new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime();
   });
@@ -1024,9 +1024,7 @@ export function App(): JSX.Element {
                     ))}
                   </div>
                 ) : (
-                  <div className="run-progress-empty">
-                    Waiting for pages to enter the pipeline…
-                  </div>
+                  <div className="run-progress-empty">Waiting for pages to enter the pipeline…</div>
                 )}
               </div>
             </div>
@@ -1048,7 +1046,8 @@ export function App(): JSX.Element {
                       <div className="run-progress-stage-header">
                         <span>{formatStageLabel(stageEvent.stage)}</span>
                         <span>
-                          {stageEvent.processed.toLocaleString()} / {stageEvent.total.toLocaleString()}
+                          {stageEvent.processed.toLocaleString()} /{" "}
+                          {stageEvent.total.toLocaleString()}
                         </span>
                       </div>
                       <div className="run-progress-stage-bar" aria-hidden="true">

@@ -178,9 +178,7 @@ export function ProjectsScreen({
               </div>
             </div>
           )}
-          <div style={{ marginTop: "6px" }}>
-            Cancel it in Live Monitor to start another run.
-          </div>
+          <div style={{ marginTop: "6px" }}>Cancel it in Live Monitor to start another run.</div>
         </div>
       )}
 
@@ -203,23 +201,23 @@ export function ProjectsScreen({
                 <div style={{ display: "flex", gap: "12px", fontSize: "13px" }}>
                   <span>
                     <strong>{project.pageCount?.toLocaleString() ?? "—"}</strong> pages
-          {recentPages.length > 0 && (
-            <div className="run-progress-activity" style={{ marginTop: "10px" }}>
-              <div className="run-progress-activity-title">Live page stream</div>
-              <div className="run-progress-activity-stream" role="list">
-                {recentPages.map((pageId) => (
-                  <div
-                    key={`project-run-${pageId}`}
-                    className={`run-progress-chip${pageId === currentPageId ? " active" : ""}`}
-                    role="listitem"
-                  >
-                    <span>{pageId}</span>
-                    <span>{formatStageLabel(activeRunProgress?.stage ?? "")}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
+                    {recentPages.length > 0 && (
+                      <div className="run-progress-activity" style={{ marginTop: "10px" }}>
+                        <div className="run-progress-activity-title">Live page stream</div>
+                        <div className="run-progress-activity-stream" role="list">
+                          {recentPages.map((pageId) => (
+                            <div
+                              key={`project-run-${pageId}`}
+                              className={`run-progress-chip${pageId === currentPageId ? " active" : ""}`}
+                              role="listitem"
+                            >
+                              <span>{pageId}</span>
+                              <span>{formatStageLabel(activeRunProgress?.stage ?? "")}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </span>
                   {project.lastRun && (
                     <span style={{ color: "var(--text-secondary)" }}>

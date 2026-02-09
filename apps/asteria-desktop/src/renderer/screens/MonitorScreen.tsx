@@ -238,9 +238,7 @@ export function MonitorScreen(): JSX.Element {
                     ))}
                   </div>
                 ) : (
-                  <div className="run-progress-empty">
-                    Waiting for pages to enter the pipeline…
-                  </div>
+                  <div className="run-progress-empty">Waiting for pages to enter the pipeline…</div>
                 )}
               </div>
 

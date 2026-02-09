@@ -1799,9 +1799,7 @@ const ReviewQueueLayout = ({
           <div className="review-queue-rail-header">
             <div>
               <p className="review-queue-rail-title">Review Queue</p>
-              <p className="review-queue-rail-subtitle">
-                {queuePages.length} pages need attention
-              </p>
+              <p className="review-queue-rail-subtitle">{queuePages.length} pages need attention</p>
             </div>
             <span className="review-queue-rail-run">Run {runId}</span>
           </div>
@@ -1810,7 +1808,9 @@ const ReviewQueueLayout = ({
             className="review-queue-rail-list"
             onScroll={(event) => onScroll(event.currentTarget.scrollTop)}
           >
-            {totalHeight && <div className="review-queue-rail-spacer" style={{ height: totalHeight }} />}
+            {totalHeight && (
+              <div className="review-queue-rail-spacer" style={{ height: totalHeight }} />
+            )}
           </div>
         </aside>
         <section className="review-queue-workspace">
@@ -3858,20 +3858,26 @@ export function ReviewQueueScreen({
   const normalizedSrc =
     resolvePreviewSrc(normalizedPreview, runDir) ||
     (runDir && currentPage
-      ? resolvePreviewSrc({
-          path: buildRunPreviewPath(runDir, currentPage.id, "normalized"),
-          width: 0,
-          height: 0,
-        }, runDir)
+      ? resolvePreviewSrc(
+          {
+            path: buildRunPreviewPath(runDir, currentPage.id, "normalized"),
+            width: 0,
+            height: 0,
+          },
+          runDir
+        )
       : undefined);
   const sourceSrc =
     resolvePreviewSrc(sourcePreview, runDir) ||
     (runDir && currentPage
-      ? resolvePreviewSrc({
-          path: buildRunPreviewPath(runDir, currentPage.id, "source"),
-          width: 0,
-          height: 0,
-        }, runDir)
+      ? resolvePreviewSrc(
+          {
+            path: buildRunPreviewPath(runDir, currentPage.id, "source"),
+            width: 0,
+            height: 0,
+          },
+          runDir
+        )
       : undefined);
   const activeCropBox = cropBox ?? sidecar?.normalization?.cropBox ?? null;
   const activeTrimBox = trimBox ?? null;
