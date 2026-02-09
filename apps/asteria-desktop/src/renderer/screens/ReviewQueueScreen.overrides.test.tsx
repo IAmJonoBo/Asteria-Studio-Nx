@@ -68,7 +68,6 @@ describe("ReviewQueueScreen overrides", () => {
     expect(appliedLabels.length).toBeGreaterThan(0);
     expect(applyOverride).toHaveBeenCalledWith(
       "run-1",
-      "/tmp/runs/run-1",
       "page-1",
       expect.objectContaining({
         normalization: expect.objectContaining({ rotationDeg: 0.5 }),

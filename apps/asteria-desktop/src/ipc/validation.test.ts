@@ -1,11 +1,15 @@
 import { describe, expect, it } from "vitest";
 import {
+  validateAppPreferencesUpdate,
   validateExportFormat,
   validateExportFormats,
   validateImportCorpusRequest,
   validateOverrides,
   validatePageId,
+  validatePageLayoutOverrides,
+  validatePipelineConfigOverrides,
   validatePageLayoutSidecar,
+  validateProjectId,
   validatePipelineRunConfig,
   validateRunHistoryCleanupOptions,
   validateReviewDecisions,
@@ -77,7 +81,7 @@ describe("IPC validation", () => {
     const invalid = buildValidConfig();
     invalid.projectId = "";
 
-    expect(() => validatePipelineRunConfig(invalid)).toThrow(/projectId/);
+    expect(() => validatePipelineRunConfig(invalid)).toThrow(/project id/i);
   });
 
   it("rejects pages with non-numeric confidence scores", () => {
@@ -294,6 +298,36 @@ describe("validateTemplateTrainingSignal", () => {
     (invalid as { layoutProfile: unknown }).layoutProfile = 123;
     expect(() => validateTemplateTrainingSignal(invalid as TemplateTrainingSignal)).toThrow(
       /layoutProfile must be a string/
+    );
+  });
+});
+
+describe("extended validation guards", () => {
+  it("validates project ids and rejects traversal-like ids", () => {
+    expect(() => validateProjectId("demo-project_1")).not.toThrow();
+    expect(() => validateProjectId("../demo")).toThrow(/project id/i);
+  });
+
+  it("validates preferences path constraints", () => {
+    expect(() => validateAppPreferencesUpdate({ outputDir: "/tmp/asteria-output" })).not.toThrow();
+    expect(() => validateAppPreferencesUpdate({ outputDir: "relative/path" })).toThrow(/absolute/);
+    expect(() => validateAppPreferencesUpdate({ outputDir: "/" })).toThrow(/filesystem root/);
+  });
+
+  it("validates page layout override allowlists", () => {
+    expect(() =>
+      validatePageLayoutOverrides({
+        normalization: { rotationDeg: 1.2, cropBox: [0, 0, 20, 20] },
+        guides: { baselineGrid: { spacingPx: 14, angleDeg: 0.1 } },
+      })
+    ).not.toThrow();
+    expect(() => validatePageLayoutOverrides({ crop: { x: 1 } })).toThrow(/unsupported top-level/);
+  });
+
+  it("validates pipeline override allowlists", () => {
+    expect(() => validatePipelineConfigOverrides({ project: { dpi: 400 } })).not.toThrow();
+    expect(() => validatePipelineConfigOverrides({ unknownField: true })).toThrow(
+      /unsupported top-level/
     );
   });
 });

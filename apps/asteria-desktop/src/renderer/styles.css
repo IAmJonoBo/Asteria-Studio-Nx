@@ -1006,18 +1006,15 @@ textarea:focus-visible {
   right: 0;
   height: 86px;
   padding: 12px 14px;
-  border: none;
   border-bottom: 1px solid var(--border-subtle);
   background: transparent;
-  color: var(--text-primary);
-  text-align: left;
-  cursor: pointer;
   transition:
     background 160ms ease,
     transform 160ms ease;
 }
 
-.review-queue-item:hover {
+.review-queue-item:hover,
+.review-queue-item:focus-within {
   background: color-mix(in srgb, var(--bg-surface-hover) 85%, transparent);
 }
 
@@ -1028,8 +1025,32 @@ textarea:focus-visible {
 
 .review-queue-item-inner {
   display: flex;
-  gap: 10px;
+  gap: 12px;
   align-items: center;
+  height: 100%;
+}
+
+.review-queue-item-selection {
+  display: flex;
+  align-items: center;
+}
+
+.review-queue-item-button {
+  border: none;
+  background: transparent;
+  color: var(--text-primary);
+  text-align: left;
+  cursor: pointer;
+  flex: 1;
+  width: 100%;
+  min-height: 100%;
+  padding: 0;
+}
+
+.review-queue-item-button:focus-visible {
+  outline: 2px solid var(--rq-accent);
+  outline-offset: 2px;
+  border-radius: 6px;
 }
 
 .review-queue-item-checkbox {

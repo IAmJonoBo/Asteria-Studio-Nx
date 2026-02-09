@@ -201,7 +201,7 @@ export function ProjectsScreen({
                 <div style={{ display: "flex", gap: "12px", fontSize: "13px" }}>
                   <span>
                     <strong>{project.pageCount?.toLocaleString() ?? "—"}</strong> pages
-                    {recentPages.length > 0 && (
+                    {recentPages.length > 0 && activeRunProgress?.projectId === project.id && (
                       <div className="run-progress-activity" style={{ marginTop: "10px" }}>
                         <div className="run-progress-activity-title">Live page stream</div>
                         <div className="run-progress-activity-stream" role="list">

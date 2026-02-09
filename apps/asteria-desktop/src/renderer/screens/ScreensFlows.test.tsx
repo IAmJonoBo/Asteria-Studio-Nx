@@ -426,7 +426,7 @@ describe("screen flows", () => {
     await user.click(screen.getByRole("button", { name: /Export Run/i }));
 
     expect(await screen.findByText(/Export saved to/i)).toBeInTheDocument();
-    expect(exportRun).toHaveBeenCalledWith("run-9", "/tmp/runs/run-9", ["png"]);
+    expect(exportRun).toHaveBeenCalledWith("run-9", ["png"]);
   });
 
   it("ExportsScreen handles empty runs and format validation", async () => {

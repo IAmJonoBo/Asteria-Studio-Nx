@@ -236,12 +236,11 @@ export function RunsScreen({
       try {
         const getRunConfig = windowRef.asteria.ipc["asteria:get-run-config"] as
           | ((
-              runId: string,
-              runDir: string
+              runId: string
             ) => Promise<import("../../ipc/contracts.js").IpcResult<RunConfigSnapshot | null>>)
           | undefined;
         const snapshotResult: IpcResult<RunConfigSnapshot | null> = getRunConfig
-          ? await getRunConfig(selectedRunId, selectedRunDir)
+          ? await getRunConfig(selectedRunId)
           : { ok: true, value: null };
         if (!snapshotResult.ok) {
           throw new Error(snapshotResult.error.message);

@@ -54,7 +54,7 @@ test.describe("Asteria Desktop App", () => {
                 reviewCount: 1,
               },
             ]),
-          "asteria:fetch-review-queue": async (_runId: string, _runDir: string) =>
+          "asteria:fetch-review-queue": async (_runId: string) =>
             ok({
               runId: "run-1",
               projectId: "project-1",
@@ -76,7 +76,6 @@ test.describe("Asteria Desktop App", () => {
             }),
           "asteria:submit-review": async (
             _runId: string,
-            _runDir: string,
             decisions: Array<{ pageId: string; decision: string }>
           ) => {
             globalRef.__submitted = { runId: "run-1", decisions };

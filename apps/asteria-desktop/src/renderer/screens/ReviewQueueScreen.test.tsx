@@ -193,7 +193,6 @@ describe("ReviewQueueScreen", () => {
     await user.click(screen.getByRole("button", { name: /submit review/i }));
     expect(submitReview).toHaveBeenCalledWith(
       "run-3",
-      "/tmp/runs/run-3",
       expect.arrayContaining([{ pageId: "page-1", decision: "accept" }])
     );
   }, 30000);

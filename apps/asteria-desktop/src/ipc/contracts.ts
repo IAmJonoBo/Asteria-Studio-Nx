@@ -650,23 +650,19 @@ export interface IpcChannels {
   "asteria:resume-run": (_runId: string) => Promise<IpcResult<void>>;
   "asteria:fetch-page": (
     _runId: string,
-    _runDir: string,
     _pageId: string
   ) => Promise<IpcResult<PageData>>;
   "asteria:fetch-sidecar": (
     _runId: string,
-    _runDir: string,
     _pageId: string
   ) => Promise<IpcResult<PageLayoutSidecar | null>>;
   "asteria:apply-override": (
     _runId: string,
-    _runDir: string,
     _pageId: string,
     _overrides: Record<string, unknown>
   ) => Promise<IpcResult<void>>;
   "asteria:export-run": (
     _runId: string,
-    _runDir: string,
     _formats: Array<"png" | "tiff" | "pdf">
   ) => Promise<IpcResult<string>>;
   "asteria:analyze-corpus": (_config: PipelineRunConfig) => Promise<IpcResult<CorpusSummary>>;
@@ -682,10 +678,7 @@ export interface IpcChannels {
   "asteria:clear-run-history": (
     _options?: RunHistoryCleanupOptions
   ) => Promise<IpcResult<RunHistoryCleanupResult>>;
-  "asteria:get-run-manifest": (
-    _runId: string,
-    _runDir: string
-  ) => Promise<IpcResult<RunManifestSummary | null>>;
+  "asteria:get-run-manifest": (_runId: string) => Promise<IpcResult<RunManifestSummary | null>>;
   "asteria:get-pipeline-config": (
     _projectId?: string
   ) => Promise<IpcResult<PipelineConfigSnapshot>>;
@@ -693,17 +686,10 @@ export interface IpcChannels {
     _projectId: string,
     _overrides: PipelineConfigOverrides
   ) => Promise<IpcResult<void>>;
-  "asteria:get-run-config": (
-    _runId: string,
-    _runDir: string
-  ) => Promise<IpcResult<RunConfigSnapshot | null>>;
-  "asteria:fetch-review-queue": (
-    _runId: string,
-    _runDir: string
-  ) => Promise<IpcResult<ReviewQueue>>;
+  "asteria:get-run-config": (_runId: string) => Promise<IpcResult<RunConfigSnapshot | null>>;
+  "asteria:fetch-review-queue": (_runId: string) => Promise<IpcResult<ReviewQueue>>;
   "asteria:submit-review": (
     _runId: string,
-    _runDir: string,
     _decisions: ReviewDecision[]
   ) => Promise<IpcResult<void>>;
   "asteria:record-template-training": (

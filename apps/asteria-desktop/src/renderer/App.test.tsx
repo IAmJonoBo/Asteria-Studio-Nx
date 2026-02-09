@@ -306,7 +306,7 @@ describe("App", () => {
 
     await user.click(screen.getAllByRole("button", { name: /review queue/i })[0]);
 
-    expect(fetchReviewQueue).toHaveBeenCalledWith("run-123", "/tmp/runs/run-123");
+    expect(fetchReviewQueue).toHaveBeenCalledWith("run-123");
     const pageEntries = await screen.findAllByText(/page-123\.jpg/i);
     expect(pageEntries.length).toBeGreaterThan(0);
 

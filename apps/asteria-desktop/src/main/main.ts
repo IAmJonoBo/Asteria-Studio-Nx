@@ -147,9 +147,7 @@ async function createWindow(): Promise<void> {
       preload: path.join(__dirname, "../preload/index.cjs"),
       contextIsolation: true,
       nodeIntegration: false,
-      // Preload imports shared validation utilities that rely on Node builtins.
-      // Keep sandbox disabled so the bridge initializes consistently in dev/prod.
-      sandbox: false,
+      sandbox: true,
     },
   });
 

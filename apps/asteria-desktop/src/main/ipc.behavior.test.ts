@@ -159,11 +159,10 @@ describe("IPC behavior", () => {
       handler as (
         event: unknown,
         runId: string,
-        runDir: string,
         pageId: string,
         overrides: Record<string, unknown>
       ) => Promise<{ ok: boolean }>
-    )({}, runId, runDir, pageId, overrides);
+    )({}, runId, pageId, overrides);
 
     expect(result.ok).toBe(true);
 
@@ -196,10 +195,9 @@ describe("IPC behavior", () => {
       handler as (
         event: unknown,
         runId: string,
-        runDir: string,
         formats: Array<"png">
       ) => Promise<{ ok: boolean; value?: string }>
-    )({}, runId, runDir, ["png"]);
+    )({}, runId, ["png"]);
 
     expect(result.ok).toBe(true);
     const exportDir = result.value as string;

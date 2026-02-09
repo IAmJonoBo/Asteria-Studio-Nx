@@ -42,15 +42,14 @@ export function ExportsScreen(): JSX.Element {
         }
         const getManifest = windowRef.asteria.ipc["asteria:get-run-manifest"] as
           | ((
-              runId: string,
-              runDir: string
+              runId: string
             ) => Promise<import("../../ipc/contracts.js").IpcResult<RunManifestSummary | null>>)
           | undefined;
         if (getManifest && resolvedRuns.length > 0) {
           const manifestEntries = await Promise.all(
             resolvedRuns.map(async (run) => ({
               runId: run.runId,
-              manifest: unwrapIpcResultOr(await getManifest(run.runId, run.runDir), null),
+              manifest: unwrapIpcResultOr(await getManifest(run.runId), null),
             }))
           );
           if (!cancelled) {
@@ -93,7 +92,6 @@ export function ExportsScreen(): JSX.Element {
     const exportRun = windowRef.asteria.ipc["asteria:export-run"] as
       | ((
           runId: string,
-          runDir: string,
           formats: Array<ExportFormat>
         ) => Promise<import("../../ipc/contracts.js").IpcResult<string>>)
       | undefined;
@@ -107,7 +105,7 @@ export function ExportsScreen(): JSX.Element {
     setExportPath(null);
     setError(null);
     try {
-      const exportResult = await exportRun(selectedRunId, selectedRun.runDir, selectedFormats);
+      const exportResult = await exportRun(selectedRunId, selectedFormats);
       setExportPath(unwrapIpcResult(exportResult, "Export run"));
     } catch (err) {
       const message = err instanceof Error ? err.message : "Export failed";

@@ -1,4 +1,3 @@
-import path from "node:path";
 import type { PageLayoutSidecar, PipelineRunConfig, TemplateTrainingSignal } from "./contracts.js";
 
 const isNonEmptyString = (value: unknown): value is string =>
@@ -54,6 +53,22 @@ const requireNonEmptyString = (value: unknown, message: string): void => {
   if (!isNonEmptyString(value)) {
     throwTypeError(message);
   }
+};
+
+const normalizeSeparators = (value: string): string => value.replaceAll(/\\/g, "/");
+
+const isAbsolutePath = (value: string): boolean =>
+  /^\/(?!\/)/.test(value) || /^[a-zA-Z]:[\\/]/.test(value);
+
+const isRootPath = (value: string): boolean => {
+  const normalized = normalizeSeparators(value).replace(/\/+$/, "");
+  return normalized === "" || normalized === "/" || /^[a-zA-Z]:$/.test(normalized);
+};
+
+const pathBasename = (value: string): string => {
+  const normalized = normalizeSeparators(value).replace(/\/+$/, "");
+  const segments = normalized.split("/").filter((segment) => segment.length > 0);
+  return segments[segments.length - 1] ?? "";
 };
 
 const validateBaselineSummary = (baseline: unknown): void => {
@@ -123,18 +138,33 @@ export const validateRunId = (runId: string): void => {
   if (!isNonEmptyString(runId)) {
     throw new Error("Invalid run id: expected non-empty string");
   }
+  if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$/.test(runId)) {
+    throw new Error("Invalid run id: unsupported characters");
+  }
+};
+
+export const validateProjectId = (projectId: string): void => {
+  if (!isNonEmptyString(projectId)) {
+    throw new Error("Invalid project id: expected non-empty string");
+  }
+  if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$/.test(projectId)) {
+    throw new Error("Invalid project id: unsupported characters");
+  }
 };
 
 export const validateRunDir = (runDir: string, runId?: string): void => {
   if (!isNonEmptyString(runDir)) {
     throw new Error("Invalid run directory: expected non-empty string");
   }
-  const normalized = path.resolve(runDir);
-  const parts = normalized.split(path.sep).filter(Boolean);
+  if (runDir.includes("\u0000")) {
+    throw new Error("Invalid run directory: contains null byte");
+  }
+  const normalized = normalizeSeparators(runDir).replace(/\/+$/, "");
+  const parts = normalized.split("/").filter(Boolean);
   if (parts.length < 2 || parts[parts.length - 2] !== "runs") {
     throw new Error("Invalid run directory: expected path ending in /runs/<runId>");
   }
-  if (runId && path.basename(normalized) !== runId) {
+  if (runId && pathBasename(normalized) !== runId) {
     throw new Error("Invalid run directory: runId mismatch");
   }
 };
@@ -206,6 +236,18 @@ export const validateAppPreferencesUpdate = (prefs: Record<string, unknown>): vo
       if (!isNonEmptyString(value)) {
         throwTypeError(`Invalid preferences update: ${key} must be a non-empty string`);
       }
+      const stringValue = value as string;
+      if ((key === "outputDir" || key === "projectsDir") && stringValue.length > 4096) {
+        throwTypeError(`Invalid preferences update: ${key} is too long`);
+      }
+      if (key === "outputDir" || key === "projectsDir") {
+        if (!isAbsolutePath(stringValue)) {
+          throwTypeError(`Invalid preferences update: ${key} must be an absolute path`);
+        }
+        if (isRootPath(stringValue)) {
+          throwTypeError(`Invalid preferences update: ${key} cannot be filesystem root`);
+        }
+      }
     }
     if ((key === "firstRunComplete" || key === "sampleCorpusInstalled") && value !== undefined) {
       if (typeof value !== "boolean") {
@@ -224,10 +266,10 @@ export const validateRevealPath = (targetPath: string): void => {
   if (targetPath.includes("\u0000")) {
     throwTypeError("Invalid reveal path: contains null byte");
   }
-  if (!path.isAbsolute(targetPath)) {
+  if (!isAbsolutePath(targetPath)) {
     throwTypeError("Invalid reveal path: expected absolute path");
   }
-  if (path.parse(targetPath).root === targetPath) {
+  if (isRootPath(targetPath)) {
     throwTypeError("Invalid reveal path: refusing filesystem root");
   }
 };
@@ -244,6 +286,109 @@ export const validateOverrides = (overrides: Record<string, unknown>): void => {
 
     if (!isJsonSafe(value)) {
       throw new Error("Invalid overrides: values must be JSON-safe primitives, arrays, or objects");
+    }
+  }
+};
+
+const validateBoxTuple = (value: unknown, label: string): void => {
+  if (value === undefined) return;
+  if (!Array.isArray(value) || value.length !== 4) {
+    throw new Error(`Invalid ${label}: expected [x1, y1, x2, y2]`);
+  }
+  const [x1, y1, x2, y2] = value;
+  [x1, y1, x2, y2].forEach((entry, index) => {
+    if (!isFiniteNumber(entry)) {
+      throw new Error(`Invalid ${label}[${index}]: expected finite number`);
+    }
+  });
+  if (x2 <= x1 || y2 <= y1) {
+    throw new Error(`Invalid ${label}: expected x2 > x1 and y2 > y1`);
+  }
+};
+
+export const validatePageLayoutOverrides = (overrides: Record<string, unknown>): void => {
+  validateOverrides(overrides);
+  const allowedTopLevel = new Set(["normalization", "elements", "guides", "templateCluster"]);
+  for (const key of Object.keys(overrides)) {
+    if (!allowedTopLevel.has(key)) {
+      throw new Error(`Invalid overrides: unsupported top-level key ${key}`);
+    }
+  }
+
+  if (overrides.normalization !== undefined) {
+    requirePlainObject(
+      overrides.normalization,
+      "Invalid overrides: normalization must be a plain object"
+    );
+    const normalization = overrides.normalization as Record<string, unknown>;
+    validateBoxTuple(normalization.cropBox, "overrides.normalization.cropBox");
+    validateBoxTuple(normalization.trimBox, "overrides.normalization.trimBox");
+    assertOptionalRange(normalization.rotationDeg, "overrides.normalization.rotationDeg", -180, 180);
+  }
+
+  if (overrides.elements !== undefined && !Array.isArray(overrides.elements)) {
+    throw new Error("Invalid overrides: elements must be an array");
+  }
+
+  if (overrides.guides !== undefined) {
+    requirePlainObject(overrides.guides, "Invalid overrides: guides must be an object");
+    const guides = overrides.guides as Record<string, unknown>;
+    const allowedGuideKeys = new Set([
+      "baselineGrid",
+      "margins",
+      "columns",
+      "headerBand",
+      "footerBand",
+      "gutterBand",
+    ]);
+    for (const key of Object.keys(guides)) {
+      if (!allowedGuideKeys.has(key)) {
+        throw new Error(`Invalid overrides: unsupported guides key ${key}`);
+      }
+    }
+    if (guides.baselineGrid !== undefined) {
+      requirePlainObject(
+        guides.baselineGrid,
+        "Invalid overrides: guides.baselineGrid must be an object"
+      );
+      const baselineGrid = guides.baselineGrid as Record<string, unknown>;
+      assertOptionalRange(
+        baselineGrid.spacingPx,
+        "overrides.guides.baselineGrid.spacingPx",
+        0.0001
+      );
+      assertOptionalRange(
+        baselineGrid.offsetPx,
+        "overrides.guides.baselineGrid.offsetPx",
+        -10000,
+        10000
+      );
+      assertOptionalRange(
+        baselineGrid.angleDeg,
+        "overrides.guides.baselineGrid.angleDeg",
+        -180,
+        180
+      );
+    }
+  }
+};
+
+export const validatePipelineConfigOverrides = (overrides: Record<string, unknown>): void => {
+  validateOverrides(overrides);
+  const allowedTopLevel = new Set([
+    "version",
+    "project",
+    "models",
+    "steps",
+    "export",
+    "snapping",
+    "templates",
+    "guides",
+    "logging",
+  ]);
+  for (const key of Object.keys(overrides)) {
+    if (!allowedTopLevel.has(key)) {
+      throw new Error(`Invalid pipeline overrides: unsupported top-level key ${key}`);
     }
   }
 };
@@ -300,7 +445,7 @@ export const validateTemplateTrainingSignal = (signal: TemplateTrainingSignal): 
 
 export const validatePipelineRunConfig = (config: PipelineRunConfig): void => {
   requirePlainObject(config, "Invalid pipeline config: expected object");
-  requireNonEmptyString(config.projectId, "Invalid pipeline config: projectId required");
+  validateProjectId(config.projectId);
   if (!Array.isArray(config.pages)) {
     throwTypeError("Invalid pipeline config: pages must be an array");
   }

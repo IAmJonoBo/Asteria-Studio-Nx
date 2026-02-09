@@ -1277,8 +1277,7 @@ const ITEM_HEIGHT = 86;
 const OVERSCAN = 6;
 
 const useReviewQueuePages = (
-  runId?: string,
-  runDir?: string
+  runId?: string
 ): { pages: ReviewPage[]; isLoading: boolean; error: string | null; isUiPreviewMode: boolean } => {
   const [pages, setPages] = useState<ReviewPage[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -1293,13 +1292,12 @@ const useReviewQueuePages = (
         asteria?: {
           ipc?: {
             [key: string]: (
-              runId: string,
-              runDir: string
+              runId: string
             ) => Promise<import("../../ipc/contracts.js").IpcResult<ReviewQueue>>;
           };
         };
       } = globalThis;
-      if (previewMode && (!runId || !runDir || !windowRef.asteria?.ipc)) {
+      if (previewMode && (!runId || !windowRef.asteria?.ipc)) {
         if (!cancelled) {
           setPages(createUiPreviewPages());
           setIsLoading(false);
@@ -1308,7 +1306,7 @@ const useReviewQueuePages = (
         }
         return;
       }
-      if (!runId || !runDir || !windowRef.asteria?.ipc) {
+      if (!runId || !windowRef.asteria?.ipc) {
         if (!cancelled) {
           setPages([]);
           setIsLoading(false);
@@ -1321,10 +1319,7 @@ const useReviewQueuePages = (
       setError(null);
       setIsUiPreviewMode(false);
       try {
-        const queueResult = await windowRef.asteria.ipc["asteria:fetch-review-queue"](
-          runId,
-          runDir
-        );
+        const queueResult = await windowRef.asteria.ipc["asteria:fetch-review-queue"](runId);
         if (cancelled) return;
         setPages(mapReviewQueue(unwrapIpcResult(queueResult, "Fetch review queue")));
         setIsLoading(false);
@@ -1342,7 +1337,7 @@ const useReviewQueuePages = (
     return (): void => {
       cancelled = true;
     };
-  }, [runDir, runId]);
+  }, [runId]);
 
   return { pages, isLoading, error, isUiPreviewMode };
 };
@@ -1442,7 +1437,6 @@ const useQueueViewport = (
 
 const useSidecarData = (
   runId: string | undefined,
-  runDir: string | undefined,
   currentPage: ReviewPage | undefined
 ): { sidecar: PageLayoutSidecar | null; sidecarError: string | null; isLoading: boolean } => {
   const [sidecar, setSidecar] = useState<PageLayoutSidecar | null>(null);
@@ -1464,19 +1458,18 @@ const useSidecarData = (
           ipc?: {
             [key: string]: (
               runId: string,
-              runDir: string,
               pageId: string
             ) => Promise<import("../../ipc/contracts.js").IpcResult<PageLayoutSidecar | null>>;
           };
         };
       } = globalThis;
-      if (previewMode && (!runId || !runDir || !windowRef.asteria?.ipc)) {
+      if (previewMode && (!runId || !windowRef.asteria?.ipc)) {
         setSidecar(createUiPreviewSidecar(currentPage.id));
         setSidecarError(null);
         setIsLoading(false);
         return;
       }
-      if (!runId || !runDir || !windowRef.asteria?.ipc) {
+      if (!runId || !windowRef.asteria?.ipc) {
         setSidecar(null);
         setSidecarError(null);
         setIsLoading(false);
@@ -1486,7 +1479,6 @@ const useSidecarData = (
       try {
         const sidecarResult = await windowRef.asteria.ipc["asteria:fetch-sidecar"](
           runId,
-          runDir,
           currentPage.id
         );
         if (cancelled) return;
@@ -1511,7 +1503,7 @@ const useSidecarData = (
     return (): void => {
       cancelled = true;
     };
-  }, [currentPage, runDir, runId]);
+  }, [currentPage, runId]);
 
   return { sidecar, sidecarError, isLoading };
 };
@@ -2173,40 +2165,46 @@ const ReviewQueueLayout = ({
               const isSelected = selectedIds.has(page.id);
               const isActive = index === selectedIndex;
               return (
-                <button
+                <div
                   key={page.id}
-                  onClick={() => onSelectIndex(index)}
                   className={`review-queue-item ${isActive ? "is-active" : ""}`}
                   style={{ top: index * ITEM_HEIGHT }}
-                  aria-current={isActive}
                 >
                   <div className="review-queue-item-inner">
-                    <input
-                      className="review-queue-item-checkbox"
-                      type="checkbox"
-                      checked={isSelected}
-                      onChange={() => onToggleSelected(page.id)}
-                      onClick={(event) => event.stopPropagation()}
-                      aria-label={`Select ${page.filename} for batch actions`}
-                    />
-                    <div className="review-queue-item-body">
-                      <div className="review-queue-item-row">
-                        <span className="review-queue-item-title">{page.filename}</span>
-                        {pageDecision && (
-                          <span className={`badge ${getDecisionBadgeClass(pageDecision)}`}>
-                            {pageDecision}
-                          </span>
-                        )}
-                      </div>
-                      <div className="review-queue-item-reason">{page.reason}</div>
-                      <div className="review-queue-item-confidence">
-                        <span style={{ color: getConfidenceColor(page.confidence) }}>
-                          {(page.confidence * 100).toFixed(0)}% confidence
-                        </span>
-                      </div>
+                    <div className="review-queue-item-selection">
+                      <input
+                        className="review-queue-item-checkbox"
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={() => onToggleSelected(page.id)}
+                        aria-label={`Select ${page.filename} for batch actions`}
+                      />
                     </div>
+                    <button
+                      type="button"
+                      onClick={() => onSelectIndex(index)}
+                      className="review-queue-item-button"
+                      aria-current={isActive}
+                    >
+                      <div className="review-queue-item-body">
+                        <div className="review-queue-item-row">
+                          <span className="review-queue-item-title">{page.filename}</span>
+                          {pageDecision && (
+                            <span className={`badge ${getDecisionBadgeClass(pageDecision)}`}>
+                              {pageDecision}
+                            </span>
+                          )}
+                        </div>
+                        <div className="review-queue-item-reason">{page.reason}</div>
+                        <div className="review-queue-item-confidence">
+                          <span style={{ color: getConfidenceColor(page.confidence) }}>
+                            {(page.confidence * 100).toFixed(0)}% confidence
+                          </span>
+                        </div>
+                      </div>
+                    </button>
                   </div>
-                </button>
+                </div>
               );
             })}
           </div>
@@ -3042,7 +3040,7 @@ export function ReviewQueueScreen({
     isLoading: isQueueLoading,
     error: queueError,
     isUiPreviewMode,
-  } = useReviewQueuePages(runId, runDir);
+  } = useReviewQueuePages(runId);
   const queuePages = useQueueWorker(pages);
   const { selectedIndex, setSelectedIndex } = useQueueSelection(queuePages);
   const { listRef, scrollTop, setScrollTop, viewportHeight } = useQueueViewport(selectedIndex);
@@ -3063,7 +3061,7 @@ export function ReviewQueueScreen({
     sidecar,
     sidecarError,
     isLoading: isSidecarLoading,
-  } = useSidecarData(runId, runDir, currentPage);
+  } = useSidecarData(runId, currentPage);
   const derivedDimensions = useMemo(() => derivePreviewDimensions(sidecar), [sidecar]);
   const fallbackNormalizedPreview = useMemo((): PreviewRef | undefined => {
     if (!runDir || !currentPage || !derivedDimensions) return undefined;
@@ -3796,13 +3794,12 @@ export function ReviewQueueScreen({
         ipc?: {
           [key: string]: (
             runId: string,
-            runDir: string,
             payload: unknown
           ) => Promise<import("../../ipc/contracts.js").IpcResult<unknown>>;
         };
       };
     } = globalThis;
-    if (!runId || !runDir || !windowRef.asteria?.ipc || decisions.size === 0) return;
+    if (!runId || !windowRef.asteria?.ipc || decisions.size === 0) return;
     setIsSubmitting(true);
     setSubmitError(null);
     try {
@@ -3810,11 +3807,7 @@ export function ReviewQueueScreen({
         pageId,
         decision: decisionValue === "flag" ? "adjust" : decisionValue,
       }));
-      const submitResult = await windowRef.asteria.ipc["asteria:submit-review"](
-        runId,
-        runDir,
-        payload
-      );
+      const submitResult = await windowRef.asteria.ipc["asteria:submit-review"](runId, payload);
       unwrapIpcResult(submitResult, "Submit review");
       setDecisions(new Map());
     } catch (error) {
@@ -3826,7 +3819,7 @@ export function ReviewQueueScreen({
   };
 
   const handleApplyOverride = async (): Promise<void> => {
-    if (!runId || !runDir || !currentPage) return;
+    if (!runId || !currentPage) return;
     const overrides: Record<string, unknown> = {};
     const normalization: Record<string, unknown> = {};
     const baselineGridOverrides: BaselineGridOverrides = {
@@ -3876,7 +3869,7 @@ export function ReviewQueueScreen({
     }
 
     const applyOverrideChannel = getIpcChannel<
-      [runId: string, runDir: string, pageId: string, overrides: Record<string, unknown>],
+      [runId: string, pageId: string, overrides: Record<string, unknown>],
       void
     >("asteria:apply-override");
     if (!applyOverrideChannel) {
@@ -3890,7 +3883,7 @@ export function ReviewQueueScreen({
       const failures: string[] = [];
       for (const targetPage of applyTargets) {
         try {
-          const result = await applyOverrideChannel(runId, runDir, targetPage.id, overrides);
+          const result = await applyOverrideChannel(runId, targetPage.id, overrides);
           unwrapIpcResult(result, "Apply override");
         } catch (error) {
           const message = error instanceof Error ? error.message : "Failed to apply override";
@@ -4153,7 +4146,7 @@ export function ReviewQueueScreen({
     },
   ]);
 
-  if ((!runId || !runDir) && !isUiPreviewMode) {
+  if (!runId && !isUiPreviewMode) {
     return (
       <div className="empty-state">
         <div className="empty-state-icon" aria-hidden="true">
