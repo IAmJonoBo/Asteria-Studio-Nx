@@ -24,10 +24,20 @@ const emitRunProgress = vi.hoisted(() => vi.fn());
 const clearRunProgress = vi.hoisted(() => vi.fn());
 vi.mock("./run-progress", () => ({ emitRunProgress, clearRunProgress }));
 
-import { cancelRun, isRunPaused, pauseRun, resumeRun, startRun } from "./run-manager.js";
+import {
+  clearActiveRunsForTesting,
+  cancelRunAndDelete,
+  cancelRun,
+  deleteRunArtifacts,
+  isRunPaused,
+  pauseRun,
+  resumeRun,
+  startRun,
+} from "./run-manager.js";
 
 describe("run-manager", () => {
   beforeEach(() => {
+    clearActiveRunsForTesting();
     mkdir.mockReset();
     readFile.mockReset();
     writeFile.mockReset();
@@ -69,6 +79,48 @@ describe("run-manager", () => {
     expect(writeFile).toHaveBeenCalled();
 
     vi.useRealTimers();
+  });
+
+  it("startRun rejects when another run is active", async () => {
+    // Simulate a long-running pipeline task so the run remains active.
+    const pendingPromise = new Promise<void>(() => undefined);
+    runPipeline.mockReturnValueOnce(pendingPromise);
+    readFile.mockRejectedValueOnce(new Error("missing"));
+
+    const config: PipelineRunConfig = {
+      projectId: "proj",
+      pages: [
+        { id: "p1", filename: "page.png", originalPath: "/tmp/page.png", confidenceScores: {} },
+      ],
+      targetDpi: 300,
+      targetDimensionsMm: { width: 210, height: 297 },
+    };
+
+    await startRun(config, "/tmp/project", "/tmp/output");
+
+    await expect(startRun(config, "/tmp/project", "/tmp/output")).rejects.toThrow(/already active/i);
+  });
+
+  it("deleteRunArtifacts rejects active runs", async () => {
+    // Simulate a long-running pipeline task so the run remains active.
+    const pendingPromise = new Promise<void>(() => undefined);
+    runPipeline.mockReturnValueOnce(pendingPromise);
+    readFile.mockRejectedValueOnce(new Error("missing"));
+
+    const config: PipelineRunConfig = {
+      projectId: "proj",
+      pages: [
+        { id: "p1", filename: "page.png", originalPath: "/tmp/page.png", confidenceScores: {} },
+      ],
+      targetDpi: 300,
+      targetDimensionsMm: { width: 210, height: 297 },
+    };
+
+    const runId = await startRun(config, "/tmp/project", "/tmp/output");
+
+    await expect(deleteRunArtifacts("/tmp/output", runId)).rejects.toThrow(
+      /cannot delete an active run/i
+    );
   });
 
   it("startRun updates existing manifest status", async () => {
@@ -226,5 +278,10 @@ describe("run-manager", () => {
     expect(await pauseRun("run-missing")).toBe(false);
     expect(await resumeRun("run-missing")).toBe(false);
     expect(await cancelRun("run-missing")).toBe(false);
+    expect(isRunPaused("run-missing")).toBe(false);
+  });
+
+  it("cancelRunAndDelete throws when run is missing", async () => {
+    await expect(cancelRunAndDelete("run-missing")).rejects.toThrow(/no active run/i);
   });
 });

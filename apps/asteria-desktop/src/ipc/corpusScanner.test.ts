@@ -41,6 +41,20 @@ describe("corpusScanner", () => {
     await expect(scanCorpus(root)).rejects.toThrow(/No supported page images/);
   });
 
+  it("throws when root path is invalid", async () => {
+    await expect(scanCorpus("")).rejects.toThrow(/Invalid root path/i);
+  });
+
+  it("accepts a single file input", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "asteria-scan-"));
+    const file = await writeDummy(root, "page-1.jpg");
+
+    const config = await scanCorpus(file);
+
+    expect(config.pages).toHaveLength(1);
+    expect(config.pages[0]?.originalPath).toBe(file);
+  });
+
   it("generates unique page ids for duplicate filenames", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "asteria-scan-"));
     const nested = path.join(root, "chapter-1");

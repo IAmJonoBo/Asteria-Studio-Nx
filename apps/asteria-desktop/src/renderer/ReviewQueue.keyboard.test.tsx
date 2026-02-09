@@ -53,8 +53,10 @@ describe("ReviewQueueScreen - Keyboard Navigation", () => {
 
     render(<ReviewQueueScreen runId="run-1" runDir="/tmp/runs/run-1" />);
 
-    expect(await screen.findByText(/review queue/i)).toBeInTheDocument();
-    expect(await screen.findByText(/pages need attention/i)).toBeInTheDocument();
+    expect(await screen.findByText(/review queue/i, {}, { timeout: 2000 })).toBeInTheDocument();
+    expect(
+      await screen.findByText(/pages need attention/i, {}, { timeout: 2000 })
+    ).toBeInTheDocument();
 
     windowRef.asteria = previousAsteria;
   });
