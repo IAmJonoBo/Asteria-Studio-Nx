@@ -1,5 +1,5 @@
 import type { JSX } from "react";
-import type { ProjectSummary } from "../../ipc/contracts.js";
+import type { ProjectSummary, RunProgressEvent } from "../../ipc/contracts.js";
 import { Icon } from "../components/Icon.js";
 
 interface ProjectsScreenProps {
@@ -14,6 +14,7 @@ interface ProjectsScreenProps {
     message?: string;
   };
   activeRunId?: string;
+  activeRunProgress?: RunProgressEvent | null;
 }
 
 export function ProjectsScreen({
@@ -25,10 +26,21 @@ export function ProjectsScreen({
   error = null,
   importState,
   activeRunId,
+  activeRunProgress,
 }: Readonly<ProjectsScreenProps>): JSX.Element {
   const isImporting = importState?.status === "working";
   const importMessage = importState?.message;
   const runBlocked = Boolean(activeRunId);
+  const progressTotal = Math.max(1, activeRunProgress?.total ?? 1);
+  const progressPercent = activeRunProgress
+    ? Math.min(100, Math.round((activeRunProgress.processed / progressTotal) * 100))
+    : null;
+  const formatStageLabel = (stage: string): string =>
+    stage
+      .split(/[-_]+/)
+      .filter((part) => part.length > 0)
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(" ");
   const noticeTone =
     importState?.status === "error"
       ? "error"
@@ -137,7 +149,36 @@ export function ProjectsScreen({
       )}
       {runBlocked && (
         <div className="notice notice-working" role="status">
-          Run in progress ({activeRunId}). Cancel it in Live Monitor to start another run.
+          <div>Run in progress ({activeRunId}).</div>
+          {activeRunProgress && (
+            <div style={{ marginTop: "6px", fontSize: "12px", color: "var(--text-secondary)" }}>
+              Stage: {formatStageLabel(activeRunProgress.stage)} •{" "}
+              {activeRunProgress.processed.toLocaleString()} /{" "}
+              {activeRunProgress.total.toLocaleString()} pages ({progressPercent ?? 0}%)
+              <div
+                style={{
+                  marginTop: "6px",
+                  height: "6px",
+                  background: "var(--bg-surface)",
+                  borderRadius: "999px",
+                  overflow: "hidden",
+                  maxWidth: "240px",
+                }}
+                aria-hidden="true"
+              >
+                <div
+                  style={{
+                    width: `${progressPercent ?? 0}%`,
+                    height: "100%",
+                    background: "var(--color-accent)",
+                  }}
+                />
+              </div>
+            </div>
+          )}
+          <div style={{ marginTop: "6px" }}>
+            Cancel it in Live Monitor to start another run.
+          </div>
         </div>
       )}
 

@@ -14,6 +14,7 @@ import type {
   IpcResult,
   ProjectSummary,
   PipelineRunConfig,
+  RunProgressEvent,
   RunSummary,
 } from "../ipc/contracts.js";
 
@@ -37,6 +38,7 @@ export function App(): JSX.Element {
   const [projectsLoading, setProjectsLoading] = useState(true);
   const [projectsError, setProjectsError] = useState<string | null>(null);
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
+  const [runProgressById, setRunProgressById] = useState<Record<string, RunProgressEvent>>({});
   const [appPreferences, setAppPreferences] = useState<AppPreferences | null>(null);
   const [onboardingVisible, setOnboardingVisible] = useState(false);
   const [onboardingBusy, setOnboardingBusy] = useState(false);
@@ -147,12 +149,13 @@ export function App(): JSX.Element {
   useEffect((): void | (() => void) => {
     const windowRef: typeof globalThis & {
       asteria?: {
-        onRunProgress?: (handler: (event: { runId: string; stage: string }) => void) => () => void;
+        onRunProgress?: (handler: (event: RunProgressEvent) => void) => () => void;
         ipc?: Record<string, unknown>;
       };
     } = globalThis;
     if (!windowRef.asteria?.onRunProgress) return;
     const unsubscribe = windowRef.asteria.onRunProgress((event): void => {
+      setRunProgressById((prev) => ({ ...prev, [event.runId]: event as RunProgressEvent }));
       if (event.stage === "complete" || event.stage === "cancelled" || event.stage === "error") {
         setActiveRunId((current) => (current === event.runId ? null : current));
       } else {
@@ -183,6 +186,8 @@ export function App(): JSX.Element {
       unsubscribe?.();
     };
   }, []);
+
+  const activeRunProgress = activeRunId ? runProgressById[activeRunId] ?? null : null;
 
   const handleImportCorpus = useCallback(
     async (options?: { markFirstRunComplete?: boolean }): Promise<ProjectSummary | null> => {
@@ -744,6 +749,7 @@ export function App(): JSX.Element {
               error={projectsError}
               importState={importState}
               activeRunId={activeRunId ?? undefined}
+              activeRunProgress={activeRunProgress}
             />
           )}
           {activeScreen === "runs" && (
@@ -754,7 +760,12 @@ export function App(): JSX.Element {
                 setSelectedRunId(runId);
                 setSelectedRunDir(runDir);
               }}
+              onClearSelection={() => {
+                setSelectedRunId(undefined);
+                setSelectedRunDir(undefined);
+              }}
               onOpenReviewQueue={() => setActiveScreen("review")}
+              runProgressById={runProgressById}
             />
           )}
           {activeScreen === "monitor" && <MonitorScreen />}

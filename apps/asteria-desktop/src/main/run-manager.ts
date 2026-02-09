@@ -5,7 +5,13 @@ import { runPipeline } from "./pipeline-runner.js";
 import type { PipelineRunnerResult } from "./pipeline-runner.js";
 import { getRunDir, getRunManifestPath, getRunReportPath } from "./run-paths.js";
 import { writeJsonAtomic } from "./file-utils.js";
-import { removeRunFromIndex, updateRunIndex, type RunIndexStatus } from "./run-index.js";
+import {
+  clearRunIndex,
+  readRunIndex,
+  removeRunFromIndex,
+  updateRunIndex,
+  type RunIndexStatus,
+} from "./run-index.js";
 import { clearRunProgress, emitRunProgress } from "./run-progress.js";
 
 type PauseController = {
@@ -217,6 +223,26 @@ export const deleteRunArtifacts = async (outputDir: string, runId: string): Prom
   const runDir = getRunDir(outputDir, runId);
   await fs.rm(runDir, { recursive: true, force: true });
   await removeRunFromIndex(outputDir, runId);
+};
+
+export const clearRunHistory = async (
+  outputDir: string,
+  options?: { removeArtifacts?: boolean }
+): Promise<{ removedRuns: number; removedArtifacts: boolean }> => {
+  if (activeRuns.size > 0) {
+    throw new Error("Cannot clear run history while runs are active.");
+  }
+  const runs = await readRunIndex(outputDir);
+  if (options?.removeArtifacts) {
+    await Promise.all(
+      runs.map(async (run) => {
+        const runDir = getRunDir(outputDir, run.runId);
+        await fs.rm(runDir, { recursive: true, force: true });
+      })
+    );
+  }
+  await clearRunIndex(outputDir);
+  return { removedRuns: runs.length, removedArtifacts: Boolean(options?.removeArtifacts) };
 };
 
 export const cancelRunAndDelete = async (runId: string): Promise<void> => {

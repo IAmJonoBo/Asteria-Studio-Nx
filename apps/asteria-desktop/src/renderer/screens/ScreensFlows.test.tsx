@@ -65,12 +65,23 @@ describe("screen flows", () => {
         selectedRunDir="/tmp/runs/run-1"
         onSelectRun={onSelectRun}
         onOpenReviewQueue={onOpenReviewQueue}
+        runProgressById={{
+          "run-1": {
+            runId: "run-1",
+            projectId: "proj",
+            stage: "analysis",
+            processed: 1,
+            total: 2,
+            timestamp: new Date("2026-02-09T00:00:00.000Z").toISOString(),
+          },
+        }}
       />
     );
 
     expect(await screen.findByText(/Run History/i)).toBeInTheDocument();
     expect(screen.getByText(/run-1/i)).toBeInTheDocument();
     expect(screen.getByText(/Selected run config/i)).toBeInTheDocument();
+    expect(screen.getByText(/Live stage: Analysis/i)).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: /open review queue/i }));
     expect(onSelectRun).toHaveBeenCalledWith("run-1", "/tmp/runs/run-1");
@@ -96,6 +107,136 @@ describe("screen flows", () => {
     render(<RunsScreen onSelectRun={vi.fn()} onOpenReviewQueue={vi.fn()} />);
 
     expect(await screen.findByText(/Run history unavailable/i)).toBeInTheDocument();
+  });
+
+  it("RunsScreen clears history via IPC", async () => {
+    const listRuns = vi
+      .fn()
+      .mockResolvedValueOnce(
+        ok([
+          {
+            runId: "run-9",
+            runDir: "/tmp/runs/run-9",
+            projectId: "proj",
+            generatedAt: "2026-01-01",
+            reviewCount: 1,
+          },
+        ])
+      )
+      .mockResolvedValueOnce(ok([]));
+    const clearHistory = vi.fn().mockResolvedValue(
+      ok({
+        removedRuns: 1,
+        removedArtifacts: false,
+      })
+    );
+    const confirmMock = vi.spyOn(globalThis, "confirm").mockReturnValue(true);
+    const alertMock = vi.spyOn(globalThis, "alert").mockImplementation(() => undefined);
+
+    (globalThis as typeof globalThis & { asteria?: unknown }).asteria = {
+      ipc: {
+        "asteria:list-runs": listRuns,
+        "asteria:clear-run-history": clearHistory,
+      },
+    };
+
+    const user = userEvent.setup();
+    render(<RunsScreen onSelectRun={vi.fn()} onOpenReviewQueue={vi.fn()} />);
+
+    const clearButton = await screen.findByRole("button", { name: /clear history/i });
+    await user.click(clearButton);
+
+    expect(clearHistory).toHaveBeenCalledWith({ removeArtifacts: false });
+    expect(alertMock).toHaveBeenCalledWith("Cleared 1 run.");
+
+    confirmMock.mockRestore();
+    alertMock.mockRestore();
+  });
+
+  it("RunsScreen deletes all runs via IPC", async () => {
+    const listRuns = vi
+      .fn()
+      .mockResolvedValueOnce(
+        ok([
+          {
+            runId: "run-11",
+            runDir: "/tmp/runs/run-11",
+            projectId: "proj",
+            generatedAt: "2026-01-01",
+            reviewCount: 1,
+          },
+        ])
+      )
+      .mockResolvedValueOnce(ok([]));
+    const clearHistory = vi.fn().mockResolvedValue(
+      ok({
+        removedRuns: 1,
+        removedArtifacts: true,
+      })
+    );
+    const confirmMock = vi.spyOn(globalThis, "confirm").mockReturnValue(true);
+    const alertMock = vi.spyOn(globalThis, "alert").mockImplementation(() => undefined);
+
+    (globalThis as typeof globalThis & { asteria?: unknown }).asteria = {
+      ipc: {
+        "asteria:list-runs": listRuns,
+        "asteria:clear-run-history": clearHistory,
+      },
+    };
+
+    const user = userEvent.setup();
+    render(<RunsScreen onSelectRun={vi.fn()} onOpenReviewQueue={vi.fn()} />);
+
+    const deleteAllButton = await screen.findByRole("button", { name: /delete all runs/i });
+    await user.click(deleteAllButton);
+
+    expect(clearHistory).toHaveBeenCalledWith({ removeArtifacts: true });
+    expect(alertMock).toHaveBeenCalledWith("Cleared 1 run.");
+
+    confirmMock.mockRestore();
+    alertMock.mockRestore();
+  });
+
+  it("RunsScreen reveals and deletes runs", async () => {
+    const listRuns = vi
+      .fn()
+      .mockResolvedValueOnce(
+        ok([
+          {
+            runId: "run-15",
+            runDir: "/tmp/runs/run-15",
+            projectId: "proj",
+            generatedAt: "2026-01-01",
+            reviewCount: 1,
+            status: "success",
+          },
+        ])
+      )
+      .mockResolvedValueOnce(ok([]));
+    const revealPath = vi.fn().mockResolvedValue(ok(undefined));
+    const deleteRun = vi.fn().mockResolvedValue(ok(undefined));
+    const confirmMock = vi.spyOn(globalThis, "confirm").mockReturnValue(true);
+
+    (globalThis as typeof globalThis & { asteria?: unknown }).asteria = {
+      ipc: {
+        "asteria:list-runs": listRuns,
+        "asteria:reveal-path": revealPath,
+        "asteria:delete-run": deleteRun,
+      },
+    };
+
+    const user = userEvent.setup();
+    render(<RunsScreen onSelectRun={vi.fn()} onOpenReviewQueue={vi.fn()} />);
+
+    const revealButton = await screen.findByRole("button", { name: /reveal folder/i });
+    await user.click(revealButton);
+    expect(revealPath).toHaveBeenCalledWith("/tmp/runs/run-15");
+
+    const deleteButton = screen.getByRole("button", { name: /delete run/i });
+    await user.click(deleteButton);
+    expect(deleteRun).toHaveBeenCalledWith("run-15");
+
+    confirmMock.mockRestore();
   });
 
   it("RunsScreen shows inferred metrics and config-unavailable state", async () => {

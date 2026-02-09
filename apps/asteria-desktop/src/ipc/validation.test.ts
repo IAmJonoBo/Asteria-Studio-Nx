@@ -7,6 +7,7 @@ import {
   validatePageId,
   validatePageLayoutSidecar,
   validatePipelineRunConfig,
+  validateRunHistoryCleanupOptions,
   validateReviewDecisions,
   validateRunId,
   validateRunDir,
@@ -123,6 +124,16 @@ describe("IPC validation", () => {
       /name must be a non-empty string/
     );
     expect(() => validateImportCorpusRequest({ inputPath: "/tmp/corpus" })).not.toThrow();
+  });
+
+  it("validates run history cleanup options", () => {
+    expect(() => validateRunHistoryCleanupOptions(undefined)).not.toThrow();
+    expect(() => validateRunHistoryCleanupOptions({ removeArtifacts: true })).not.toThrow();
+    expect(() =>
+      validateRunHistoryCleanupOptions({ removeArtifacts: "yes" } as unknown as {
+        removeArtifacts: boolean;
+      })
+    ).toThrow(/removeArtifacts/);
   });
 
   it("rejects invalid review decision payloads", () => {

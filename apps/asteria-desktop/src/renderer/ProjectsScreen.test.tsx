@@ -57,4 +57,36 @@ describe("ProjectsScreen", () => {
     await user.click(importButtons[0]);
     expect(onImportCorpus).toHaveBeenCalled();
   });
+
+  it("shows active run progress details", () => {
+    render(
+      <ProjectsScreen
+        onImportCorpus={vi.fn()}
+        onOpenProject={vi.fn()}
+        onStartRun={vi.fn()}
+        projects={[
+          {
+            id: "proj-1",
+            name: "Project One",
+            path: "/projects/one",
+            inputPath: "/projects/one/input",
+            status: "processing",
+          },
+        ]}
+        activeRunId="run-77"
+        activeRunProgress={{
+          runId: "run-77",
+          projectId: "proj-1",
+          stage: "analysis",
+          processed: 4,
+          total: 12,
+          timestamp: new Date("2026-02-09T00:00:00.000Z").toISOString(),
+        }}
+      />
+    );
+
+    expect(screen.getByText(/run in progress/i)).toBeInTheDocument();
+    expect(screen.getByText(/Stage: Analysis/i)).toBeInTheDocument();
+    expect(screen.getByText(/4 \/ 12 pages/i)).toBeInTheDocument();
+  });
 });

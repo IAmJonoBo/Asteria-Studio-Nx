@@ -37,6 +37,7 @@ describe("IPC Contracts", () => {
         "asteria:list-projects",
         "asteria:import-corpus",
         "asteria:list-runs",
+        "asteria:clear-run-history",
         "asteria:get-pipeline-config",
         "asteria:save-project-config",
         "asteria:get-run-config",
@@ -45,7 +46,7 @@ describe("IPC Contracts", () => {
         "asteria:record-template-training",
       ];
 
-      expect(channelNames).toHaveLength(20);
+      expect(channelNames).toHaveLength(21);
     });
   });
 });

@@ -53,6 +53,9 @@ const scanCorpus = vi.hoisted(() => vi.fn());
 const analyzeCorpus = vi.hoisted(() => vi.fn());
 const startRun = vi.hoisted(() => vi.fn());
 const cancelRun = vi.hoisted(() => vi.fn());
+const cancelRunAndDelete = vi.hoisted(() => vi.fn());
+const clearRunHistory = vi.hoisted(() => vi.fn());
+const deleteRunArtifacts = vi.hoisted(() => vi.fn());
 const pauseRun = vi.hoisted(() => vi.fn());
 const resumeRun = vi.hoisted(() => vi.fn());
 const loadPipelineConfig = vi.hoisted(() => vi.fn());
@@ -70,7 +73,15 @@ const provisionSampleCorpus = vi.hoisted(() => vi.fn());
 
 vi.mock("../ipc/corpusScanner", () => ({ scanCorpus }));
 vi.mock("../ipc/corpusAnalysis", () => ({ analyzeCorpus }));
-vi.mock("./run-manager", () => ({ startRun, cancelRun, pauseRun, resumeRun }));
+vi.mock("./run-manager", () => ({
+  startRun,
+  cancelRun,
+  cancelRunAndDelete,
+  clearRunHistory,
+  deleteRunArtifacts,
+  pauseRun,
+  resumeRun,
+}));
 vi.mock("./pipeline-config", () => ({
   loadPipelineConfig,
   loadProjectOverrides,
@@ -121,6 +132,9 @@ describe("IPC handler registration", () => {
     analyzeCorpus.mockReset();
     startRun.mockReset();
     cancelRun.mockReset();
+    cancelRunAndDelete.mockReset();
+    clearRunHistory.mockReset();
+    deleteRunArtifacts.mockReset();
     pauseRun.mockReset();
     resumeRun.mockReset();
     loadPipelineConfig.mockReset();
@@ -261,6 +275,7 @@ describe("IPC handler registration", () => {
     expect(handlers.has("asteria:fetch-review-queue")).toBe(true);
     expect(handlers.has("asteria:submit-review")).toBe(true);
     expect(handlers.has("asteria:list-runs")).toBe(true);
+    expect(handlers.has("asteria:clear-run-history")).toBe(true);
     expect(handlers.has("asteria:get-pipeline-config")).toBe(true);
     expect(handlers.has("asteria:save-project-config")).toBe(true);
     expect(handlers.has("asteria:get-run-config")).toBe(true);
@@ -1500,6 +1515,24 @@ describe("IPC handler registration", () => {
     const result = unwrap(await (handler as (event: unknown) => Promise<unknown>)({}));
 
     expect(result).toEqual([]);
+  });
+
+  it("clear-run-history delegates to run manager", async () => {
+    registerIpcHandlers();
+    const handler = handlers.get("asteria:clear-run-history");
+    expect(handler).toBeDefined();
+    resolveOutputDir.mockResolvedValueOnce("/tmp/out");
+    clearRunHistory.mockResolvedValueOnce({ removedRuns: 2, removedArtifacts: true });
+
+    const result = unwrap(
+      await (handler as (event: unknown, options?: { removeArtifacts?: boolean }) => Promise<unknown>)(
+        {},
+        { removeArtifacts: true }
+      )
+    );
+
+    expect(clearRunHistory).toHaveBeenCalledWith("/tmp/out", { removeArtifacts: true });
+    expect(result).toMatchObject({ removedRuns: 2, removedArtifacts: true });
   });
 
   it("get-pipeline-config returns resolved config", async () => {

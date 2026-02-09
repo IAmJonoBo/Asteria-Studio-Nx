@@ -1695,19 +1695,27 @@ const ReviewQueueLayout = ({
   onUndo,
   onSubmit,
 }: ReviewQueueLayoutProps): JSX.Element => {
-  const [normalizedLoadedStatus, setNormalizedLoadedStatus] = useState<"loaded" | "error" | null>(
-    null
-  );
-  const [sourceLoadedStatus, setSourceLoadedStatus] = useState<"loaded" | "error" | null>(null);
+  const [normalizedLoadStates, setNormalizedLoadStates] = useState<
+    Partial<Record<string, "loaded" | "error">>
+  >({});
+  const [sourceLoadStates, setSourceLoadStates] = useState<
+    Partial<Record<string, "loaded" | "error">>
+  >({});
 
-  const setNormalizedStatus = setNormalizedLoadedStatus;
-  const _setSourceStatus = setSourceLoadedStatus;
+  const setNormalizedStatus = (status: "loaded" | "error"): void => {
+    if (!normalizedSrc) return;
+    setNormalizedLoadStates((prev) => ({ ...prev, [normalizedSrc]: status }));
+  };
+  const setSourceStatus = (status: "loaded" | "error"): void => {
+    if (!sourceSrc) return;
+    setSourceLoadStates((prev) => ({ ...prev, [sourceSrc]: status }));
+  };
 
   const normalizedStatus: "idle" | "loading" | "loaded" | "error" = normalizedSrc
-    ? (normalizedLoadedStatus ?? "loading")
+    ? (normalizedLoadStates[normalizedSrc] ?? "loading")
     : "idle";
   const sourceStatus: "idle" | "loading" | "loaded" | "error" = sourceSrc
-    ? (sourceLoadedStatus ?? "loading")
+    ? (sourceLoadStates[sourceSrc] ?? "loading")
     : "idle";
 
   const renderQueueShell = (params: {
@@ -2023,8 +2031,8 @@ const ReviewQueueLayout = ({
                   <img
                     src={sourceSrc}
                     alt={`Source preview for ${currentPage.filename}`}
-                    onLoad={() => setSourceLoadedStatus("loaded")}
-                    onError={() => setSourceLoadedStatus("error")}
+                    onLoad={() => setSourceStatus("loaded")}
+                    onError={() => setSourceStatus("error")}
                   />
                   {sourceStatus === "loading" && (
                     <div className="review-queue-preview-status">

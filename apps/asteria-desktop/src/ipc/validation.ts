@@ -139,6 +139,17 @@ export const validateRunDir = (runDir: string, runId?: string): void => {
   }
 };
 
+export const validateRunHistoryCleanupOptions = (options: unknown): void => {
+  if (options === undefined) return;
+  if (!isPlainObject(options)) {
+    throw new Error("Invalid run history cleanup options");
+  }
+  const removeArtifacts = (options as Record<string, unknown>).removeArtifacts;
+  if (removeArtifacts !== undefined && typeof removeArtifacts !== "boolean") {
+    throw new Error("Invalid run history cleanup options: removeArtifacts must be boolean");
+  }
+};
+
 export const validatePageId = (pageId: string): void => {
   if (!isNonEmptyString(pageId)) {
     throw new Error("Invalid page id: expected non-empty string");

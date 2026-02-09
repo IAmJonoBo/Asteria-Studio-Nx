@@ -69,3 +69,8 @@ export const removeRunFromIndex = async (outputDir: string, runId: string): Prom
   const updated = runs.filter((run) => run.runId !== runId);
   await writeJsonAtomic(indexPath, { runs: updated });
 };
+
+export const clearRunIndex = async (outputDir: string): Promise<void> => {
+  const indexPath = path.join(outputDir, "run-index.json");
+  await writeJsonAtomic(indexPath, { runs: [] });
+};

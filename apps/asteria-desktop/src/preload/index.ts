@@ -10,6 +10,7 @@ import {
   validatePipelineRunConfig,
   validateRevealPath,
   validateRunDir,
+  validateRunHistoryCleanupOptions,
   validateRunId,
   validateTemplateTrainingSignal,
 } from "../ipc/validation.js";
@@ -80,6 +81,12 @@ const api: IpcChannels = {
   "asteria:delete-run": async (runId: Parameters<IpcChannels["asteria:delete-run"]>[0]) => {
     validateRunId(runId);
     return safeInvoke("asteria:delete-run", runId);
+  },
+  "asteria:clear-run-history": async (
+    options?: Parameters<IpcChannels["asteria:clear-run-history"]>[0]
+  ) => {
+    validateRunHistoryCleanupOptions(options);
+    return safeInvoke("asteria:clear-run-history", options);
   },
   "asteria:get-run-manifest": async (
     runId: Parameters<IpcChannels["asteria:get-run-manifest"]>[0],
