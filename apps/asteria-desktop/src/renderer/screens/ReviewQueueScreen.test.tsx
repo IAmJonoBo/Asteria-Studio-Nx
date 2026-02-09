@@ -23,6 +23,20 @@ describe("ReviewQueueScreen", () => {
     expect(screen.getByText(/Select a run to review/i)).toBeInTheDocument();
   });
 
+  it("renders UI preview content in dev mode when uiPreview is enabled", async () => {
+    const previousUrl = globalThis.location.href;
+    globalThis.history.pushState({}, "", "/?uiPreview=1");
+    try {
+      render(<ReviewQueueScreen runId={undefined} runDir={undefined} />);
+
+      expect(await screen.findByText(/UI preview mode is active/i)).toBeInTheDocument();
+      expect(screen.getAllByText(/chapter-01-001\.tif/i).length).toBeGreaterThan(0);
+      expect(screen.getByText(/Queue health/i)).toBeInTheDocument();
+    } finally {
+      globalThis.history.pushState({}, "", previousUrl);
+    }
+  });
+
   it("renders empty state when queue has no items", async () => {
     (globalThis as typeof globalThis & { asteria?: unknown }).asteria = {
       ipc: {

@@ -1040,20 +1040,255 @@ const getReasonInfo = (code: string): ReasonInfo => {
   );
 };
 
+const UI_PREVIEW_QUERY_PARAM = "uiPreview";
+
+const isUiPreviewModeEnabled = (): boolean => {
+  const windowRef = globalThis as typeof globalThis & { location?: { search?: string } };
+  const search = windowRef.location?.search ?? "";
+  if (!search) return false;
+  try {
+    const previewValue = new URLSearchParams(search).get(UI_PREVIEW_QUERY_PARAM);
+    return previewValue === "1" || previewValue === "true";
+  } catch {
+    return false;
+  }
+};
+
+const toPreviewDataUrl = (title: string, tone: "warning" | "critical" | "info"): string => {
+  const palette =
+    tone === "critical"
+      ? { accent: "#ef4444", secondary: "#fca5a5" }
+      : tone === "warning"
+        ? { accent: "#f59e0b", secondary: "#fde68a" }
+        : { accent: "#3b82f6", secondary: "#93c5fd" };
+  const safeTitle = title
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="1600" viewBox="0 0 1200 1600">
+<defs>
+  <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+    <stop offset="0%" stop-color="#0f172a"/>
+    <stop offset="100%" stop-color="#1e293b"/>
+  </linearGradient>
+</defs>
+<rect width="1200" height="1600" fill="url(#bg)"/>
+<rect x="90" y="110" width="1020" height="1380" rx="24" fill="#f8fafc"/>
+<rect x="90" y="110" width="1020" height="72" rx="24" fill="${palette.accent}"/>
+<text x="130" y="156" fill="#ffffff" font-size="30" font-family="Avenir Next, Segoe UI, sans-serif">${safeTitle}</text>
+<rect x="142" y="250" width="916" height="68" rx="10" fill="#e2e8f0"/>
+<rect x="142" y="336" width="916" height="18" rx="9" fill="#cbd5e1"/>
+<rect x="142" y="374" width="760" height="18" rx="9" fill="#cbd5e1"/>
+<rect x="142" y="430" width="916" height="18" rx="9" fill="#cbd5e1"/>
+<rect x="142" y="468" width="916" height="18" rx="9" fill="#cbd5e1"/>
+<rect x="142" y="506" width="630" height="18" rx="9" fill="#cbd5e1"/>
+<rect x="142" y="584" width="916" height="264" rx="16" fill="${palette.secondary}"/>
+<rect x="142" y="886" width="916" height="18" rx="9" fill="#cbd5e1"/>
+<rect x="142" y="924" width="916" height="18" rx="9" fill="#cbd5e1"/>
+<rect x="142" y="962" width="690" height="18" rx="9" fill="#cbd5e1"/>
+<rect x="142" y="1038" width="916" height="360" rx="16" fill="#f1f5f9"/>
+</svg>`;
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+};
+
+const createUiPreviewPages = (): ReviewPage[] => [
+  {
+    id: "dev-page-001",
+    filename: "chapter-01-001.tif",
+    layoutProfile: "body",
+    reason: "Quality gate",
+    confidence: 0.46,
+    previews: {
+      source: {
+        path: toPreviewDataUrl("Source Scan - chapter-01-001.tif", "warning"),
+        width: 1200,
+        height: 1600,
+      },
+      normalized: {
+        path: toPreviewDataUrl("Normalized Preview - chapter-01-001.tif", "critical"),
+        width: 1200,
+        height: 1600,
+      },
+      overlay: {
+        path: toPreviewDataUrl("Overlay Preview - chapter-01-001.tif", "critical"),
+        width: 1200,
+        height: 1600,
+      },
+    },
+    issues: ["low-mask-coverage", "book-head-missing", "residual-skew-0.9deg"],
+  },
+  {
+    id: "dev-page-002",
+    filename: "chapter-01-002.tif",
+    layoutProfile: "body",
+    reason: "Semantic layout",
+    confidence: 0.59,
+    previews: {
+      source: {
+        path: toPreviewDataUrl("Source Scan - chapter-01-002.tif", "info"),
+        width: 1200,
+        height: 1600,
+      },
+      normalized: {
+        path: toPreviewDataUrl("Normalized Preview - chapter-01-002.tif", "warning"),
+        width: 1200,
+        height: 1600,
+      },
+    },
+    issues: ["semantic-layout-low-confidence", "low-baseline-consistency"],
+  },
+  {
+    id: "dev-page-003",
+    filename: "chapter-01-003.tif",
+    layoutProfile: "title",
+    reason: "Quality gate",
+    confidence: 0.33,
+    previews: {
+      source: {
+        path: toPreviewDataUrl("Source Scan - chapter-01-003.tif", "critical"),
+        width: 1200,
+        height: 1600,
+      },
+      normalized: {
+        path: toPreviewDataUrl("Normalized Preview - chapter-01-003.tif", "critical"),
+        width: 1200,
+        height: 1600,
+      },
+    },
+    issues: ["book-folio-missing", "spread-split-low-confidence", "potential-baseline-misalignment"],
+  },
+];
+
+const createUiPreviewSidecar = (pageId: string): PageLayoutSidecar => {
+  const isTitlePage = pageId.endsWith("003");
+  const pageIdSegments = pageId.split("-");
+  const pageIndexToken = pageIdSegments.length > 0 ? pageIdSegments[pageIdSegments.length - 1] : "";
+  return {
+    pageId,
+    pageType: isTitlePage ? "title" : "body",
+    templateId: isTitlePage ? "template-title-01" : "template-body-01",
+    templateConfidence: isTitlePage ? 0.68 : 0.79,
+    source: {
+      path: `/preview/${pageId}.tif`,
+      checksum: `preview-${pageId}`,
+      pageIndex: Number(pageIndexToken) || 1,
+    },
+    dimensions: { width: 210, height: 297, unit: "mm" },
+    dpi: 300,
+    normalization: {
+      skewAngle: isTitlePage ? 0.9 : 0.25,
+      cropBox: [64, 70, 1135, 1535],
+      pageMask: [82, 96, 1110, 1502],
+      trim: 8,
+      guides: {
+        baselineGrid: {
+          spacingPx: isTitlePage ? 30 : 24,
+          offsetPx: 4,
+          angleDeg: isTitlePage ? 0.2 : 0.1,
+          confidence: 0.72,
+          snapToPeaks: true,
+          markCorrect: false,
+          source: "auto",
+        },
+      },
+    },
+    elements: [
+      { id: `${pageId}-bounds`, type: "page_bounds", bbox: [80, 92, 1110, 1506], confidence: 0.94 },
+      { id: `${pageId}-title`, type: "title", bbox: [188, 214, 982, 312], confidence: 0.73 },
+      { id: `${pageId}-text-a`, type: "text_block", bbox: [188, 360, 998, 520], confidence: 0.86 },
+      { id: `${pageId}-text-b`, type: "text_block", bbox: [188, 560, 998, 860], confidence: 0.84 },
+      { id: `${pageId}-folio`, type: "folio", bbox: [526, 1448, 678, 1498], confidence: 0.52 },
+    ],
+    metrics: {
+      deskewConfidence: 0.67,
+      layoutScore: isTitlePage ? 0.42 : 0.63,
+      processingMs: 84,
+      maskCoverage: isTitlePage ? 0.75 : 0.88,
+      backgroundStd: 0.16,
+      baseline: {
+        medianSpacingPx: isTitlePage ? 30 : 24,
+        spacingMAD: 1.6,
+        confidence: 0.71,
+      },
+    },
+    guides: {
+      layers: [
+        {
+          id: "baseline-grid",
+          guides: [
+            {
+              id: `${pageId}-base-1`,
+              axis: "y",
+              position: 240,
+              kind: "major",
+              role: "baseline",
+              source: "auto",
+              confidence: 0.75,
+            },
+            {
+              id: `${pageId}-base-2`,
+              axis: "y",
+              position: 264,
+              kind: "minor",
+              role: "baseline",
+              source: "auto",
+              confidence: 0.72,
+            },
+            {
+              id: `${pageId}-base-3`,
+              axis: "y",
+              position: 288,
+              kind: "minor",
+              role: "baseline",
+              source: "auto",
+              confidence: 0.69,
+            },
+          ],
+        },
+      ],
+    },
+    bookModel: {
+      baselineGrid: {
+        dominantSpacingPx: isTitlePage ? 30 : 24,
+        spacingMAD: 1.5,
+        confidence: 0.77,
+      },
+      pageTemplates: [
+        {
+          id: "template-body-01",
+          pageType: "body",
+          pageIds: ["dev-page-001", "dev-page-002"],
+          confidence: 0.82,
+        },
+        {
+          id: "template-title-01",
+          pageType: "title",
+          pageIds: ["dev-page-003"],
+          confidence: 0.76,
+        },
+      ],
+    },
+    version: "ui-preview",
+  };
+};
+
 const ITEM_HEIGHT = 86;
 const OVERSCAN = 6;
 
 const useReviewQueuePages = (
   runId?: string,
   runDir?: string
-): { pages: ReviewPage[]; isLoading: boolean; error: string | null } => {
+): { pages: ReviewPage[]; isLoading: boolean; error: string | null; isUiPreviewMode: boolean } => {
   const [pages, setPages] = useState<ReviewPage[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isUiPreviewMode, setIsUiPreviewMode] = useState(false);
 
   useEffect((): void | (() => void) => {
     let cancelled = false;
     const loadQueue = async (): Promise<void> => {
+      const previewMode = isUiPreviewModeEnabled();
       const windowRef: typeof globalThis & {
         asteria?: {
           ipc?: {
@@ -1064,16 +1299,27 @@ const useReviewQueuePages = (
           };
         };
       } = globalThis;
+      if (previewMode && (!runId || !runDir || !windowRef.asteria?.ipc)) {
+        if (!cancelled) {
+          setPages(createUiPreviewPages());
+          setIsLoading(false);
+          setError(null);
+          setIsUiPreviewMode(true);
+        }
+        return;
+      }
       if (!runId || !runDir || !windowRef.asteria?.ipc) {
         if (!cancelled) {
           setPages([]);
           setIsLoading(false);
           setError(null);
+          setIsUiPreviewMode(false);
         }
         return;
       }
       setIsLoading(true);
       setError(null);
+      setIsUiPreviewMode(false);
       try {
         const queueResult = await windowRef.asteria.ipc["asteria:fetch-review-queue"](
           runId,
@@ -1098,7 +1344,7 @@ const useReviewQueuePages = (
     };
   }, [runDir, runId]);
 
-  return { pages, isLoading, error };
+  return { pages, isLoading, error, isUiPreviewMode };
 };
 
 const useQueueWorker = (pages: ReviewPage[]): ReviewPage[] => {
@@ -1212,6 +1458,7 @@ const useSidecarData = (
         setIsLoading(false);
         return;
       }
+      const previewMode = isUiPreviewModeEnabled();
       const windowRef: typeof globalThis & {
         asteria?: {
           ipc?: {
@@ -1223,6 +1470,12 @@ const useSidecarData = (
           };
         };
       } = globalThis;
+      if (previewMode && (!runId || !runDir || !windowRef.asteria?.ipc)) {
+        setSidecar(createUiPreviewSidecar(currentPage.id));
+        setSidecarError(null);
+        setIsLoading(false);
+        return;
+      }
       if (!runId || !runDir || !windowRef.asteria?.ipc) {
         setSidecar(null);
         setSidecarError(null);
@@ -1557,6 +1810,7 @@ const buildOverlaySvg = ({
 type ReviewQueueLayoutProps = {
   runId?: string;
   runDir?: string;
+  isUiPreviewMode: boolean;
   queuePages: ReviewPage[];
   currentPage: ReviewPage | undefined;
   isQueueLoading: boolean;
@@ -1662,6 +1916,7 @@ type ReviewQueueLayoutProps = {
 const ReviewQueueLayout = ({
   runId,
   runDir,
+  isUiPreviewMode,
   queuePages,
   currentPage,
   isQueueLoading,
@@ -1785,6 +2040,24 @@ const ReviewQueueLayout = ({
   const sourceStatus: "idle" | "loading" | "loaded" | "error" = sourceSrc
     ? (sourceLoadStates[sourceSrc] ?? "loading")
     : "idle";
+  const runLabel = runId ?? "preview-run";
+  const renderIssueItems = (issues: string[], pageId: string): JSX.Element[] =>
+    issues.map((issue) => {
+      const info = getReasonInfo(issue);
+      return (
+        <li key={`${pageId}-${issue}`} className="review-queue-issue">
+          <div className="review-queue-issue-heading">
+            <span className={`review-queue-severity review-queue-severity-${info.severity}`}>
+              {info.severity}
+            </span>
+            <div className="review-queue-issue-title">{info.label}</div>
+          </div>
+          <div className="review-queue-issue-body">{info.explanation}</div>
+          <div className="review-queue-issue-action">Recommended: {info.action}</div>
+        </li>
+      );
+    });
+  const queueIssueCount = queuePages.reduce((total, page) => total + page.issues.length, 0);
 
   const renderQueueShell = (params: {
     isLoading: boolean;
@@ -1801,7 +2074,7 @@ const ReviewQueueLayout = ({
               <p className="review-queue-rail-title">Review Queue</p>
               <p className="review-queue-rail-subtitle">{queuePages.length} pages need attention</p>
             </div>
-            <span className="review-queue-rail-run">Run {runId}</span>
+            <span className="review-queue-rail-run">Run {runLabel}</span>
           </div>
           <div
             ref={listRef}
@@ -1886,7 +2159,7 @@ const ReviewQueueLayout = ({
             <p className="review-queue-rail-title">Review Queue</p>
             <p className="review-queue-rail-subtitle">{queuePages.length} pages need attention</p>
           </div>
-          <span className="review-queue-rail-run">Run {runId}</span>
+          <span className="review-queue-rail-run">Run {runLabel}</span>
         </div>
         <div
           ref={listRef}
@@ -2041,6 +2314,57 @@ const ReviewQueueLayout = ({
             </button>
           </div>
         </header>
+        {isUiPreviewMode && (
+          <div className="review-queue-preview-banner" role="status">
+            UI preview mode is active. Start `pnpm dev` with `?uiPreview=1` to inspect queue and
+            flagged reasons without live IPC data.
+          </div>
+        )}
+        <section className="review-queue-context-strip" aria-label="Current page triage">
+          <article className="review-queue-context-card">
+            <div className="review-queue-panel-title">Current triage</div>
+            <div className="review-queue-panel-row">
+              <span className="review-queue-tag">{currentPage.reason}</span>
+              <span className="review-queue-panel-muted">
+                {(currentPage.confidence * 100).toFixed(0)}% confidence
+              </span>
+              <span className="review-queue-panel-muted">
+                {currentPage.issues.length} issue{currentPage.issues.length === 1 ? "" : "s"}
+              </span>
+            </div>
+            {currentPage.issues.length === 0 ? (
+              <p className="review-queue-panel-muted">No automated issues were recorded.</p>
+            ) : (
+              <ul className="review-queue-issues review-queue-issues--compact">
+                {renderIssueItems(currentPage.issues.slice(0, 3), currentPage.id)}
+              </ul>
+            )}
+            {currentPage.issues.length > 3 && (
+              <button className="btn btn-ghost btn-sm" onClick={onToggleInspector}>
+                {inspectorOpen ? "Collapse" : "Open"} inspector for all reasons
+              </button>
+            )}
+          </article>
+          <article className="review-queue-context-card">
+            <div className="review-queue-panel-title">Queue health</div>
+            <div className="review-queue-panel-row">
+              <span className="review-queue-panel-muted">
+                {queuePages.length} pages with {queueIssueCount} total flags
+              </span>
+            </div>
+            <div className="review-queue-panel-row">
+              <span className="review-queue-panel-muted">
+                Normalized preview: {normalizedSrc ? normalizedStatus : "unavailable"}
+              </span>
+              <span className="review-queue-panel-muted">
+                Source preview: {sourceSrc ? sourceStatus : "hidden"}
+              </span>
+              <span className="review-queue-panel-muted">
+                Inspector: {inspectorOpen ? "open" : "collapsed"}
+              </span>
+            </div>
+          </article>
+        </section>
 
         <div className="review-queue-viewer">
           <button
@@ -2162,18 +2486,7 @@ const ReviewQueueLayout = ({
             {currentPage.issues.length === 0 ? (
               <p className="review-queue-panel-muted">No automated issues were recorded.</p>
             ) : (
-              <ul className="review-queue-issues">
-                {currentPage.issues.map((issue) => {
-                  const info = getReasonInfo(issue);
-                  return (
-                    <li key={`${currentPage.id}-${issue}`}>
-                      <div className="review-queue-issue-title">{info.label}</div>
-                      <div className="review-queue-issue-body">{info.explanation}</div>
-                      <div className="review-queue-issue-action">Recommended: {info.action}</div>
-                    </li>
-                  );
-                })}
-              </ul>
+              <ul className="review-queue-issues">{renderIssueItems(currentPage.issues, currentPage.id)}</ul>
             )}
           </section>
 
@@ -2728,6 +3041,7 @@ export function ReviewQueueScreen({
     pages,
     isLoading: isQueueLoading,
     error: queueError,
+    isUiPreviewMode,
   } = useReviewQueuePages(runId, runDir);
   const queuePages = useQueueWorker(pages);
   const { selectedIndex, setSelectedIndex } = useQueueSelection(queuePages);
@@ -3839,7 +4153,7 @@ export function ReviewQueueScreen({
     },
   ]);
 
-  if (!runId || !runDir) {
+  if ((!runId || !runDir) && !isUiPreviewMode) {
     return (
       <div className="empty-state">
         <div className="empty-state-icon" aria-hidden="true">
@@ -3918,6 +4232,7 @@ export function ReviewQueueScreen({
     <ReviewQueueLayout
       runId={runId}
       runDir={runDir}
+      isUiPreviewMode={isUiPreviewMode}
       queuePages={queuePages}
       currentPage={currentPage}
       isQueueLoading={isQueueLoading}

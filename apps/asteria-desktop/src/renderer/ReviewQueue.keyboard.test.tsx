@@ -281,7 +281,9 @@ describe("ReviewQueueScreen - Keyboard Navigation", () => {
     expect(preview.getAttribute("src") ?? "").toContain(
       encodeURIComponent("/tmp/runs/run-1/previews/page-100-normalized.png")
     );
-    expect(await screen.findByText(/semantic layout confidence low/i)).toBeInTheDocument();
+    expect((await screen.findAllByText(/semantic layout confidence low/i)).length).toBeGreaterThan(
+      0
+    );
 
     windowRef.asteria = previousAsteria;
   });

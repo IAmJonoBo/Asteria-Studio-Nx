@@ -60,9 +60,23 @@ const STAGE_ORDER = [
   "error",
 ];
 
+const isUiPreviewModeEnabled = (): boolean => {
+  const windowRef = globalThis as typeof globalThis & { location?: { search?: string } };
+  const search = windowRef.location?.search ?? "";
+  if (!search) return false;
+  try {
+    const value = new URLSearchParams(search).get("uiPreview");
+    return value === "1" || value === "true";
+  } catch {
+    return false;
+  }
+};
+
 export function App(): JSX.Element {
   const [theme, setTheme] = useTheme();
-  const [activeScreen, setActiveScreen] = useState<NavItem>("projects");
+  const [activeScreen, setActiveScreen] = useState<NavItem>(() =>
+    isUiPreviewModeEnabled() ? "review" : "projects"
+  );
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [selectedRunId, setSelectedRunId] = useState<string | undefined>(undefined);
   const [selectedRunDir, setSelectedRunDir] = useState<string | undefined>(undefined);
