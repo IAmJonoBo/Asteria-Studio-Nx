@@ -424,6 +424,22 @@ const areBaselineGridOverridesEqual = (
 const isAbsoluteFilePath = (value: string): boolean =>
   value.startsWith("/") || /^[A-Za-z]:\\/.test(value);
 
+const normalizeSeparators = (value: string): string => value.replace(/\\/g, "/");
+
+const tryRebasePreviewPath = (candidate: string, runDir?: string): string | null => {
+  if (!runDir) return null;
+  const normalizedCandidate = normalizeSeparators(candidate);
+  const normalizedRunDir = normalizeSeparators(runDir).replace(/\/+$/, "");
+  const runId = normalizedRunDir.split("/").filter(Boolean).pop();
+  if (!runId) return null;
+  const runSegment = `/runs/${runId}/`;
+  const segmentIndex = normalizedCandidate.indexOf(runSegment);
+  if (segmentIndex === -1) return null;
+  const suffix = normalizedCandidate.slice(segmentIndex + runSegment.length);
+  if (!suffix) return null;
+  return `${normalizedRunDir}/${suffix}`;
+};
+
 const buildRunPreviewPath = (
   runDir: string,
   pageId: string,
@@ -471,6 +487,10 @@ const resolvePreviewSrc = (preview?: PreviewRef, runDir?: string): string | unde
   if (!preview?.path) return undefined;
   if (preview.path.startsWith("asteria://")) return preview.path;
   const sanitized = preview.path.startsWith("file://") ? preview.path.slice(7) : preview.path;
+  const rebased = tryRebasePreviewPath(sanitized, runDir);
+  if (rebased) {
+    return `asteria://asset?path=${encodeURIComponent(rebased)}`;
+  }
   if (isAbsoluteFilePath(sanitized)) {
     return `asteria://asset?path=${encodeURIComponent(sanitized)}`;
   }

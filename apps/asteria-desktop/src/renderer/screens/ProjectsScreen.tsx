@@ -35,6 +35,8 @@ export function ProjectsScreen({
   const progressPercent = activeRunProgress
     ? Math.min(100, Math.round((activeRunProgress.processed / progressTotal) * 100))
     : null;
+  const recentPages = activeRunProgress?.recentPageIds ?? [];
+  const currentPageId = activeRunProgress?.currentPageId;
   const formatStageLabel = (stage: string): string =>
     stage
       .split(/[-_]+/)
@@ -201,6 +203,23 @@ export function ProjectsScreen({
                 <div style={{ display: "flex", gap: "12px", fontSize: "13px" }}>
                   <span>
                     <strong>{project.pageCount?.toLocaleString() ?? "—"}</strong> pages
+          {recentPages.length > 0 && (
+            <div className="run-progress-activity" style={{ marginTop: "10px" }}>
+              <div className="run-progress-activity-title">Live page stream</div>
+              <div className="run-progress-activity-stream" role="list">
+                {recentPages.map((pageId) => (
+                  <div
+                    key={`project-run-${pageId}`}
+                    className={`run-progress-chip${pageId === currentPageId ? " active" : ""}`}
+                    role="listitem"
+                  >
+                    <span>{pageId}</span>
+                    <span>{formatStageLabel(activeRunProgress?.stage ?? "")}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
                   </span>
                   {project.lastRun && (
                     <span style={{ color: "var(--text-secondary)" }}>

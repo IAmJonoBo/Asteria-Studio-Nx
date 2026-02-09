@@ -2,6 +2,18 @@
   "version": "2.0.0",
   "tasks": [
     {
+      "label": "Export review pack (git archive \u2192 review.zip)",
+      "type": "shell",
+      "command": "git archive --format=zip -o review.zip HEAD",
+      "problemMatcher": []
+    },
+    {
+      "label": "Export review pack (git archive \u2192 review-<date>.zip)",
+      "type": "shell",
+      "command": "bash -lc 'ts=$(date +%Y%m%d-%H%M%S); git archive --format=zip -o review-${ts}.zip HEAD'",
+      "problemMatcher": []
+    },
+    {
       "label": "Asteria: Dev",
       "type": "shell",
       "command": "pnpm dev",

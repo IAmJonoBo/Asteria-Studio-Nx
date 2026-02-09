@@ -37,7 +37,7 @@ If you need an offline install, follow the steps in `docs/ci-cd.md`.
 ## Coding Standards
 
 - TypeScript and ESLint are enforced.
-- Use `pnpm format` before committing.
+- Use `pnpm format` (Trunk Prettier) before committing.
 - Keep changes deterministic and reproducible.
 
 ## Branching & Commits

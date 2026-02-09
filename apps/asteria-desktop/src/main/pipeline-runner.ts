@@ -1122,8 +1122,14 @@ type NormalizeConcurrentParams = {
   concurrency: number;
   onError: (pageId: string, message: string) => void;
   control?: RunControl;
-  onProgress?: (processed: number, total: number) => void;
-  onStageProgress?: (stage: string, processed: number, total: number, throughput: number) => void;
+  onProgress?: (processed: number, total: number, pageId?: string) => void;
+  onStageProgress?: (
+    stage: string,
+    processed: number,
+    total: number,
+    throughput: number,
+    pageId?: string
+  ) => void;
 };
 
 const normalizePagesConcurrent = async (
@@ -1149,7 +1155,7 @@ const normalizePagesConcurrent = async (
       if (!estimate) {
         onError(page.id, "Missing analysis estimate");
         processed += 1;
-        onProgress?.(processed, total);
+        onProgress?.(processed, total, page.id);
         continue;
       }
       try {
@@ -1164,7 +1170,7 @@ const normalizePagesConcurrent = async (
         onError(page.id, message);
       } finally {
         processed += 1;
-        onProgress?.(processed, total);
+        onProgress?.(processed, total, page.id);
         if (params.onStageProgress && results.has(page.id)) {
           stageNames.forEach((stage) => {
             const count = (stageCounts.get(stage) ?? 0) + 1;
@@ -1176,7 +1182,7 @@ const normalizePagesConcurrent = async (
             }
             const elapsedSec = Math.max(0.001, (Date.now() - startedAt) / 1000);
             const throughput = count / elapsedSec;
-            params.onStageProgress?.(stage, count, total, throughput);
+            params.onStageProgress?.(stage, count, total, throughput, page.id);
           });
         }
       }
@@ -2593,6 +2599,13 @@ const applySecondPassCorrections = async (params: {
   if (params.secondPassCandidates.length === 0) {
     return params.normalizationResults;
   }
+  const recentPageIds: string[] = [];
+  const updateRecentPageIds = (pageId?: string): string[] | undefined => {
+    if (!pageId) return recentPageIds.length > 0 ? recentPageIds : undefined;
+    const next = [pageId, ...recentPageIds.filter((existing) => existing !== pageId)];
+    recentPageIds.splice(0, recentPageIds.length, ...next.slice(0, 6));
+    return recentPageIds;
+  };
   console.log(
     `[${params.runId}] Running second-pass corrections for ${params.secondPassCandidates.length} pages...`
   );
@@ -2613,9 +2626,10 @@ const applySecondPassCorrections = async (params: {
       params.errors.push({ phase: "second-pass", message: `[${pageId}] ${message}` });
     },
     control: params.control,
-    onProgress: (processed, total) => {
+    onProgress: (processed, total, pageId) => {
       const elapsedSec = Math.max(0.001, (Date.now() - secondPassStart) / 1000);
       const throughput = processed / elapsedSec;
+      const recentPages = updateRecentPageIds(pageId);
       params.onProgress?.({
         runId: params.runId,
         projectId: params.projectId,
@@ -2623,6 +2637,8 @@ const applySecondPassCorrections = async (params: {
         processed,
         total,
         throughput,
+        currentPageId: pageId,
+        recentPageIds: recentPages,
         timestamp: new Date().toISOString(),
       });
     },
@@ -2840,6 +2856,13 @@ export async function runPipeline(options: PipelineRunnerOptions): Promise<Pipel
         minConfidence: bookPriorsConfig.min_confidence,
       },
     };
+    const recentPageIds: string[] = [];
+    const updateRecentPageIds = (pageId?: string): string[] | undefined => {
+      if (!pageId) return recentPageIds.length > 0 ? recentPageIds : undefined;
+      const next = [pageId, ...recentPageIds.filter((existing) => existing !== pageId)];
+      recentPageIds.splice(0, recentPageIds.length, ...next.slice(0, 6));
+      return recentPageIds;
+    };
     await waitForControl(control);
     normalizationResults = await normalizePagesConcurrent({
       pages: configToProcess.pages,
@@ -2852,7 +2875,8 @@ export async function runPipeline(options: PipelineRunnerOptions): Promise<Pipel
         logger.page(pageId, "error", "Normalization error", { runId, message });
       },
       control,
-      onStageProgress: (stage, processed, total, throughput) => {
+      onStageProgress: (stage, processed, total, throughput, pageId) => {
+        const recentPages = updateRecentPageIds(pageId);
         options.onProgress?.({
           runId,
           projectId: options.projectId,
@@ -2860,6 +2884,8 @@ export async function runPipeline(options: PipelineRunnerOptions): Promise<Pipel
           processed,
           total,
           throughput,
+          currentPageId: pageId,
+          recentPageIds: recentPages,
           timestamp: new Date().toISOString(),
         });
       },

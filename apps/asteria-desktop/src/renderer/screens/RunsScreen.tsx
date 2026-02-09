@@ -352,6 +352,8 @@ export function RunsScreen({
           const progressPercent = progressEvent
             ? Math.min(100, Math.round((progressEvent.processed / progressTotal) * 100))
             : null;
+          const recentPages = progressEvent?.recentPageIds ?? [];
+          const currentPageId = progressEvent?.currentPageId;
           return (
             <div
               key={run.runId}
@@ -412,6 +414,25 @@ export function RunsScreen({
                           }}
                         />
                       </div>
+                      {recentPages.length > 0 && (
+                        <div className="run-progress-activity" style={{ marginTop: "4px" }}>
+                          <div className="run-progress-activity-title">Live page stream</div>
+                          <div className="run-progress-activity-stream" role="list">
+                            {recentPages.map((pageId) => (
+                              <div
+                                key={`run-${run.runId}-${pageId}`}
+                                className={`run-progress-chip${
+                                  pageId === currentPageId ? " active" : ""
+                                }`}
+                                role="listitem"
+                              >
+                                <span>{pageId}</span>
+                                <span>{formatStageLabel(progressEvent.stage)}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                       <div style={{ fontSize: "11px", color: "var(--text-tertiary)" }}>
                         Updated {new Date(progressEvent.timestamp).toLocaleTimeString()}
                       </div>

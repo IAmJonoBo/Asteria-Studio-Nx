@@ -389,6 +389,8 @@ export interface RunProgressEvent {
   processed: number;
   total: number;
   throughput?: number;
+  currentPageId?: string;
+  recentPageIds?: string[];
   inferredDimensionsMm?: { width: number; height: number };
   inferredDpi?: number;
   dimensionConfidence?: number;

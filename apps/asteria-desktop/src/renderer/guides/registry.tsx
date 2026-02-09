@@ -1,4 +1,4 @@
-import type { ReactElement } from "react";
+import { cloneElement, type ReactElement } from "react";
 import type {
   GuideLayout,
   GuideLayerData,
@@ -367,7 +367,7 @@ export const renderGuideLayers = ({
       const layerData = layerDataMap.get(layer.id);
       const palette = guidePaletteByGroup[layer.group];
       const opacity = groupOpacities?.[layer.group] ?? 1;
-      return layer.renderFn({
+      const element = layer.renderFn({
         layer,
         layerData,
         canvasWidth,
@@ -379,6 +379,8 @@ export const renderGuideLayers = ({
         hoveredGuideId,
         activeGuideId,
       });
+      if (!element) return null;
+      return cloneElement(element, { key: `guide-layer-${layer.id}` });
     })
     .filter((entry): entry is ReactElement => entry !== null);
 };

@@ -1221,7 +1221,7 @@ export async function normalizePage(
     rotatedPreview.width,
     rotatedPreview.height
   );
-  expanded = bookSnap.box;
+  expanded = clampBox(roundBox(bookSnap.box), rotatedPreview.width, rotatedPreview.height);
   const cropWidth = expanded[2] - expanded[0] + 1;
   const cropHeight = expanded[3] - expanded[1] + 1;
   if (cropWidth <= 0 || cropHeight <= 0) {

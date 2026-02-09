@@ -147,7 +147,12 @@ app
     }
 
     buildAppMenu();
-    registerAssetProtocol([getAsteriaRoot(app.getPath("userData")), prefs.outputDir]);
+    const legacyOutputDir = isDev ? path.join(process.cwd(), "pipeline-results") : undefined;
+    registerAssetProtocol(
+      [getAsteriaRoot(app.getPath("userData")), prefs.outputDir, legacyOutputDir].filter(
+        (entry): entry is string => typeof entry === "string"
+      )
+    );
 
     const { registerIpcHandlers } = await import("./ipc.js");
     registerIpcHandlers();

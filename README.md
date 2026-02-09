@@ -120,10 +120,10 @@ pnpm test:e2e
 # Type checking
 pnpm typecheck
 
-# Format check
+# Format check (Trunk Prettier)
 pnpm format
 
-# Format write
+# Format write (Trunk Prettier)
 pnpm format:write
 
 # Build production assets + launcher

@@ -1,3 +1,71 @@
+# Review pack defaults (used by: git archive)
+# Anything marked export-ignore is excluded from `git archive` outputs.
+# Docs: https://git-scm.com/docs/git-archive  (ATTRIBUTES: export-ignore)
+
+# --- Dependencies ---
+node_modules/          export-ignore
+
+# --- Build outputs / coverage / caches (common) ---
+dist/                  export-ignore
+build/                 export-ignore
+out/                   export-ignore
+coverage/              export-ignore
+.cache/                export-ignore
+.tmp/                  export-ignore
+
+# --- JS/TS frameworks & monorepo tool caches ---
+.next/                 export-ignore
+.turbo/                export-ignore
+.nx/                   export-ignore
+.vite/                 export-ignore
+
+# --- Python ---
+.venv/                 export-ignore
+__pycache__/           export-ignore
+.pytest_cache/         export-ignore
+*.pyc                  export-ignore
+
+# --- Rust ---
+target/                export-ignore
+
+# --- Large artefacts / models / datasets ---
+models/                export-ignore
+model/                 export-ignore
+data/                  export-ignore
+dataset/               export-ignore
+datasets/              export-ignore
+checkpoints/           export-ignore
+artifacts/             export-ignore
+
+# Common ML/Media extensions
+*.gguf                 export-ignore
+*.safetensors          export-ignore
+*.onnx                 export-ignore
+*.pt                   export-ignore
+*.pth                  export-ignore
+*.ckpt                 export-ignore
+*.npz                  export-ignore
+*.parquet              export-ignore
+*.csv                  export-ignore
+*.tsv                  export-ignore
+*.mp4                  export-ignore
+*.mov                  export-ignore
+*.mkv                  export-ignore
+*.wav                  export-ignore
+*.mp3                  export-ignore
+*.psd                  export-ignore
+*.aep                  export-ignore
+
+# --- Secrets / local env (belt + braces) ---
+.env                   export-ignore
+.env.*                 export-ignore
+*.pem                  export-ignore
+*.key                  export-ignore
+id_rsa*                export-ignore
+*.p12                  export-ignore
+*.kubeconfig           export-ignore
+*.jsonl                export-ignore
+
 * text=auto eol=lf
 
 *.sh text eol=lf

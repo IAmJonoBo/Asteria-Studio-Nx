@@ -7,11 +7,36 @@ interface RunProgressState {
   latest: RunProgressEvent;
   stages: Record<string, RunProgressEvent>;
   throughputHistory: Array<{ ts: number; value: number }>;
+  recentPages: string[];
 }
 
 const isStageError = (stage: string): boolean => {
   const lowered = stage.toLowerCase();
   return lowered.includes("error") || lowered.includes("cancel");
+};
+
+const formatStageLabel = (stage: string): string =>
+  stage
+    .split(/[-_]+/)
+    .filter((part) => part.length > 0)
+    .map((part) => {
+      const upper = part.toUpperCase();
+      if (["AI", "OCR", "QA", "CV"].includes(upper)) return upper;
+      return part.charAt(0).toUpperCase() + part.slice(1);
+    })
+    .join(" ");
+
+const mergeRecentPages = (
+  existing: string[] | undefined,
+  nextPages?: string[],
+  currentPageId?: string
+): string[] => {
+  if (nextPages && nextPages.length > 0) {
+    return [...nextPages].slice(0, 6);
+  }
+  if (!currentPageId) return existing ?? [];
+  const next = [currentPageId, ...(existing ?? []).filter((pageId) => pageId !== currentPageId)];
+  return next.slice(0, 6);
 };
 
 export function MonitorScreen(): JSX.Element {
@@ -35,9 +60,19 @@ export function MonitorScreen(): JSX.Element {
           typeof event.throughput === "number"
             ? [...history, { ts: Date.now(), value: event.throughput }].slice(-30)
             : history;
+        const recentPages = mergeRecentPages(
+          current?.recentPages,
+          event.recentPageIds,
+          event.currentPageId
+        );
         return {
           ...prev,
-          [event.runId]: { latest: event, stages, throughputHistory: nextHistory },
+          [event.runId]: {
+            latest: event,
+            stages,
+            throughputHistory: nextHistory,
+            recentPages,
+          },
         };
       });
     });
@@ -104,6 +139,8 @@ export function MonitorScreen(): JSX.Element {
           );
           const hasActiveStage = !["complete", "cancelled", "error"].includes(run.stage);
           const isCancelling = Boolean(cancelling[run.runId]);
+          const recentPages = runState.recentPages ?? [];
+          const currentPageId = run.currentPageId;
 
           return (
             <div key={run.runId} className="card" style={{ display: "grid", gap: "12px" }}>
@@ -116,7 +153,7 @@ export function MonitorScreen(): JSX.Element {
                     Project: {run.projectId}
                   </div>
                   <div style={{ fontSize: "12px", color: "var(--text-secondary)" }}>
-                    Stage: {run.stage}
+                    Stage: {formatStageLabel(run.stage)}
                   </div>
                   {(run.inferredDimensionsMm || run.inferredDpi) && (
                     <div style={{ fontSize: "12px", color: "var(--text-secondary)" }}>
@@ -183,6 +220,28 @@ export function MonitorScreen(): JSX.Element {
                     Updated {new Date(run.timestamp).toLocaleTimeString()}
                   </div>
                 </div>
+              </div>
+
+              <div className="run-progress-activity">
+                <div className="run-progress-activity-title">Live page stream</div>
+                {recentPages.length > 0 ? (
+                  <div className="run-progress-activity-stream" role="list">
+                    {recentPages.map((pageId) => (
+                      <div
+                        key={`${run.runId}-${pageId}`}
+                        className={`run-progress-chip${pageId === currentPageId ? " active" : ""}`}
+                        role="listitem"
+                      >
+                        <span>{pageId}</span>
+                        <span>{formatStageLabel(run.stage)}</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="run-progress-empty">
+                    Waiting for pages to enter the pipeline…
+                  </div>
+                )}
               </div>
 
               {history.length > 1 && (
@@ -264,7 +323,9 @@ export function MonitorScreen(): JSX.Element {
                           : "var(--text-secondary)",
                       }}
                     >
-                      <div style={{ fontWeight: 600, color: "inherit" }}>{stageEvent.stage}</div>
+                      <div style={{ fontWeight: 600, color: "inherit" }}>
+                        {formatStageLabel(stageEvent.stage)}
+                      </div>
                       <div>
                         {stageEvent.processed.toLocaleString()} /{" "}
                         {stageEvent.total.toLocaleString()}

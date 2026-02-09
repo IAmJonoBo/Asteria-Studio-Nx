@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { JSX } from "react";
+import type { CSSProperties, JSX } from "react";
 import { Navigation, type NavItem } from "./components/Navigation.js";
 import { CommandPalette } from "./components/CommandPalette.js";
 import { Icon } from "./components/Icon.js";
@@ -42,6 +42,23 @@ const formatStageLabel = (stage: string): string =>
     .join(" ");
 
 const RUN_STATUS_SEPARATOR = "•";
+const STAGE_ORDER = [
+  "starting",
+  "scan",
+  "analysis",
+  "preprocess",
+  "deskew",
+  "dewarp",
+  "shading",
+  "layout-detection",
+  "normalize",
+  "second-pass",
+  "qa",
+  "export",
+  "complete",
+  "cancelled",
+  "error",
+];
 
 export function App(): JSX.Element {
   const [theme, setTheme] = useTheme();
@@ -55,6 +72,11 @@ export function App(): JSX.Element {
   const [projectsError, setProjectsError] = useState<string | null>(null);
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
   const [runProgressById, setRunProgressById] = useState<Record<string, RunProgressEvent>>({});
+  const [runStageEventsById, setRunStageEventsById] = useState<
+    Record<string, Record<string, RunProgressEvent>>
+  >({});
+  const [runRecentPagesById, setRunRecentPagesById] = useState<Record<string, string[]>>({});
+  const [runModalHiddenForRunId, setRunModalHiddenForRunId] = useState<string | null>(null);
   const [runControlBusy, setRunControlBusy] = useState<"pause" | "resume" | "cancel" | null>(null);
   const [runControlError, setRunControlError] = useState<string | null>(null);
   const [confirmCancelRun, setConfirmCancelRun] = useState(false);
@@ -175,6 +197,28 @@ export function App(): JSX.Element {
     if (!windowRef.asteria?.onRunProgress) return;
     const unsubscribe = windowRef.asteria.onRunProgress((event): void => {
       setRunProgressById((prev) => ({ ...prev, [event.runId]: event as RunProgressEvent }));
+      setRunStageEventsById((prev) => ({
+        ...prev,
+        [event.runId]: {
+          ...(prev[event.runId] ?? {}),
+          [event.stage]: event as RunProgressEvent,
+        },
+      }));
+      setRunRecentPagesById((prev) => {
+        const existing = prev[event.runId] ?? [];
+        if (event.recentPageIds && event.recentPageIds.length > 0) {
+          return { ...prev, [event.runId]: event.recentPageIds.slice(0, 6) };
+        }
+        if (!event.currentPageId) return prev;
+        const next = [
+          event.currentPageId,
+          ...existing.filter((pageId) => pageId !== event.currentPageId),
+        ].slice(0, 6);
+        return { ...prev, [event.runId]: next };
+      });
+      setRunModalHiddenForRunId((current) =>
+        current && current !== event.runId ? null : current
+      );
       if (event.stage === "complete" || event.stage === "cancelled" || event.stage === "error") {
         setActiveRunId((current) => (current === event.runId ? null : current));
       } else {
@@ -207,6 +251,19 @@ export function App(): JSX.Element {
   }, []);
 
   const activeRunProgress = activeRunId ? runProgressById[activeRunId] ?? null : null;
+  const activeRunStages = activeRunId ? runStageEventsById[activeRunId] ?? {} : {};
+  const activeRunRecentPages = activeRunId
+    ? runRecentPagesById[activeRunId] ?? activeRunProgress?.recentPageIds ?? []
+    : [];
+  const activeRunStageEntries = Object.values(activeRunStages).sort((a, b) => {
+    const aIndex = STAGE_ORDER.indexOf(a.stage);
+    const bIndex = STAGE_ORDER.indexOf(b.stage);
+    if (aIndex !== -1 || bIndex !== -1) {
+      return (aIndex === -1 ? STAGE_ORDER.length : aIndex) -
+        (bIndex === -1 ? STAGE_ORDER.length : bIndex);
+    }
+    return new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime();
+  });
   const isRunPaused = activeRunProgress?.stage === "paused";
   const runProgressTotal = activeRunProgress?.total ?? 0;
   const hasRunProgressTotal = runProgressTotal > 0;
@@ -214,6 +271,20 @@ export function App(): JSX.Element {
     activeRunProgress && hasRunProgressTotal
       ? Math.min(100, Math.round((activeRunProgress.processed / runProgressTotal) * 100))
       : 0;
+  const runThroughput = activeRunProgress?.throughput ?? null;
+  const runRemaining = Math.max(0, runProgressTotal - (activeRunProgress?.processed ?? 0));
+  const runEtaSeconds =
+    runThroughput && hasRunProgressTotal ? runRemaining / Math.max(0.1, runThroughput) : null;
+  const runProgressRingStyle = {
+    "--run-progress": `${runProgressPercent}`,
+  } as CSSProperties;
+  const showRunModal = Boolean(
+    activeRunProgress && activeRunId && runModalHiddenForRunId !== activeRunId
+  );
+  const currentPageId = activeRunProgress?.currentPageId;
+  const currentStageLabel = activeRunProgress?.stage
+    ? formatStageLabel(activeRunProgress.stage)
+    : "";
 
   useEffect(() => {
     setRunControlBusy(null);
@@ -247,6 +318,18 @@ export function App(): JSX.Element {
       setRunControlBusy(null);
     }
   }, [activeRunId, isRunPaused]);
+
+  const handleDismissRunModal = useCallback((): void => {
+    if (!activeRunProgress || !activeRunId) return;
+    const terminalStages = ["complete", "cancelled", "error"];
+    if (!terminalStages.includes(activeRunProgress.stage)) {
+      const confirmed = globalThis.confirm(
+        "Hide this progress view? The run continues in the background. You can reopen it from Live Monitor."
+      );
+      if (!confirmed) return;
+    }
+    setRunModalHiddenForRunId(activeRunId);
+  }, [activeRunId, activeRunProgress]);
 
   const handleCancelRun = useCallback(async (): Promise<void> => {
     if (!activeRunId) return;
@@ -862,74 +945,129 @@ export function App(): JSX.Element {
         </main>
       </div>
 
-      {activeRunProgress && activeRunId && (
+      {showRunModal && activeRunProgress && activeRunId && (
         <div
           role="dialog"
           aria-modal="true"
           aria-label="Run in progress"
-          style={{
-            position: "fixed",
-            inset: 0,
-            zIndex: 1500,
-            background: "rgba(4, 8, 20, 0.72)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            padding: "24px",
-          }}
+          className="run-progress-modal"
         >
-          <div
-            className="card"
-            style={{
-              width: "100%",
-              maxWidth: "520px",
-              display: "grid",
-              gap: "16px",
-              padding: "24px",
-            }}
-          >
-            <div>
-              <h2 style={{ margin: 0, fontSize: "20px" }}>Run in progress</h2>
-              <p style={{ marginTop: "6px", color: "var(--text-secondary)" }}>
-                Run {activeRunProgress.runId} {RUN_STATUS_SEPARATOR} Stage{" "}
-                {formatStageLabel(activeRunProgress.stage)}
-              </p>
-            </div>
-            <div style={{ display: "grid", gap: "8px" }}>
-              <div style={{ fontSize: "13px", color: "var(--text-secondary)" }}>
-                {hasRunProgressTotal
-                  ? `${activeRunProgress.processed.toLocaleString()} / ${activeRunProgress.total.toLocaleString()} pages (${runProgressPercent}%)`
-                  : `${activeRunProgress.processed.toLocaleString()} pages processed`}
+          <div className="run-progress-panel">
+            <div className="run-progress-header">
+              <div>
+                <h2>Pipeline in motion</h2>
+                <p>
+                  Run {activeRunProgress.runId} {RUN_STATUS_SEPARATOR} Stage {currentStageLabel}
+                </p>
               </div>
-              <div
-                style={{
-                  height: "8px",
-                  background: "var(--bg-surface)",
-                  borderRadius: "999px",
-                  overflow: "hidden",
-                }}
-                aria-hidden="true"
-              >
-                <div
-                  style={{
-                    width: `${runProgressPercent}%`,
-                    height: "100%",
-                    background: "var(--color-accent)",
-                  }}
-                />
+              <div className="run-progress-header-actions">
+                <button className="btn btn-ghost btn-sm" onClick={handleDismissRunModal}>
+                  Exit
+                </button>
               </div>
-              {!hasRunProgressTotal && (
-                <div style={{ fontSize: "12px", color: "var(--text-tertiary)" }}>
-                  Total page count pending…
+            </div>
+
+            <div className="run-progress-grid">
+              <div className="run-progress-summary">
+                <div className="run-progress-ring" style={runProgressRingStyle} aria-hidden>
+                  <div className="run-progress-ring-inner">
+                    <div className="run-progress-percent">{runProgressPercent}%</div>
+                    <div className="run-progress-count">
+                      {hasRunProgressTotal
+                        ? `${activeRunProgress.processed.toLocaleString()} / ${activeRunProgress.total.toLocaleString()}`
+                        : `${activeRunProgress.processed.toLocaleString()} pages`}
+                    </div>
+                  </div>
                 </div>
-              )}
-              {activeRunProgress.throughput !== undefined && (
-                <div style={{ fontSize: "12px", color: "var(--text-tertiary)" }}>
-                  {activeRunProgress.throughput.toFixed(1)} pages/sec
+                <div className="run-progress-meta">
+                  <div className="run-progress-meta-row">
+                    <span>Stage</span>
+                    <strong>{currentStageLabel}</strong>
+                  </div>
+                  {currentPageId && (
+                    <div className="run-progress-meta-row">
+                      <span>Current page</span>
+                      <strong>{currentPageId}</strong>
+                    </div>
+                  )}
+                  <div className="run-progress-meta-row">
+                    <span>Throughput</span>
+                    <strong>
+                      {runThroughput !== null ? `${runThroughput.toFixed(1)} pages/sec` : "—"}
+                    </strong>
+                  </div>
+                  <div className="run-progress-meta-row">
+                    <span>ETA</span>
+                    <strong>
+                      {runEtaSeconds !== null ? `${Math.round(runEtaSeconds)}s` : "Estimating"}
+                    </strong>
+                  </div>
+                  {!hasRunProgressTotal && (
+                    <div className="run-progress-meta-note">Total page count pending…</div>
+                  )}
                 </div>
+              </div>
+
+              <div className="run-progress-activity">
+                <div className="run-progress-activity-title">Live page stream</div>
+                {activeRunRecentPages.length > 0 ? (
+                  <div className="run-progress-activity-stream" role="list">
+                    {activeRunRecentPages.map((pageId) => (
+                      <div
+                        key={`run-progress-${pageId}`}
+                        className={`run-progress-chip${pageId === currentPageId ? " active" : ""}`}
+                        role="listitem"
+                      >
+                        <span>{pageId}</span>
+                        <span>{currentStageLabel}</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="run-progress-empty">
+                    Waiting for pages to enter the pipeline…
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="run-progress-stage-grid">
+              {activeRunStageEntries.length > 0 ? (
+                activeRunStageEntries.map((stageEvent) => {
+                  const stageTotal = stageEvent.total ?? 0;
+                  const stagePercent =
+                    stageTotal > 0
+                      ? Math.min(100, Math.round((stageEvent.processed / stageTotal) * 100))
+                      : 0;
+                  const isActiveStage = stageEvent.stage === activeRunProgress.stage;
+                  return (
+                    <div
+                      key={`stage-${stageEvent.stage}`}
+                      className={`run-progress-stage${isActiveStage ? " active" : ""}`}
+                    >
+                      <div className="run-progress-stage-header">
+                        <span>{formatStageLabel(stageEvent.stage)}</span>
+                        <span>
+                          {stageEvent.processed.toLocaleString()} / {stageEvent.total.toLocaleString()}
+                        </span>
+                      </div>
+                      <div className="run-progress-stage-bar" aria-hidden="true">
+                        <div style={{ width: `${stagePercent}%` }} />
+                      </div>
+                      {stageEvent.currentPageId && (
+                        <div className="run-progress-stage-meta">
+                          Current: {stageEvent.currentPageId}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })
+              ) : (
+                <div className="run-progress-empty">Building stage telemetry…</div>
               )}
             </div>
-            <div style={{ display: "flex", gap: "12px", flexWrap: "wrap" }}>
+
+            <div className="run-progress-actions">
               <button
                 className="btn btn-primary"
                 onClick={() => void handlePauseResumeRun()}
@@ -978,7 +1116,7 @@ export function App(): JSX.Element {
               </button>
             </div>
             {confirmCancelRun && (
-              <div style={{ fontSize: "12px", color: "var(--color-error)" }}>
+              <div className="run-progress-warning">
                 Cancelling stops the pipeline and discards pending work.
               </div>
             )}

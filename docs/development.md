@@ -31,9 +31,9 @@ pnpm nx -- run-many -t lint,test,build
 
 ## Formatting
 
-- Check formatting: `pnpm format` (or `pnpm format:check`)
-- Apply formatting: `pnpm format:write`
-- Apply Trunk formatting: `pnpm trunk:fmt`
+- Check formatting (Trunk Prettier): `pnpm format` (or `pnpm format:check`)
+- Apply formatting (Trunk Prettier): `pnpm format:write`
+- Apply Trunk formatting (all formatters): `pnpm trunk:fmt`
 
 ## Validation
 
