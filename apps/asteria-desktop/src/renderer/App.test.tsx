@@ -555,6 +555,109 @@ describe("App", () => {
     windowRef.asteria = previousAsteria;
   });
 
+  it("shows a run progress modal with controls", async () => {
+    const user = userEvent.setup();
+    const windowRef = globalThis as typeof globalThis & {
+      asteria?: {
+        ipc: Record<string, unknown>;
+        onRunProgress?: (handler: (event: RunProgressEvent) => void) => () => void;
+      };
+    };
+    const previousAsteria = windowRef.asteria;
+    const pauseRun = vi.fn().mockResolvedValue(ok(undefined));
+    const resumeRun = vi.fn().mockResolvedValue(ok(undefined));
+    const cancelRun = vi.fn().mockResolvedValue(ok(undefined));
+    let progressHandler: ((event: RunProgressEvent) => void) | null = null;
+    const onRunProgress = vi.fn((handler: (event: RunProgressEvent) => void): (() => void) => {
+      progressHandler = handler;
+      return () => {};
+    });
+    windowRef.asteria = {
+      ipc: {
+        "asteria:list-projects": vi.fn().mockResolvedValue(ok([])),
+        "asteria:pause-run": pauseRun,
+        "asteria:resume-run": resumeRun,
+        "asteria:cancel-run": cancelRun,
+      },
+      onRunProgress,
+    };
+
+    render(<App />);
+
+    act(() => {
+      progressHandler?.({
+        runId: "run-9",
+        projectId: "project-9",
+        stage: "normalize",
+        processed: 5,
+        total: 10,
+        timestamp: new Date().toISOString(),
+      });
+    });
+
+    expect(await screen.findByRole("dialog", { name: /run in progress/i })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /pause run/i }));
+    expect(pauseRun).toHaveBeenCalledWith("run-9");
+
+    act(() => {
+      progressHandler?.({
+        runId: "run-9",
+        projectId: "project-9",
+        stage: "paused",
+        processed: 5,
+        total: 10,
+        timestamp: new Date().toISOString(),
+      });
+    });
+
+    await user.click(await screen.findByRole("button", { name: /resume run/i }));
+    expect(resumeRun).toHaveBeenCalledWith("run-9");
+
+    await user.click(screen.getByRole("button", { name: /cancel run/i }));
+    await user.click(screen.getByRole("button", { name: /confirm cancel/i }));
+    expect(cancelRun).toHaveBeenCalledWith("run-9");
+
+    windowRef.asteria = previousAsteria;
+  });
+
+  it("formats stage labels with acronyms", async () => {
+    const windowRef = globalThis as typeof globalThis & {
+      asteria?: {
+        ipc: Record<string, unknown>;
+        onRunProgress?: (handler: (event: RunProgressEvent) => void) => () => void;
+      };
+    };
+    const previousAsteria = windowRef.asteria;
+    let progressHandler: ((event: RunProgressEvent) => void) | null = null;
+    const onRunProgress = vi.fn((handler: (event: RunProgressEvent) => void): (() => void) => {
+      progressHandler = handler;
+      return () => {};
+    });
+    windowRef.asteria = {
+      ipc: {
+        "asteria:list-projects": vi.fn().mockResolvedValue(ok([])),
+      },
+      onRunProgress,
+    };
+
+    render(<App />);
+
+    act(() => {
+      progressHandler?.({
+        runId: "run-ocr",
+        projectId: "project-ocr",
+        stage: "ocr-processing",
+        processed: 0,
+        total: 0,
+        timestamp: new Date().toISOString(),
+      });
+    });
+
+    expect(await screen.findByText(/Stage OCR Processing/i)).toBeInTheDocument();
+
+    windowRef.asteria = previousAsteria;
+  });
+
   it("handles menu actions and view toggles", async () => {
     const windowRef = globalThis as typeof globalThis & {
       asteria?: {

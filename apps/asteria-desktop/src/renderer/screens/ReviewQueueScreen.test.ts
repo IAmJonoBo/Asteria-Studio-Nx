@@ -1,8 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { __testables } from "./ReviewQueueScreen.js";
 
-const { calculateOverlayScale, mapClientPointToOutput, snapBoxToPrior, hitTestGuides } =
-  __testables;
+const {
+  calculateOverlayScale,
+  mapClientPointToOutput,
+  snapBoxToPrior,
+  hitTestGuides,
+  joinNormalizedPath,
+} = __testables;
 
 describe("ReviewQueueScreen geometry helpers", () => {
   it("calculates overlay scale from crop box bounds", () => {
@@ -57,5 +62,14 @@ describe("ReviewQueueScreen geometry helpers", () => {
 
     expect(hit?.layerId).toBe("margin-guides");
     expect(hit?.guideId).toBe("g1");
+  });
+
+  it("joins normalized preview paths across separators", () => {
+    expect(joinNormalizedPath("C:\\runs\\run-1\\", "\\previews\\page-1.png")).toBe(
+      "C:/runs/run-1/previews/page-1.png"
+    );
+    expect(joinNormalizedPath("/tmp/runs/run-1/", "/previews/page-1.png")).toBe(
+      "/tmp/runs/run-1/previews/page-1.png"
+    );
   });
 });

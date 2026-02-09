@@ -27,6 +27,22 @@ const safePrompt = (message: string, defaultValue?: string): string | null => {
   }
 };
 
+/**
+ * Convert kebab/snake-case stage identifiers into human-friendly labels while preserving acronyms.
+ */
+const formatStageLabel = (stage: string): string =>
+  stage
+    .split(/[-_]+/)
+    .filter((part) => part.length > 0)
+    .map((part) => {
+      const upper = part.toUpperCase();
+      if (["AI", "OCR", "QA", "CV"].includes(upper)) return upper;
+      return part.charAt(0).toUpperCase() + part.slice(1);
+    })
+    .join(" ");
+
+const RUN_STATUS_SEPARATOR = "•";
+
 export function App(): JSX.Element {
   const [theme, setTheme] = useTheme();
   const [activeScreen, setActiveScreen] = useState<NavItem>("projects");
@@ -39,6 +55,9 @@ export function App(): JSX.Element {
   const [projectsError, setProjectsError] = useState<string | null>(null);
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
   const [runProgressById, setRunProgressById] = useState<Record<string, RunProgressEvent>>({});
+  const [runControlBusy, setRunControlBusy] = useState<"pause" | "resume" | "cancel" | null>(null);
+  const [runControlError, setRunControlError] = useState<string | null>(null);
+  const [confirmCancelRun, setConfirmCancelRun] = useState(false);
   const [appPreferences, setAppPreferences] = useState<AppPreferences | null>(null);
   const [onboardingVisible, setOnboardingVisible] = useState(false);
   const [onboardingBusy, setOnboardingBusy] = useState(false);
@@ -188,6 +207,72 @@ export function App(): JSX.Element {
   }, []);
 
   const activeRunProgress = activeRunId ? runProgressById[activeRunId] ?? null : null;
+  const isRunPaused = activeRunProgress?.stage === "paused";
+  const runProgressTotal = activeRunProgress?.total ?? 0;
+  const hasRunProgressTotal = runProgressTotal > 0;
+  const runProgressPercent =
+    activeRunProgress && hasRunProgressTotal
+      ? Math.min(100, Math.round((activeRunProgress.processed / runProgressTotal) * 100))
+      : 0;
+
+  useEffect(() => {
+    setRunControlBusy(null);
+    setRunControlError(null);
+    setConfirmCancelRun(false);
+  }, [activeRunId]);
+
+  const handlePauseResumeRun = useCallback(async (): Promise<void> => {
+    if (!activeRunId) return;
+    const windowRef: typeof globalThis & { asteria?: { ipc?: Record<string, unknown> } } =
+      globalThis;
+    if (!windowRef.asteria?.ipc) return;
+    const action = isRunPaused ? "resume" : "pause";
+    const channelName = action === "resume" ? "asteria:resume-run" : "asteria:pause-run";
+    const channel = windowRef.asteria.ipc[channelName] as
+      | ((runId: string) => Promise<import("../ipc/contracts.js").IpcResult<void>>)
+      | undefined;
+    if (!channel) {
+      setRunControlError(`${action === "resume" ? "Resume" : "Pause"} is unavailable.`);
+      return;
+    }
+    setRunControlBusy(action);
+    setRunControlError(null);
+    try {
+      const result = await channel(activeRunId);
+      unwrapIpcResult(result, `${action === "resume" ? "Resume" : "Pause"} run`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Run control failed";
+      setRunControlError(message);
+    } finally {
+      setRunControlBusy(null);
+    }
+  }, [activeRunId, isRunPaused]);
+
+  const handleCancelRun = useCallback(async (): Promise<void> => {
+    if (!activeRunId) return;
+    const windowRef: typeof globalThis & { asteria?: { ipc?: Record<string, unknown> } } =
+      globalThis;
+    if (!windowRef.asteria?.ipc) return;
+    const cancelRun = windowRef.asteria.ipc["asteria:cancel-run"] as
+      | ((runId: string) => Promise<import("../ipc/contracts.js").IpcResult<void>>)
+      | undefined;
+    if (!cancelRun) {
+      setRunControlError("Cancel is unavailable.");
+      return;
+    }
+    setRunControlBusy("cancel");
+    setRunControlError(null);
+    try {
+      const result = await cancelRun(activeRunId);
+      unwrapIpcResult(result, "Cancel run");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Cancel failed";
+      setRunControlError(message);
+    } finally {
+      setRunControlBusy(null);
+      setConfirmCancelRun(false);
+    }
+  }, [activeRunId]);
 
   const handleImportCorpus = useCallback(
     async (options?: { markFirstRunComplete?: boolean }): Promise<ProjectSummary | null> => {
@@ -776,6 +861,136 @@ export function App(): JSX.Element {
           {activeScreen === "settings" && <SettingsScreen projectId={activeProjectId} />}
         </main>
       </div>
+
+      {activeRunProgress && activeRunId && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Run in progress"
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 1500,
+            background: "rgba(4, 8, 20, 0.72)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: "24px",
+          }}
+        >
+          <div
+            className="card"
+            style={{
+              width: "100%",
+              maxWidth: "520px",
+              display: "grid",
+              gap: "16px",
+              padding: "24px",
+            }}
+          >
+            <div>
+              <h2 style={{ margin: 0, fontSize: "20px" }}>Run in progress</h2>
+              <p style={{ marginTop: "6px", color: "var(--text-secondary)" }}>
+                Run {activeRunProgress.runId} {RUN_STATUS_SEPARATOR} Stage{" "}
+                {formatStageLabel(activeRunProgress.stage)}
+              </p>
+            </div>
+            <div style={{ display: "grid", gap: "8px" }}>
+              <div style={{ fontSize: "13px", color: "var(--text-secondary)" }}>
+                {hasRunProgressTotal
+                  ? `${activeRunProgress.processed.toLocaleString()} / ${activeRunProgress.total.toLocaleString()} pages (${runProgressPercent}%)`
+                  : `${activeRunProgress.processed.toLocaleString()} pages processed`}
+              </div>
+              <div
+                style={{
+                  height: "8px",
+                  background: "var(--bg-surface)",
+                  borderRadius: "999px",
+                  overflow: "hidden",
+                }}
+                aria-hidden="true"
+              >
+                <div
+                  style={{
+                    width: `${runProgressPercent}%`,
+                    height: "100%",
+                    background: "var(--color-accent)",
+                  }}
+                />
+              </div>
+              {!hasRunProgressTotal && (
+                <div style={{ fontSize: "12px", color: "var(--text-tertiary)" }}>
+                  Total page count pending…
+                </div>
+              )}
+              {activeRunProgress.throughput !== undefined && (
+                <div style={{ fontSize: "12px", color: "var(--text-tertiary)" }}>
+                  {activeRunProgress.throughput.toFixed(1)} pages/sec
+                </div>
+              )}
+            </div>
+            <div style={{ display: "flex", gap: "12px", flexWrap: "wrap" }}>
+              <button
+                className="btn btn-primary"
+                onClick={() => void handlePauseResumeRun()}
+                disabled={runControlBusy !== null}
+              >
+                {runControlBusy === (isRunPaused ? "resume" : "pause")
+                  ? isRunPaused
+                    ? "Resuming…"
+                    : "Pausing…"
+                  : isRunPaused
+                    ? "Resume run"
+                    : "Pause run"}
+              </button>
+              {confirmCancelRun ? (
+                <>
+                  <button
+                    className="btn btn-secondary"
+                    onClick={() => void handleCancelRun()}
+                    disabled={runControlBusy !== null}
+                  >
+                    {runControlBusy === "cancel" ? "Cancelling…" : "Confirm cancel"}
+                  </button>
+                  <button
+                    className="btn btn-ghost"
+                    onClick={() => setConfirmCancelRun(false)}
+                    disabled={runControlBusy !== null}
+                  >
+                    Keep run
+                  </button>
+                </>
+              ) : (
+                <button
+                  className="btn btn-secondary"
+                  onClick={() => setConfirmCancelRun(true)}
+                  disabled={runControlBusy !== null}
+                >
+                  Cancel run
+                </button>
+              )}
+              <button
+                className="btn btn-ghost"
+                onClick={() => setActiveScreen("monitor")}
+                disabled={runControlBusy !== null}
+              >
+                Open Live Monitor
+              </button>
+            </div>
+            {confirmCancelRun && (
+              <div style={{ fontSize: "12px", color: "var(--color-error)" }}>
+                Cancelling stops the pipeline and discards pending work.
+              </div>
+            )}
+            {runControlError && (
+              <div className="card" style={{ borderColor: "var(--color-error)" }}>
+                <strong style={{ color: "var(--color-error)" }}>Run control failed</strong>
+                <p style={{ marginTop: "6px" }}>{runControlError}</p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       <CommandPalette
         isOpen={commandPaletteOpen}
