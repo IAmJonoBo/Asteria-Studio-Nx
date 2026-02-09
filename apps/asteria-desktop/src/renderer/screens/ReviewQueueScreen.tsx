@@ -20,7 +20,7 @@ import { applyGuideOverrides } from "../guides/overrides.js";
 import { snapBoxWithSources, getBoxSnapCandidates } from "../utils/snapping.js";
 import type { SnapEdge, SnapSourceConfig } from "../utils/snapping.js";
 import { unwrapIpcResult } from "../utils/ipc.js";
-import { Icon } from "../components/Icon.js";
+import { Icon, type IconName } from "../components/Icon.js";
 
 type PreviewRef = {
   path: string;
@@ -1026,9 +1026,10 @@ const OVERSCAN = 6;
 const useReviewQueuePages = (
   runId?: string,
   runDir?: string
-): { pages: ReviewPage[]; isLoading: boolean } => {
+): { pages: ReviewPage[]; isLoading: boolean; error: string | null } => {
   const [pages, setPages] = useState<ReviewPage[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect((): void | (() => void) => {
     let cancelled = false;
@@ -1044,10 +1045,15 @@ const useReviewQueuePages = (
         };
       } = globalThis;
       if (!runId || !runDir || !windowRef.asteria?.ipc) {
-        if (!cancelled) setPages([]);
+        if (!cancelled) {
+          setPages([]);
+          setIsLoading(false);
+          setError(null);
+        }
         return;
       }
       setIsLoading(true);
+      setError(null);
       try {
         const queueResult = await windowRef.asteria.ipc["asteria:fetch-review-queue"](
           runId,
@@ -1056,10 +1062,13 @@ const useReviewQueuePages = (
         if (cancelled) return;
         setPages(mapReviewQueue(unwrapIpcResult(queueResult, "Fetch review queue")));
         setIsLoading(false);
-      } catch {
+        setError(null);
+      } catch (error) {
         if (!cancelled) {
+          const message = error instanceof Error ? error.message : "Failed to load review queue";
           setPages([]);
           setIsLoading(false);
+          setError(message);
         }
       }
     };
@@ -1069,7 +1078,7 @@ const useReviewQueuePages = (
     };
   }, [runDir, runId]);
 
-  return { pages, isLoading };
+  return { pages, isLoading, error };
 };
 
 const useQueueWorker = (pages: ReviewPage[]): ReviewPage[] => {
@@ -1180,6 +1189,7 @@ const useSidecarData = (
       if (!currentPage) {
         setSidecar(null);
         setSidecarError(null);
+        setIsLoading(false);
         return;
       }
       const windowRef: typeof globalThis & {
@@ -1196,6 +1206,7 @@ const useSidecarData = (
       if (!runId || !runDir || !windowRef.asteria?.ipc) {
         setSidecar(null);
         setSidecarError(null);
+        setIsLoading(false);
         return;
       }
       setIsLoading(true);
@@ -1529,6 +1540,7 @@ type ReviewQueueLayoutProps = {
   queuePages: ReviewPage[];
   currentPage: ReviewPage | undefined;
   isQueueLoading: boolean;
+  queueError: string | null;
   selectedIndex: number;
   decisions: Map<string, DecisionValue>;
   overlaysVisible: boolean;
@@ -1633,6 +1645,7 @@ const ReviewQueueLayout = ({
   queuePages,
   currentPage,
   isQueueLoading,
+  queueError,
   selectedIndex,
   decisions,
   overlaysVisible,
@@ -1757,6 +1770,7 @@ const ReviewQueueLayout = ({
     isLoading: boolean;
     title: string;
     description: string;
+    iconName?: IconName;
   }): JSX.Element => {
     const totalHeight = queuePages.length > 0 ? queuePages.length * ITEM_HEIGHT : undefined;
     return (
@@ -1785,7 +1799,7 @@ const ReviewQueueLayout = ({
               <div className="review-queue-spinner" aria-hidden="true" />
             ) : (
               <div className="empty-state-icon" aria-hidden="true">
-                <Icon name="check" size={48} />
+                <Icon name={params.iconName ?? "check"} size={48} />
               </div>
             )}
             <h2 className="empty-state-title">{params.title}</h2>
@@ -1801,6 +1815,15 @@ const ReviewQueueLayout = ({
       isLoading: true,
       title: "Loading review queue...",
       description: "Fetching flagged pages and previews.",
+    });
+  }
+
+  if (queueError) {
+    return renderQueueShell({
+      isLoading: false,
+      title: "Review queue unavailable",
+      description: queueError,
+      iconName: "alert",
     });
   }
 
@@ -2681,7 +2704,11 @@ export function ReviewQueueScreen({
   runId,
   runDir,
 }: Readonly<ReviewQueueScreenProps>): JSX.Element {
-  const { pages, isLoading: isQueueLoading } = useReviewQueuePages(runId, runDir);
+  const {
+    pages,
+    isLoading: isQueueLoading,
+    error: queueError,
+  } = useReviewQueuePages(runId, runDir);
   const queuePages = useQueueWorker(pages);
   const { selectedIndex, setSelectedIndex } = useQueueSelection(queuePages);
   const { listRef, scrollTop, setScrollTop, viewportHeight } = useQueueViewport(selectedIndex);
@@ -3868,6 +3895,7 @@ export function ReviewQueueScreen({
       queuePages={queuePages}
       currentPage={currentPage}
       isQueueLoading={isQueueLoading}
+      queueError={queueError}
       selectedIndex={selectedIndex}
       decisions={decisions}
       overlaysVisible={overlaysVisible}

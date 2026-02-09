@@ -42,6 +42,19 @@ describe("ReviewQueueScreen", () => {
     expect(await screen.findByText(/No pages need review/i)).toBeInTheDocument();
   });
 
+  it("surfaces errors when review queue fails to load", async () => {
+    (globalThis as typeof globalThis & { asteria?: unknown }).asteria = {
+      ipc: {
+        "asteria:fetch-review-queue": vi.fn().mockResolvedValue(err("queue missing")),
+      },
+    };
+
+    render(<ReviewQueueScreen runId="run-err" runDir="/tmp/runs/run-err" />);
+
+    expect(await screen.findByText(/Review queue unavailable/i)).toBeInTheDocument();
+    expect(await screen.findByText(/Fetch review queue: queue missing/i)).toBeInTheDocument();
+  });
+
   it("shows sidecar error when fetch fails", async () => {
     (globalThis as typeof globalThis & { asteria?: unknown }).asteria = {
       ipc: {
