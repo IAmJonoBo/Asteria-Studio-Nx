@@ -245,6 +245,47 @@ describe("ReviewQueueScreen - Keyboard Navigation", () => {
     windowRef.asteria = previousAsteria;
   });
 
+  it("resolves relative previews and explains semantic flags", async () => {
+    const windowRef = globalThis as typeof globalThis & { asteria?: AsteriaApi };
+    const previousAsteria = windowRef.asteria;
+    windowRef.asteria = {
+      ipc: {
+        "asteria:fetch-review-queue": vi.fn().mockResolvedValue(
+          ok(
+            buildQueue([
+              {
+                pageId: "page-100",
+                filename: "page-100.jpg",
+                layoutProfile: "body",
+                layoutConfidence: 0.6,
+                reason: "semantic-layout",
+                qualityGate: { accepted: true, reasons: [] },
+                previews: [
+                  {
+                    kind: "normalized",
+                    path: "previews/page-100-normalized.png",
+                    width: 16,
+                    height: 16,
+                  },
+                ],
+              },
+            ])
+          )
+        ),
+      },
+    } as AsteriaApi;
+
+    render(<ReviewQueueScreen runId="run-1" runDir="/tmp/runs/run-1" />);
+
+    const preview = await screen.findByAltText(/normalized preview for page-100/i);
+    expect(preview.getAttribute("src") ?? "").toContain(
+      encodeURIComponent("/tmp/runs/run-1/previews/page-100-normalized.png")
+    );
+    expect(await screen.findByText(/semantic layout confidence low/i)).toBeInTheDocument();
+
+    windowRef.asteria = previousAsteria;
+  });
+
   it("has accessible keyboard shortcuts displayed", async () => {
     const windowRef = globalThis as typeof globalThis & { asteria?: AsteriaApi };
     const previousAsteria = windowRef.asteria;

@@ -103,7 +103,12 @@ type ReviewWorker = {
 
 const mapReviewQueue = (queue: ReviewQueue): ReviewPage[] => {
   return queue.items.map((item) => {
-    const issues = item.qualityGate?.reasons ?? [];
+    const baseIssues = item.qualityGate?.reasons ?? [];
+    // Semantic layout reviews lack quality gate reasons, so inject a placeholder issue for UI context.
+    const issues =
+      item.reason === "semantic-layout" && baseIssues.length === 0
+        ? ["semantic-layout-low-confidence"]
+        : baseIssues;
     const reason = item.reason === "quality-gate" ? "Quality gate" : "Semantic layout";
     const source = item.previews?.find((entry) => entry.kind === "source");
     const normalized = item.previews?.find((entry) => entry.kind === "normalized");
@@ -448,12 +453,33 @@ const derivePreviewDimensions = (
   return maxX > 0 && maxY > 0 ? { width: maxX + 1, height: maxY + 1 } : null;
 };
 
-const resolvePreviewSrc = (preview?: PreviewRef): string | undefined => {
+/**
+ * Normalize separators and join the run directory with a relative preview path consistently.
+ */
+const joinNormalizedPath = (runDir: string, relativePath: string): string => {
+  const normalizedRunDir = runDir.replace(/\\/g, "/").replace(/\/+$/, "");
+  const normalizedPath = relativePath.replace(/\\/g, "/").replace(/^\/+/, "");
+  return `${normalizedRunDir}/${normalizedPath}`;
+};
+
+/**
+ * Detect whether a string begins with an RFC 3986 URL scheme (e.g., http:, file:, asteria:).
+ */
+const hasUrlScheme = (value: string): boolean => /^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(value);
+
+const resolvePreviewSrc = (preview?: PreviewRef, runDir?: string): string | undefined => {
   if (!preview?.path) return undefined;
   if (preview.path.startsWith("asteria://")) return preview.path;
   const sanitized = preview.path.startsWith("file://") ? preview.path.slice(7) : preview.path;
   if (isAbsoluteFilePath(sanitized)) {
     return `asteria://asset?path=${encodeURIComponent(sanitized)}`;
+  }
+  if (hasUrlScheme(sanitized)) {
+    return sanitized;
+  }
+  if (runDir) {
+    const joinedPath = joinNormalizedPath(runDir, sanitized);
+    return `asteria://asset?path=${encodeURIComponent(joinedPath)}`;
   }
   return sanitized;
 };
@@ -753,6 +779,7 @@ export const __testables = {
   calculateOverlayScale,
   clampBox,
   hitTestGuides,
+  joinNormalizedPath,
   mapClientPointToOutput,
   snapBoxToPrior,
 };
@@ -953,6 +980,12 @@ const REASON_DICTIONARY: Record<string, ReasonInfo> = {
     explanation: "Gutter detection was uncertain for a possible spread.",
     severity: "warn",
     action: "Confirm if this page is a spread before splitting.",
+  },
+  "semantic-layout-low-confidence": {
+    label: "Semantic layout confidence low",
+    explanation: "Layout classification confidence fell below the semantic threshold.",
+    severity: "warn",
+    action: "Verify layout type and adjust if the template looks incorrect.",
   },
   "potential-baseline-misalignment": {
     label: "Baseline alignment risk",
@@ -1492,6 +1525,7 @@ const buildOverlaySvg = ({
 
 type ReviewQueueLayoutProps = {
   runId?: string;
+  runDir?: string;
   queuePages: ReviewPage[];
   currentPage: ReviewPage | undefined;
   isQueueLoading: boolean;
@@ -1595,6 +1629,7 @@ type ReviewQueueLayoutProps = {
 
 const ReviewQueueLayout = ({
   runId,
+  runDir,
   queuePages,
   currentPage,
   isQueueLoading,
@@ -2459,7 +2494,7 @@ const ReviewQueueLayout = ({
                   {representativePages.map((page) => {
                     const preview =
                       page.previews.overlay ?? page.previews.normalized ?? page.previews.source;
-                    const previewSrc = resolvePreviewSrc(preview);
+                    const previewSrc = resolvePreviewSrc(preview, runDir);
                     return (
                       <div key={page.id} className="review-queue-thumb">
                         {previewSrc ? (
@@ -3774,22 +3809,22 @@ export function ReviewQueueScreen({
   const hasDecisions = decisions.size > 0;
   const canSubmit = Boolean(runId) && hasDecisions && !isSubmitting;
   const normalizedSrc =
-    resolvePreviewSrc(normalizedPreview) ||
+    resolvePreviewSrc(normalizedPreview, runDir) ||
     (runDir && currentPage
       ? resolvePreviewSrc({
           path: buildRunPreviewPath(runDir, currentPage.id, "normalized"),
           width: 0,
           height: 0,
-        })
+        }, runDir)
       : undefined);
   const sourceSrc =
-    resolvePreviewSrc(sourcePreview) ||
+    resolvePreviewSrc(sourcePreview, runDir) ||
     (runDir && currentPage
       ? resolvePreviewSrc({
           path: buildRunPreviewPath(runDir, currentPage.id, "source"),
           width: 0,
           height: 0,
-        })
+        }, runDir)
       : undefined);
   const activeCropBox = cropBox ?? sidecar?.normalization?.cropBox ?? null;
   const activeTrimBox = trimBox ?? null;
@@ -3829,6 +3864,7 @@ export function ReviewQueueScreen({
   return (
     <ReviewQueueLayout
       runId={runId}
+      runDir={runDir}
       queuePages={queuePages}
       currentPage={currentPage}
       isQueueLoading={isQueueLoading}
