@@ -33,6 +33,7 @@ import {
   validateReviewDecisions,
   validateRevealPath,
   validateRunDir,
+  validateRunHistoryCleanupOptions,
   validateRunId,
   validateTemplateTrainingSignal,
 } from "../ipc/validation.js";
@@ -42,6 +43,7 @@ import {
   startRun,
   cancelRun,
   cancelRunAndDelete,
+  clearRunHistory,
   deleteRunArtifacts,
   pauseRun,
   resumeRun,
@@ -1159,6 +1161,21 @@ export function registerIpcHandlers(): void {
       const outputDir = await resolveOutputDir();
       await deleteRunArtifacts(outputDir, runId);
     })
+  );
+
+  ipcMain.handle(
+    "asteria:clear-run-history",
+    wrapIpcHandler(
+      "asteria:clear-run-history",
+      async (
+        _event: IpcMainInvokeEvent,
+        options?: { removeArtifacts?: boolean }
+      ): Promise<{ removedRuns: number; removedArtifacts: boolean }> => {
+        validateRunHistoryCleanupOptions(options);
+        const outputDir = await resolveOutputDir();
+        return clearRunHistory(outputDir, options);
+      }
+    )
   );
 
   ipcMain.handle(

@@ -229,6 +229,15 @@ export interface RunSummary {
   dpiConfidence?: number;
 }
 
+export interface RunHistoryCleanupOptions {
+  removeArtifacts?: boolean;
+}
+
+export interface RunHistoryCleanupResult {
+  removedRuns: number;
+  removedArtifacts: boolean;
+}
+
 export interface PageLayoutElement {
   id: string;
   type:
@@ -659,6 +668,9 @@ export interface IpcChannels {
   "asteria:import-corpus": (_request: ImportCorpusRequest) => Promise<IpcResult<ProjectSummary>>;
   "asteria:list-runs": () => Promise<IpcResult<RunSummary[]>>;
   "asteria:delete-run": (_runId: string) => Promise<IpcResult<void>>;
+  "asteria:clear-run-history": (
+    _options?: RunHistoryCleanupOptions
+  ) => Promise<IpcResult<RunHistoryCleanupResult>>;
   "asteria:get-run-manifest": (
     _runId: string,
     _runDir: string

@@ -14,7 +14,7 @@ vi.mock("node:fs/promises", () => ({
   mkdir,
 }));
 
-import { readRunIndex, updateRunIndex } from "./run-index.js";
+import { clearRunIndex, readRunIndex, updateRunIndex } from "./run-index.js";
 
 describe("run-index", () => {
   beforeEach(() => {
@@ -99,5 +99,14 @@ describe("run-index", () => {
     const [, raw] = writeFile.mock.calls[0];
     expect(String(raw)).toContain('"run-2"');
     expect(rename).toHaveBeenCalledWith(expect.any(String), indexPath);
+  });
+
+  it("clearRunIndex writes an empty runs array", async () => {
+    await clearRunIndex("/tmp/output");
+
+    expect(writeFile).toHaveBeenCalledOnce();
+    const [, raw] = writeFile.mock.calls[0];
+    const parsed = JSON.parse(String(raw)) as { runs?: unknown[] };
+    expect(parsed.runs).toEqual([]);
   });
 });

@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { App } from "./App.js";
+import type { RunProgressEvent } from "../ipc/contracts.js";
 
 const ok = <T,>(value: T) => ({ ok: true as const, value });
 const err = (message: string) => ({ ok: false as const, error: { message } });
@@ -11,7 +12,7 @@ describe("App", () => {
     const windowRef = globalThis as typeof globalThis & {
       asteria?: {
         ipc: Record<string, unknown>;
-        onRunProgress?: (handler: (event: { runId: string; stage: string }) => void) => () => void;
+        onRunProgress?: (handler: (event: RunProgressEvent) => void) => () => void;
       };
     };
     const previousAsteria = windowRef.asteria;
@@ -45,7 +46,7 @@ describe("App", () => {
     const windowRef = globalThis as typeof globalThis & {
       asteria?: {
         ipc: Record<string, unknown>;
-        onRunProgress?: (handler: (event: { runId: string; stage: string }) => void) => () => void;
+        onRunProgress?: (handler: (event: RunProgressEvent) => void) => () => void;
       };
     };
     const previousAsteria = windowRef.asteria;
@@ -247,7 +248,7 @@ describe("App", () => {
     const windowRef = globalThis as typeof globalThis & {
       asteria?: {
         ipc: Record<string, unknown>;
-        onRunProgress?: (handler: (event: { runId: string; stage: string }) => void) => () => void;
+        onRunProgress?: (handler: (event: RunProgressEvent) => void) => () => void;
       };
     };
     const previousAsteria = windowRef.asteria;
@@ -281,12 +282,17 @@ describe("App", () => {
       })
     );
 
-    const onRunProgress = vi.fn(
-      (handler: (event: { runId: string; stage: string }) => void): (() => void) => {
-        handler({ runId: "run-123", stage: "complete" });
-        return () => {};
-      }
-    );
+    const onRunProgress = vi.fn((handler: (event: RunProgressEvent) => void): (() => void) => {
+      handler({
+        runId: "run-123",
+        projectId: "project-a",
+        stage: "complete",
+        processed: 0,
+        total: 0,
+        timestamp: new Date().toISOString(),
+      });
+      return () => {};
+    });
     windowRef.asteria = {
       ipc: {
         "asteria:list-projects": vi.fn().mockResolvedValue(ok([])),
@@ -517,17 +523,22 @@ describe("App", () => {
     const windowRef = globalThis as typeof globalThis & {
       asteria?: {
         ipc: Record<string, unknown>;
-        onRunProgress?: (handler: (event: { runId: string; stage: string }) => void) => () => void;
+        onRunProgress?: (handler: (event: RunProgressEvent) => void) => () => void;
       };
     };
     const previousAsteria = windowRef.asteria;
     const listRuns = vi.fn().mockResolvedValue(ok([]));
-    const onRunProgress = vi.fn(
-      (handler: (event: { runId: string; stage: string }) => void): (() => void) => {
-        handler({ runId: "run-99", stage: "complete" });
-        return () => {};
-      }
-    );
+    const onRunProgress = vi.fn((handler: (event: RunProgressEvent) => void): (() => void) => {
+      handler({
+        runId: "run-99",
+        projectId: "project-a",
+        stage: "complete",
+        processed: 0,
+        total: 0,
+        timestamp: new Date().toISOString(),
+      });
+      return () => {};
+    });
 
     windowRef.asteria = {
       ipc: {

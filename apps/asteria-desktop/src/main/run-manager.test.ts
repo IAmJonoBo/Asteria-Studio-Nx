@@ -5,20 +5,24 @@ const mkdir = vi.hoisted(() => vi.fn());
 const readFile = vi.hoisted(() => vi.fn());
 const writeFile = vi.hoisted(() => vi.fn());
 const rename = vi.hoisted(() => vi.fn());
+const rm = vi.hoisted(() => vi.fn());
 
 vi.mock("node:fs/promises", () => ({
-  default: { mkdir, readFile, writeFile, rename },
+  default: { mkdir, readFile, writeFile, rename, rm },
   mkdir,
   readFile,
   writeFile,
   rename,
+  rm,
 }));
 
 const runPipeline = vi.hoisted(() => vi.fn());
 vi.mock("./pipeline-runner", () => ({ runPipeline }));
 
 const updateRunIndex = vi.hoisted(() => vi.fn());
-vi.mock("./run-index", () => ({ updateRunIndex }));
+const clearRunIndex = vi.hoisted(() => vi.fn());
+const readRunIndex = vi.hoisted(() => vi.fn());
+vi.mock("./run-index", () => ({ updateRunIndex, clearRunIndex, readRunIndex }));
 
 const emitRunProgress = vi.hoisted(() => vi.fn());
 const clearRunProgress = vi.hoisted(() => vi.fn());
@@ -28,6 +32,7 @@ import {
   clearActiveRunsForTesting,
   cancelRunAndDelete,
   cancelRun,
+  clearRunHistory,
   deleteRunArtifacts,
   isRunPaused,
   pauseRun,
@@ -42,8 +47,11 @@ describe("run-manager", () => {
     readFile.mockReset();
     writeFile.mockReset();
     rename.mockReset();
+    rm.mockReset();
     runPipeline.mockReset();
     updateRunIndex.mockReset();
+    clearRunIndex.mockReset();
+    readRunIndex.mockReset();
     emitRunProgress.mockReset();
     clearRunProgress.mockReset();
   });
@@ -283,5 +291,31 @@ describe("run-manager", () => {
 
   it("cancelRunAndDelete throws when run is missing", async () => {
     await expect(cancelRunAndDelete("run-missing")).rejects.toThrow(/no active run/i);
+  });
+
+  it("clearRunHistory clears run index without deleting artifacts", async () => {
+    readRunIndex.mockResolvedValueOnce([
+      { runId: "run-1", projectId: "proj" },
+      { runId: "run-2", projectId: "proj" },
+    ]);
+
+    const result = await clearRunHistory("/tmp/output");
+
+    expect(clearRunIndex).toHaveBeenCalledWith("/tmp/output");
+    expect(rm).not.toHaveBeenCalled();
+    expect(result).toEqual({ removedRuns: 2, removedArtifacts: false });
+  });
+
+  it("clearRunHistory removes run artifacts when requested", async () => {
+    readRunIndex.mockResolvedValueOnce([{ runId: "run-1", projectId: "proj" }]);
+
+    const result = await clearRunHistory("/tmp/output", { removeArtifacts: true });
+
+    expect(rm).toHaveBeenCalledWith(expect.stringContaining("run-1"), {
+      recursive: true,
+      force: true,
+    });
+    expect(clearRunIndex).toHaveBeenCalledWith("/tmp/output");
+    expect(result).toEqual({ removedRuns: 1, removedArtifacts: true });
   });
 });
