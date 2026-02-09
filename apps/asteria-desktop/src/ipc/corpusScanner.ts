@@ -123,7 +123,7 @@ export const scanCorpus = async (
   }
 
   if (imageFiles.length === 0) {
-    throw new Error("No supported page files found in corpus");
+    throw new Error("No supported page images found in corpus");
   }
 
   const sortedFiles = imageFiles.slice().sort((a: string, b: string) => a.localeCompare(b));

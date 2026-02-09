@@ -1710,29 +1710,64 @@ const ReviewQueueLayout = ({
     ? (sourceLoadedStatus ?? "loading")
     : "idle";
 
-  if (isQueueLoading) {
+  const renderQueueShell = (params: {
+    isLoading: boolean;
+    title: string;
+    description: string;
+  }): JSX.Element => {
+    const totalHeight = queuePages.length > 0 ? queuePages.length * ITEM_HEIGHT : undefined;
     return (
-      <div className="empty-state">
-        <div className="review-queue-spinner" aria-hidden="true" />
-        <h2 className="empty-state-title">Loading review queue...</h2>
-        <p className="empty-state-description">Fetching flagged pages and previews.</p>
+      <div className="review-queue-shell" aria-busy={params.isLoading}>
+        <aside className="review-queue-rail" aria-label="Review queue list">
+          <div className="review-queue-rail-header">
+            <div>
+              <p className="review-queue-rail-title">Review Queue</p>
+              <p className="review-queue-rail-subtitle">
+                {queuePages.length} pages need attention
+              </p>
+            </div>
+            <span className="review-queue-rail-run">Run {runId}</span>
+          </div>
+          <div
+            ref={listRef}
+            className="review-queue-rail-list"
+            onScroll={(event) => onScroll(event.currentTarget.scrollTop)}
+          >
+            {totalHeight && <div className="review-queue-rail-spacer" style={{ height: totalHeight }} />}
+          </div>
+        </aside>
+        <section className="review-queue-workspace">
+          <div className="empty-state">
+            {params.isLoading ? (
+              <div className="review-queue-spinner" aria-hidden="true" />
+            ) : (
+              <div className="empty-state-icon" aria-hidden="true">
+                <Icon name="check" size={48} />
+              </div>
+            )}
+            <h2 className="empty-state-title">{params.title}</h2>
+            <p className="empty-state-description">{params.description}</p>
+          </div>
+        </section>
       </div>
     );
+  };
+
+  if (isQueueLoading) {
+    return renderQueueShell({
+      isLoading: true,
+      title: "Loading review queue...",
+      description: "Fetching flagged pages and previews.",
+    });
   }
 
   if (queuePages.length === 0 || !currentPage) {
-    return (
-      <div className="empty-state">
-        <div className="empty-state-icon" aria-hidden="true">
-          <Icon name="check" size={48} />
-        </div>
-        <h2 className="empty-state-title">No pages need review</h2>
-        <p className="empty-state-description">
-          All pages passed quality checks. Review pages appear here when confidence scores fall
-          below thresholds or when manual verification is needed.
-        </p>
-      </div>
-    );
+    return renderQueueShell({
+      isLoading: false,
+      title: "No pages need review",
+      description:
+        "All pages passed quality checks. Review pages appear here when confidence scores fall below thresholds or when manual verification is needed.",
+    });
   }
 
   const decision = decisions.get(currentPage.id);
@@ -2198,7 +2233,7 @@ const ReviewQueueLayout = ({
                 onClick={onAcceptSameReason}
                 disabled={interactionDisabled}
               >
-                Accept same reason
+                Accept all with same reason
               </button>
               <button className="btn btn-secondary btn-sm" disabled>
                 Reprocess selected (planned)
@@ -2578,7 +2613,11 @@ const ReviewQueueLayout = ({
                 {isSubmitting ? "Submitting…" : "Submit Review"}
               </button>
             </div>
-            {submitError && <div className="review-queue-panel-error">{submitError}</div>}
+            {submitError && (
+              <div className="review-queue-panel-error" role="alert">
+                {submitError}
+              </div>
+            )}
           </section>
         </div>
       </aside>

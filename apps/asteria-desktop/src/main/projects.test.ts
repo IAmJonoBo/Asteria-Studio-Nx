@@ -61,10 +61,10 @@ describe("projects", () => {
 
     stat.mockImplementation(async (target: string): Promise<MockStat> => {
       if (target === projectDir) {
-        return { isDirectory: () => true };
+        return { isDirectory: () => true, isFile: () => false };
       }
       if (target === configPath) {
-        return { isFile: () => true };
+        return { isDirectory: () => false, isFile: () => true };
       }
       throw new Error("missing");
     });
@@ -99,10 +99,10 @@ describe("projects", () => {
 
     stat.mockImplementation(async (target: string): Promise<MockStat> => {
       if (target === projectDir) {
-        return { isDirectory: () => true };
+        return { isDirectory: () => true, isFile: () => false };
       }
       if (target.endsWith("not-a-dir")) {
-        return { isDirectory: () => false };
+        return { isDirectory: () => false, isFile: () => false };
       }
       throw new Error("missing");
     });
@@ -125,7 +125,7 @@ describe("projects", () => {
 
     stat.mockImplementation(async (target: string): Promise<MockStat> => {
       if (target === projectDir) {
-        return { isDirectory: () => true };
+        return { isDirectory: () => true, isFile: () => false };
       }
       if (target === configPath) {
         throw new Error("missing");
@@ -158,10 +158,10 @@ describe("projects", () => {
 
     stat.mockImplementation(async (target: string): Promise<MockStat> => {
       if (target === inputPath) {
-        return { isDirectory: () => true };
+        return { isDirectory: () => true, isFile: () => false };
       }
       if (existingDirs.has(target)) {
-        return { isDirectory: () => true };
+        return { isDirectory: () => true, isFile: () => false };
       }
       throw new Error("missing");
     });
@@ -186,7 +186,7 @@ describe("projects", () => {
 
     stat.mockImplementation(async (target: string): Promise<MockStat> => {
       if (target === inputPath) {
-        return { isDirectory: () => true };
+        return { isDirectory: () => true, isFile: () => false };
       }
       throw new Error("missing");
     });
@@ -218,7 +218,7 @@ describe("projects", () => {
 
     stat.mockImplementation(async (target: string): Promise<MockStat> => {
       if (target === alphaDir || target === betaDir) {
-        return { isDirectory: () => true };
+        return { isDirectory: () => true, isFile: () => false };
       }
       if (target === alphaConfigPath || target === betaConfigPath) {
         throw new Error("missing");
@@ -262,10 +262,10 @@ describe("projects", () => {
 
     stat.mockImplementation(async (target: string): Promise<MockStat> => {
       if (target === projectDir) {
-        return { isDirectory: () => true };
+        return { isDirectory: () => true, isFile: () => false };
       }
       if (target === yamlPath) {
-        return { isFile: () => true };
+        return { isDirectory: () => false, isFile: () => true };
       }
       throw new Error("missing");
     });
@@ -275,11 +275,29 @@ describe("projects", () => {
   });
 
   it("importCorpus rejects non-directory input", async () => {
-    stat.mockResolvedValueOnce({ isDirectory: () => false });
+    stat.mockResolvedValueOnce({ isDirectory: () => false, isFile: () => false });
 
     await expect(importCorpus({ inputPath: "/tmp/file.txt" })).rejects.toThrow(
       /must be a directory/i
     );
+  });
+
+  it("importCorpus accepts supported file input", async () => {
+    const inputPath = "/tmp/corpus.pdf";
+    const projectsRoot = path.join(process.cwd(), "projects");
+    const projectDir = path.join(projectsRoot, "corpus");
+
+    stat.mockImplementation(async (target: string): Promise<MockStat> => {
+      if (target === inputPath) {
+        return { isDirectory: () => false, isFile: () => true };
+      }
+      throw new Error("missing");
+    });
+
+    const result = await importCorpus({ inputPath });
+
+    expect(mkdir).toHaveBeenCalledWith(projectDir, { recursive: true });
+    expect(result.id).toBe("corpus");
   });
 
   it("listProjects returns empty array on readdir failure", async () => {

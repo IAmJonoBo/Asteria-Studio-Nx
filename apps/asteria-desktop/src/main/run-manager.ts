@@ -36,6 +36,10 @@ type ActiveRun = {
 
 const activeRuns = new Map<string, ActiveRun>();
 
+export const clearActiveRunsForTesting = (): void => {
+  activeRuns.clear();
+};
+
 const createPauseController = (): PauseController => {
   let paused = false;
   let resumeResolve: (() => void) | null = null;
