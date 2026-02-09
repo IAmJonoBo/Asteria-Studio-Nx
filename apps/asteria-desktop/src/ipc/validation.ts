@@ -218,11 +218,17 @@ export const validateAppPreferencesUpdate = (prefs: Record<string, unknown>): vo
 export const validateRevealPath = (targetPath: string): void => {
   requireNonEmptyString(targetPath, "Invalid reveal path: expected non-empty string");
   if (targetPath === "logs") return;
+  if (targetPath.length > 4096) {
+    throwTypeError("Invalid reveal path: too long");
+  }
   if (targetPath.includes("\u0000")) {
     throwTypeError("Invalid reveal path: contains null byte");
   }
   if (!path.isAbsolute(targetPath)) {
     throwTypeError("Invalid reveal path: expected absolute path");
+  }
+  if (path.parse(targetPath).root === targetPath) {
+    throwTypeError("Invalid reveal path: refusing filesystem root");
   }
 };
 

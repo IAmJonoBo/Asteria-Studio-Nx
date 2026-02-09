@@ -72,22 +72,74 @@ import {
   resolveOutputDir,
   resolveProjectsRoot,
   savePreferences,
+  getAsteriaRoot,
 } from "./preferences.js";
 import { importCorpus, listProjects, normalizeCorpusPath } from "./projects.js";
 import { provisionSampleCorpus } from "./sample-corpus.js";
 
 type ExportFormat = "png" | "tiff" | "pdf";
 
+const isDev = !app.isPackaged || process.env.NODE_ENV === "development";
 const DEFAULT_IO_CONCURRENCY = 6;
 const getIoConcurrency = (): number =>
   resolveConcurrency(process.env.ASTERIA_IO_CONCURRENCY, DEFAULT_IO_CONCURRENCY, 32);
 
 const buildIpcError = (error: unknown, context: string): IpcErrorPayload => {
   const message = error instanceof Error && error.message ? error.message : "Request failed";
-  const detail = error instanceof Error && error.stack ? error.stack : undefined;
+  const detail = isDev && error instanceof Error && error.stack ? error.stack : undefined;
   const code = error instanceof Error && error.name ? error.name : undefined;
   console.error(`[ipc] ${context} failed`, error);
   return { message, detail, code };
+};
+
+const resolveRealOrNormalizedPath = async (candidate: string): Promise<string> => {
+  const normalized = path.resolve(candidate);
+  try {
+    return await fs.realpath(normalized);
+  } catch {
+    return normalized;
+  }
+};
+
+const resolveTargetPathForContainment = async (targetPath: string): Promise<string | null> => {
+  const normalized = path.resolve(targetPath);
+  try {
+    return await fs.realpath(normalized);
+  } catch {
+    const parent = path.dirname(normalized);
+    try {
+      const parentReal = await fs.realpath(parent);
+      return path.join(parentReal, path.basename(normalized));
+    } catch {
+      return null;
+    }
+  }
+};
+
+const resolveAllowedRoots = async (): Promise<string[]> => {
+  const prefs = await loadPreferences();
+  const legacyOutputDir = isDev ? path.join(process.cwd(), "pipeline-results") : undefined;
+  const roots = [
+    app.getPath("logs"),
+    getAsteriaRoot(app.getPath("userData")),
+    prefs.outputDir,
+    prefs.projectsDir,
+    legacyOutputDir,
+  ].filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0);
+
+  const realRoots = new Set<string>();
+  for (const root of roots) {
+    realRoots.add(await resolveRealOrNormalizedPath(root));
+  }
+  return [...realRoots];
+};
+
+const isPathWithinRoots = (targetRealPath: string, roots: string[]): boolean => {
+  const entries = roots.map((root) => ({
+    root,
+    rootWithSep: root.endsWith(path.sep) ? root : `${root}${path.sep}`,
+  }));
+  return entries.some(({ root, rootWithSep }) => targetRealPath === root || targetRealPath.startsWith(rootWithSep));
 };
 
 const wrapIpcHandler =
@@ -646,16 +698,23 @@ export function registerIpcHandlers(): void {
       async (_event: IpcMainInvokeEvent, targetPath: string): Promise<void> => {
         validateRevealPath(targetPath);
         const resolvedPath = targetPath === "logs" ? app.getPath("logs") : targetPath;
+
+        const allowedRoots = await resolveAllowedRoots();
+        const resolvedRealPath = await resolveTargetPathForContainment(resolvedPath);
+
+        if (!resolvedRealPath || !isPathWithinRoots(resolvedRealPath, allowedRoots)) {
+          throw new Error("Reveal path is outside allowed roots");
+        }
         try {
-          const stats = await fs.stat(resolvedPath);
+          const stats = await fs.stat(resolvedRealPath);
           if (stats.isDirectory()) {
-            await shell.openPath(resolvedPath);
+            await shell.openPath(resolvedRealPath);
             return;
           }
         } catch (error) {
           console.warn("[ipc] reveal-path stat failed", error);
         }
-        shell.showItemInFolder(resolvedPath);
+        shell.showItemInFolder(resolvedRealPath);
       }
     )
   );

@@ -427,6 +427,15 @@ export interface ScanCorpusOptions {
   targetDpi?: number;
   targetDimensionsMm?: { width: number; height: number };
   includeChecksums?: boolean;
+
+  /**
+   * Safety caps to avoid runaway scans / hostile inputs.
+   * All caps are best-effort; callers can set stricter values.
+   */
+  maxFiles?: number;
+  maxTotalBytes?: number;
+  maxDepth?: number;
+  maxPdfPages?: number;
 }
 
 export interface PipelineConfig {

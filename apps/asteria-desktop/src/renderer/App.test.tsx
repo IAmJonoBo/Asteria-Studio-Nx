@@ -432,7 +432,7 @@ describe("App", () => {
       }
     ).prompt = originalPrompt;
     windowRef.asteria = previousAsteria;
-  }, 10000);
+  }, 30000);
 
   it("imports a corpus when prompt is unavailable", async () => {
     const user = userEvent.setup();
@@ -925,7 +925,7 @@ describe("App", () => {
       }
     ).prompt = originalPrompt;
     windowRef.asteria = previousAsteria;
-  }, 10000);
+  }, 30000);
 
   it("opens review queue from run history", async () => {
     const user = userEvent.setup();

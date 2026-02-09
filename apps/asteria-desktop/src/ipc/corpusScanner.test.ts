@@ -68,4 +68,54 @@ describe("corpusScanner", () => {
     expect(new Set(ids).size).toBe(ids.length);
     expect(ids.some((id) => id.includes("chapter-1"))).toBe(true);
   });
+
+  it("enforces maxTotalBytes safety limits", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "asteria-scan-"));
+    await fs.writeFile(path.join(root, "page-1.jpg"), Buffer.alloc(8));
+
+    await expect(scanCorpus(root, { maxTotalBytes: 4 })).rejects.toThrow(/size limit/i);
+  });
+
+  it("respects maxDepth safety limits", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "asteria-scan-"));
+    const nested = path.join(root, "deep");
+    await fs.mkdir(nested);
+    await writeDummy(root, "page-root.jpg");
+    await writeDummy(nested, "page-nested.jpg");
+
+    const config = await scanCorpus(root, { maxDepth: 0 });
+    const filenames = config.pages.map((page) => page.filename);
+
+    expect(filenames).toContain("page-root.jpg");
+    expect(filenames).not.toContain("page-nested.jpg");
+  });
+
+  it("skips symbolic links while scanning", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "asteria-scan-"));
+    const realFile = await writeDummy(root, "page-root.jpg");
+    const symlinkPath = path.join(root, "linked-page.jpg");
+    await fs.symlink(realFile, symlinkPath);
+
+    const config = await scanCorpus(root);
+    const paths = config.pages.map((page) => page.originalPath);
+
+    expect(paths).toContain(realFile);
+    expect(paths).not.toContain(symlinkPath);
+  });
+
+  it("suffixes duplicate ids when normalized paths collide", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "asteria-scan-"));
+    const firstDir = path.join(root, "a");
+    const secondDir = path.join(root, "a-b");
+    await fs.mkdir(firstDir);
+    await fs.mkdir(secondDir);
+    await writeDummy(firstDir, "b-c.jpg");
+    await writeDummy(path.join(secondDir), "c.jpg");
+
+    const config = await scanCorpus(root);
+    const ids = config.pages.map((page) => page.id).sort();
+
+    expect(ids).toContain("a-b-c");
+    expect(ids).toContain("a-b-c-2");
+  });
 });

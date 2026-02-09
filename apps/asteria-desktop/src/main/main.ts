@@ -1,6 +1,7 @@
-import { app, BrowserWindow, dialog, protocol } from "electron";
+import { app, BrowserWindow, dialog, protocol, session } from "electron";
 import { fileURLToPath } from "url";
 import path from "path";
+import fs from "node:fs/promises";
 import { loadEnv } from "./config.js";
 import { buildAppMenu } from "./menu.js";
 import { getAsteriaRoot, loadPreferences, savePreferences } from "./preferences.js";
@@ -73,39 +74,68 @@ const registerAssetProtocol = (allowedRoots: string[]): void => {
   const roots = allowedRoots
     .filter((root): root is string => typeof root === "string" && root.trim().length > 0)
     .map((root) => path.resolve(root));
-  const rootEntries = roots.map((root) => ({
-    root,
-    rootWithSep: root.endsWith(path.sep) ? root : `${root}${path.sep}`,
-  }));
-  const isAllowedPath = (targetPath: string): boolean =>
-    rootEntries.some(
-      ({ root, rootWithSep }) => targetPath === root || targetPath.startsWith(rootWithSep)
-    );
+
+  const resolveRealOrNormalizedPath = async (candidate: string): Promise<string> => {
+    const normalized = path.resolve(candidate);
+    try {
+      return await fs.realpath(normalized);
+    } catch {
+      return normalized;
+    }
+  };
+
+  const resolveExistingRealpath = async (candidate: string): Promise<string | null> => {
+    try {
+      return await fs.realpath(candidate);
+    } catch {
+      return null;
+    }
+  };
+
+  const rootEntriesPromise = Promise.all(roots.map((root) => resolveRealOrNormalizedPath(root))).then(
+    (resolvedRoots) =>
+      resolvedRoots.map((root) => ({
+        root,
+        rootWithSep: root.endsWith(path.sep) ? root : `${root}${path.sep}`,
+      }))
+  );
 
   protocol.registerFileProtocol("asteria", (request, callback) => {
-    try {
-      const url = new URL(request.url);
-      if (url.hostname !== "asset") {
+    void (async (): Promise<void> => {
+      try {
+        const url = new URL(request.url);
+        if (url.hostname !== "asset") {
+          callback({ error: -6 });
+          return;
+        }
+        const rawPath = url.searchParams.get("path");
+        if (!rawPath) {
+          callback({ error: -6 });
+          return;
+        }
+        const decodedPath = decodeURIComponent(rawPath);
+        const normalizedPath = path.isAbsolute(decodedPath)
+          ? path.normalize(decodedPath)
+          : path.resolve(decodedPath);
+        const targetRealPath = await resolveExistingRealpath(normalizedPath);
+        if (!targetRealPath) {
+          callback({ error: -6 });
+          return;
+        }
+
+        const rootEntries = await rootEntriesPromise;
+        const isAllowedPath = rootEntries.some(
+          ({ root, rootWithSep }) => targetRealPath === root || targetRealPath.startsWith(rootWithSep)
+        );
+        if (!isAllowedPath) {
+          callback({ error: -10 });
+          return;
+        }
+        callback({ path: targetRealPath });
+      } catch {
         callback({ error: -6 });
-        return;
       }
-      const rawPath = url.searchParams.get("path");
-      if (!rawPath) {
-        callback({ error: -6 });
-        return;
-      }
-      const decodedPath = decodeURIComponent(rawPath);
-      const normalizedPath = path.isAbsolute(decodedPath)
-        ? path.normalize(decodedPath)
-        : path.resolve(decodedPath);
-      if (!isAllowedPath(normalizedPath)) {
-        callback({ error: -10 });
-        return;
-      }
-      callback({ path: normalizedPath });
-    } catch {
-      callback({ error: -6 });
-    }
+    })();
   });
 };
 
@@ -117,11 +147,22 @@ async function createWindow(): Promise<void> {
       preload: path.join(__dirname, "../preload/index.cjs"),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false,
+      sandbox: true,
     },
   });
 
   attachLoadLogging(win);
+
+  // Security hardening: keep the renderer on a short leash.
+  win.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+  win.webContents.on("will-navigate", (event) => {
+    event.preventDefault();
+  });
+
+  // Deny all permission requests (camera/mic/geolocation/notifications/etc.).
+  session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => {
+    callback(false);
+  });
 
   if (isDev) {
     await win.loadURL("http://localhost:5173");

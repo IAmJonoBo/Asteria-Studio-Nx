@@ -70,6 +70,16 @@ export const requestRemoteLayout = async (
   const endpoint = config.endpoint;
   if (!endpoint) return null;
 
+  let endpointUrl: URL;
+  try {
+    endpointUrl = new URL(endpoint);
+  } catch {
+    return null;
+  }
+  if (endpointUrl.protocol !== "https:") {
+    return null;
+  }
+
   const maxPayloadBytes = Math.max(1, Math.round((config.maxPayloadMb ?? 8) * 1024 * 1024));
   const maxDimensionPx = Math.max(1, Math.round(config.maxDimensionPx ?? 2048));
 
@@ -134,6 +144,7 @@ export const requestRemoteLayout = async (
     const token = config.token;
     const response = await globalThis.fetch(endpoint, {
       method: "POST",
+      redirect: "error",
       headers: {
         "Content-Type": "application/json",
         ...(token ? { Authorization: `Bearer ${token}` } : {}),

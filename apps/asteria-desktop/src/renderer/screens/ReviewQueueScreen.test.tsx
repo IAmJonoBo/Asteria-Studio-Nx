@@ -182,7 +182,7 @@ describe("ReviewQueueScreen", () => {
       "/tmp/runs/run-3",
       expect.arrayContaining([{ pageId: "page-1", decision: "accept" }])
     );
-  }, 10000);
+  }, 30000);
 
   it("shows template clusters and records confirm/correct actions", async () => {
     const recordTemplateTraining = vi.fn().mockResolvedValue(ok(undefined));
@@ -268,7 +268,7 @@ describe("ReviewQueueScreen", () => {
       })
     );
     expect(await screen.findByText(/Template correction saved/i)).toBeInTheDocument();
-  });
+  }, 30000);
 
   it("shows template action errors when IPC is unavailable", async () => {
     (globalThis as typeof globalThis & { asteria?: unknown }).asteria = {

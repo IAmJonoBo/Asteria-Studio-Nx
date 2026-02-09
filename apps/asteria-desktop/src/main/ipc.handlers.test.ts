@@ -12,6 +12,8 @@ const cp = vi.hoisted(() => vi.fn());
 const readdir = vi.hoisted(() => vi.fn());
 const rm = vi.hoisted(() => vi.fn());
 const rename = vi.hoisted(() => vi.fn());
+const realpath = vi.hoisted(() => vi.fn());
+const stat = vi.hoisted(() => vi.fn());
 const sharpCall = vi.hoisted(() => {
   const toFile = vi.fn().mockResolvedValue(undefined);
   const tiff = vi.fn(() => ({ toFile }));
@@ -36,7 +38,7 @@ vi.mock("electron", () => ({
 }));
 
 vi.mock("node:fs/promises", () => ({
-  default: { readFile, mkdir, writeFile, copyFile, cp, readdir, rm, rename },
+  default: { readFile, mkdir, writeFile, copyFile, cp, readdir, rm, rename, realpath, stat },
   readFile,
   mkdir,
   writeFile,
@@ -45,6 +47,8 @@ vi.mock("node:fs/promises", () => ({
   readdir,
   rm,
   rename,
+  realpath,
+  stat,
 }));
 
 vi.mock("sharp", () => ({ default: sharpCall.sharpFn }));
@@ -67,6 +71,7 @@ const loadPreferences = vi.hoisted(() => vi.fn());
 const savePreferences = vi.hoisted(() => vi.fn());
 const resolveOutputDir = vi.hoisted(() => vi.fn());
 const resolveProjectsRoot = vi.hoisted(() => vi.fn());
+const getAsteriaRoot = vi.hoisted(() => vi.fn());
 const createDiagnosticsBundle = vi.hoisted(() => vi.fn());
 const getAppInfo = vi.hoisted(() => vi.fn());
 const provisionSampleCorpus = vi.hoisted(() => vi.fn());
@@ -93,6 +98,7 @@ vi.mock("./preferences", () => ({
   savePreferences,
   resolveOutputDir,
   resolveProjectsRoot,
+  getAsteriaRoot,
 }));
 vi.mock("./diagnostics", () => ({ createDiagnosticsBundle }));
 vi.mock("./app-info", () => ({ getAppInfo }));
@@ -119,6 +125,8 @@ describe("IPC handler registration", () => {
     readdir.mockReset();
     rm.mockReset();
     rename.mockReset();
+    realpath.mockReset();
+    stat.mockReset();
     showItemInFolder.mockReset();
     openPath.mockReset();
     getPath.mockReset();
@@ -146,6 +154,7 @@ describe("IPC handler registration", () => {
     savePreferences.mockReset();
     resolveOutputDir.mockReset();
     resolveProjectsRoot.mockReset();
+    getAsteriaRoot.mockReset();
     createDiagnosticsBundle.mockReset();
     getAppInfo.mockReset();
     provisionSampleCorpus.mockReset();
@@ -154,6 +163,13 @@ describe("IPC handler registration", () => {
     warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     resolveOutputDir.mockResolvedValue(path.join(process.cwd(), "pipeline-results"));
     resolveProjectsRoot.mockResolvedValue(path.join(process.cwd(), "projects"));
+    loadPreferences.mockResolvedValue({
+      outputDir: path.join(process.cwd(), "pipeline-results"),
+      projectsDir: path.join(process.cwd(), "projects"),
+    });
+    getAsteriaRoot.mockReturnValue(path.join(process.cwd(), ".asteria"));
+    realpath.mockImplementation(async (entry: string) => entry);
+    stat.mockResolvedValue({ isDirectory: () => false });
   });
 
   afterEach(() => {
@@ -284,6 +300,52 @@ describe("IPC handler registration", () => {
     expect(handlers.has("asteria:resume-run")).toBe(true);
     expect(handlers.has("asteria:list-projects")).toBe(true);
     expect(handlers.has("asteria:import-corpus")).toBe(true);
+  });
+
+  it("reveal-path allows logs alias and opens directory", async () => {
+    registerIpcHandlers();
+    const handler = handlers.get("asteria:reveal-path");
+    expect(handler).toBeDefined();
+    const logsPath = path.join(process.cwd(), "logs");
+    getPath.mockImplementation((name: string) => {
+      if (name === "logs") return logsPath;
+      if (name === "userData") return path.join(process.cwd(), "userdata");
+      return process.cwd();
+    });
+    stat.mockResolvedValueOnce({ isDirectory: () => true });
+
+    await (handler as (event: unknown, target: string) => Promise<unknown>)({}, "logs");
+
+    expect(openPath).toHaveBeenCalledWith(logsPath);
+  });
+
+  it("reveal-path rejects targets outside allowed roots", async () => {
+    registerIpcHandlers();
+    const handler = handlers.get("asteria:reveal-path");
+    expect(handler).toBeDefined();
+    const logsPath = path.join(process.cwd(), "logs");
+    getPath.mockImplementation((name: string) => {
+      if (name === "logs") return logsPath;
+      if (name === "userData") return path.join(process.cwd(), "userdata");
+      return process.cwd();
+    });
+    loadPreferences.mockResolvedValueOnce({
+      outputDir: path.join(process.cwd(), "pipeline-results"),
+      projectsDir: path.join(process.cwd(), "projects"),
+    });
+
+    const result = (await (handler as (event: unknown, target: string) => Promise<unknown>)(
+      {},
+      "/tmp/not-allowed/thing.txt"
+    )) as {
+      ok: boolean;
+      error?: { message?: string };
+    };
+
+    expect(result.ok).toBe(false);
+    expect(result.error?.message).toMatch(/outside allowed roots/i);
+    expect(openPath).not.toHaveBeenCalled();
+    expect(showItemInFolder).not.toHaveBeenCalled();
   });
 
   it("start-run returns a stubbed result", async () => {
