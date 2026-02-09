@@ -1,11 +1,15 @@
-import { app, BrowserWindow, dialog } from "electron";
+import { app, BrowserWindow, dialog, protocol } from "electron";
 import { fileURLToPath } from "url";
 import path from "path";
 import { loadEnv } from "./config.js";
 import { buildAppMenu } from "./menu.js";
-import { loadPreferences, savePreferences } from "./preferences.js";
+import { getAsteriaRoot, loadPreferences, savePreferences } from "./preferences.js";
 
 loadEnv();
+
+protocol.registerSchemesAsPrivileged([
+  { scheme: "asteria", privileges: { secure: true, standard: true } },
+]);
 
 const isDev = !app.isPackaged || process.env.NODE_ENV === "development";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -65,6 +69,46 @@ const ensureSharp = async (): Promise<boolean> => {
   }
 };
 
+const registerAssetProtocol = (allowedRoots: string[]): void => {
+  const roots = allowedRoots
+    .filter((root): root is string => typeof root === "string" && root.trim().length > 0)
+    .map((root) => path.resolve(root));
+  const rootEntries = roots.map((root) => ({
+    root,
+    rootWithSep: root.endsWith(path.sep) ? root : `${root}${path.sep}`,
+  }));
+  const isAllowedPath = (targetPath: string): boolean =>
+    rootEntries.some(
+      ({ root, rootWithSep }) => targetPath === root || targetPath.startsWith(rootWithSep)
+    );
+
+  protocol.registerFileProtocol("asteria", (request, callback) => {
+    try {
+      const url = new URL(request.url);
+      if (url.hostname !== "asset") {
+        callback({ error: -6 });
+        return;
+      }
+      const rawPath = url.searchParams.get("path");
+      if (!rawPath) {
+        callback({ error: -6 });
+        return;
+      }
+      const decodedPath = decodeURIComponent(rawPath);
+      const normalizedPath = path.isAbsolute(decodedPath)
+        ? path.normalize(decodedPath)
+        : path.resolve(decodedPath);
+      if (!isAllowedPath(normalizedPath)) {
+        callback({ error: -10 });
+        return;
+      }
+      callback({ path: normalizedPath });
+    } catch {
+      callback({ error: -6 });
+    }
+  });
+};
+
 async function createWindow(): Promise<void> {
   const win = new BrowserWindow({
     width: 1280,
@@ -103,6 +147,7 @@ app
     }
 
     buildAppMenu();
+    registerAssetProtocol([getAsteriaRoot(app.getPath("userData")), prefs.outputDir]);
 
     const { registerIpcHandlers } = await import("./ipc.js");
     registerIpcHandlers();

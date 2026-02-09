@@ -5,6 +5,8 @@ import type { ImportCorpusRequest, ProjectSummary } from "../ipc/contracts.js";
 import { resolveOutputDir, resolveProjectsRoot } from "./preferences.js";
 import { readRunIndex, type RunIndexStatus } from "./run-index.js";
 
+const SUPPORTED_INPUT_EXT = new Set([".jpg", ".jpeg", ".png", ".tif", ".tiff", ".pdf"]);
+
 type ProjectConfig = {
   id?: string;
   name?: string;
@@ -151,11 +153,20 @@ export const importCorpus = async (request: ImportCorpusRequest): Promise<Projec
   const projectsRoot = await resolveProjectsRoot();
   const resolvedInput = normalizeCorpusPath(request.inputPath);
   const stats = await fs.stat(resolvedInput);
-  if (!stats.isDirectory()) {
-    throw new Error("Corpus path must be a directory");
+  if (!stats.isDirectory() && !stats.isFile()) {
+    throw new Error("Corpus path must be a directory or file");
+  }
+  if (stats.isFile()) {
+    const extension = path.extname(resolvedInput).toLowerCase();
+    if (!SUPPORTED_INPUT_EXT.has(extension)) {
+      throw new Error("Unsupported corpus file type");
+    }
   }
 
-  const name = request.name?.trim() || path.basename(resolvedInput);
+  const name =
+    request.name?.trim() ||
+    (stats.isFile() ? path.basename(resolvedInput, path.extname(resolvedInput)) : undefined) ||
+    path.basename(resolvedInput);
   let slug = slugify(name);
   let projectDir = path.join(projectsRoot, slug);
   let suffix = 1;

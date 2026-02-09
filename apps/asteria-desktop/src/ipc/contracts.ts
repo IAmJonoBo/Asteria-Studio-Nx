@@ -625,6 +625,7 @@ export interface IpcChannels {
   "asteria:reveal-path": (_targetPath: string) => Promise<IpcResult<void>>;
   "asteria:start-run": (_config: PipelineRunConfig) => Promise<IpcResult<PipelineRunResult>>;
   "asteria:cancel-run": (_runId: string) => Promise<IpcResult<void>>;
+  "asteria:cancel-run-and-delete": (_runId: string) => Promise<IpcResult<void>>;
   "asteria:pause-run": (_runId: string) => Promise<IpcResult<void>>;
   "asteria:resume-run": (_runId: string) => Promise<IpcResult<void>>;
   "asteria:fetch-page": (
@@ -657,6 +658,7 @@ export interface IpcChannels {
   "asteria:list-projects": () => Promise<IpcResult<ProjectSummary[]>>;
   "asteria:import-corpus": (_request: ImportCorpusRequest) => Promise<IpcResult<ProjectSummary>>;
   "asteria:list-runs": () => Promise<IpcResult<RunSummary[]>>;
+  "asteria:delete-run": (_runId: string) => Promise<IpcResult<void>>;
   "asteria:get-run-manifest": (
     _runId: string,
     _runDir: string

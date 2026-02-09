@@ -38,7 +38,14 @@ import {
 } from "../ipc/validation.js";
 import { analyzeCorpus } from "../ipc/corpusAnalysis.js";
 import { scanCorpus } from "../ipc/corpusScanner.js";
-import { startRun, cancelRun, pauseRun, resumeRun } from "./run-manager.js";
+import {
+  startRun,
+  cancelRun,
+  cancelRunAndDelete,
+  deleteRunArtifacts,
+  pauseRun,
+  resumeRun,
+} from "./run-manager.js";
 import {
   loadPipelineConfig,
   loadProjectOverrides,
@@ -707,7 +714,10 @@ export function registerIpcHandlers(): void {
     wrapIpcHandler("asteria:pick-corpus-dir", async (): Promise<string | null> => {
       const parentWindow = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
       const result = await dialog.showOpenDialog(parentWindow ?? undefined, {
-        properties: ["openDirectory"],
+        properties: ["openDirectory", "openFile"],
+        filters: [
+          { name: "Corpus files", extensions: ["jpg", "jpeg", "png", "tif", "tiff", "pdf"] },
+        ],
       });
       if (result.canceled || result.filePaths.length === 0) {
         return null;
@@ -741,6 +751,17 @@ export function registerIpcHandlers(): void {
       async (_event: IpcMainInvokeEvent, runId: string): Promise<void> => {
         validateRunId(runId);
         await cancelRun(runId);
+      }
+    )
+  );
+
+  ipcMain.handle(
+    "asteria:cancel-run-and-delete",
+    wrapIpcHandler(
+      "asteria:cancel-run-and-delete",
+      async (_event: IpcMainInvokeEvent, runId: string): Promise<void> => {
+        validateRunId(runId);
+        await cancelRunAndDelete(runId);
       }
     )
   );
@@ -1128,6 +1149,15 @@ export function registerIpcHandlers(): void {
         return [];
       }
       return [];
+    })
+  );
+
+  ipcMain.handle(
+    "asteria:delete-run",
+    wrapIpcHandler("asteria:delete-run", async (_event: IpcMainInvokeEvent, runId: string) => {
+      validateRunId(runId);
+      const outputDir = await resolveOutputDir();
+      await deleteRunArtifacts(outputDir, runId);
     })
   );
 

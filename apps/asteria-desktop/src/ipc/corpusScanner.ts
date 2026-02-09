@@ -1,11 +1,15 @@
 import fs from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import crypto from "node:crypto";
+import sharp from "sharp";
 import type { PipelineRunConfig, ScanCorpusOptions } from "./contracts.js";
 
 const DEFAULT_TARGET_DPI = 400;
 const DEFAULT_DIMENSIONS_MM = { width: 210, height: 297 };
-const SUPPORTED_EXT = new Set([".jpg", ".jpeg", ".png", ".tif", ".tiff"]);
+const SUPPORTED_EXT = new Set([".jpg", ".jpeg", ".png", ".tif", ".tiff", ".pdf"]);
+const PDF_CACHE_ROOT = path.join(os.tmpdir(), "asteria-pdf-cache");
+const PDF_DENSITY = 300;
 
 const isNonEmptyString = (value: unknown): value is string =>
   typeof value === "string" && value.trim().length > 0;
@@ -30,6 +34,44 @@ const listFilesRecursive = async (root: string): Promise<string[]> => {
     }
   }
   return results;
+};
+
+const getPdfCacheDir = async (pdfPath: string): Promise<{ cacheDir: string; baseName: string }> => {
+  const stats = await fs.stat(pdfPath);
+  const hash = crypto
+    .createHash("sha256")
+    .update(`${pdfPath}:${stats.mtimeMs}:${stats.size}`)
+    .digest("hex")
+    .slice(0, 12);
+  const baseName = path.basename(pdfPath, path.extname(pdfPath));
+  const cacheDir = path.join(PDF_CACHE_ROOT, `${baseName}-${hash}`);
+  await fs.mkdir(cacheDir, { recursive: true });
+  return { cacheDir, baseName };
+};
+
+const renderPdfPages = async (pdfPath: string): Promise<string[]> => {
+  const { cacheDir, baseName } = await getPdfCacheDir(pdfPath);
+  const meta = await sharp(pdfPath, { density: PDF_DENSITY }).metadata();
+  const pageCount = Math.max(1, meta.pages ?? 1);
+  const outputPaths: string[] = [];
+
+  for (let page = 0; page < pageCount; page += 1) {
+    const filename = `${baseName}-p${String(page + 1).padStart(4, "0")}.png`;
+    const outputPath = path.join(cacheDir, filename);
+    try {
+      const existing = await fs.stat(outputPath);
+      if (existing.isFile()) {
+        outputPaths.push(outputPath);
+        continue;
+      }
+    } catch {
+      // Render below if the cached file doesn't exist.
+    }
+    await sharp(pdfPath, { density: PDF_DENSITY, page }).png().toFile(outputPath);
+    outputPaths.push(outputPath);
+  }
+
+  return outputPaths;
 };
 
 const buildPageId = (
@@ -62,15 +104,26 @@ export const scanCorpus = async (
 
   const resolvedRoot = path.resolve(rootPath);
   const stats = await fs.stat(resolvedRoot);
-  if (!stats.isDirectory()) {
-    throw new Error("Corpus root must be a directory");
+  const isDirectory = stats.isDirectory();
+  const isFile = stats.isFile();
+  if (!isDirectory && !isFile) {
+    throw new Error("Corpus root must be a directory or file");
   }
 
-  const files = await listFilesRecursive(resolvedRoot);
-  const imageFiles = files.filter((file) => SUPPORTED_EXT.has(path.extname(file).toLowerCase()));
+  const files = isDirectory ? await listFilesRecursive(resolvedRoot) : [resolvedRoot];
+  const filteredFiles = files.filter((file) => SUPPORTED_EXT.has(path.extname(file).toLowerCase()));
+  const imageFiles: string[] = [];
+  for (const file of filteredFiles) {
+    if (path.extname(file).toLowerCase() === ".pdf") {
+      const rendered = await renderPdfPages(file);
+      imageFiles.push(...rendered);
+    } else {
+      imageFiles.push(file);
+    }
+  }
 
   if (imageFiles.length === 0) {
-    throw new Error("No supported page images found in corpus");
+    throw new Error("No supported page files found in corpus");
   }
 
   const sortedFiles = imageFiles.slice().sort((a: string, b: string) => a.localeCompare(b));
@@ -79,7 +132,9 @@ export const scanCorpus = async (
     sortedFiles.map(async (file: string, index: number) => {
       const confidenceScores: Record<string, number> = {};
       const checksum = options?.includeChecksums ? await hashFile(file) : undefined;
-      const id = buildPageId(file, resolvedRoot, index, usedIds);
+      const rootForId =
+        isDirectory && file.startsWith(resolvedRoot) ? resolvedRoot : path.dirname(file);
+      const id = buildPageId(file, rootForId, index, usedIds);
       return {
         id,
         filename: path.basename(file),

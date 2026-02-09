@@ -77,6 +77,10 @@ const api: IpcChannels = {
     return safeInvoke("asteria:import-corpus", request);
   },
   "asteria:list-runs": async () => safeInvoke("asteria:list-runs"),
+  "asteria:delete-run": async (runId: Parameters<IpcChannels["asteria:delete-run"]>[0]) => {
+    validateRunId(runId);
+    return safeInvoke("asteria:delete-run", runId);
+  },
   "asteria:get-run-manifest": async (
     runId: Parameters<IpcChannels["asteria:get-run-manifest"]>[0],
     runDir: Parameters<IpcChannels["asteria:get-run-manifest"]>[1]
@@ -103,6 +107,12 @@ const api: IpcChannels = {
   "asteria:cancel-run": async (runId: Parameters<IpcChannels["asteria:cancel-run"]>[0]) => {
     validateRunId(runId);
     return safeInvoke("asteria:cancel-run", runId);
+  },
+  "asteria:cancel-run-and-delete": async (
+    runId: Parameters<IpcChannels["asteria:cancel-run-and-delete"]>[0]
+  ) => {
+    validateRunId(runId);
+    return safeInvoke("asteria:cancel-run-and-delete", runId);
   },
   "asteria:pause-run": async (runId: Parameters<IpcChannels["asteria:pause-run"]>[0]) => {
     validateRunId(runId);

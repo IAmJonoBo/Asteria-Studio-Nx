@@ -6,6 +6,7 @@ import { Icon } from "../components/Icon.js";
 interface RunProgressState {
   latest: RunProgressEvent;
   stages: Record<string, RunProgressEvent>;
+  throughputHistory: Array<{ ts: number; value: number }>;
 }
 
 const isStageError = (stage: string): boolean => {
@@ -15,6 +16,7 @@ const isStageError = (stage: string): boolean => {
 
 export function MonitorScreen(): JSX.Element {
   const [progressByRun, setProgressByRun] = useState<Record<string, RunProgressState>>({});
+  const [cancelling, setCancelling] = useState<Record<string, boolean>>({});
 
   useEffect((): void | (() => void) => {
     const windowRef: typeof globalThis & {
@@ -28,9 +30,14 @@ export function MonitorScreen(): JSX.Element {
           ...(current?.stages ?? {}),
           [event.stage]: event,
         };
+        const history = current?.throughputHistory ?? [];
+        const nextHistory =
+          typeof event.throughput === "number"
+            ? [...history, { ts: Date.now(), value: event.throughput }].slice(-30)
+            : history;
         return {
           ...prev,
-          [event.runId]: { latest: event, stages },
+          [event.runId]: { latest: event, stages, throughputHistory: nextHistory },
         };
       });
     });
@@ -85,9 +92,18 @@ export function MonitorScreen(): JSX.Element {
           const run = runState.latest;
           const total = Math.max(1, run.total || 1);
           const progress = Math.min(100, Math.round((run.processed / total) * 100));
+          const history = runState.throughputHistory;
+          const avgThroughput =
+            history.length > 0
+              ? history.reduce((sum, entry) => sum + entry.value, 0) / history.length
+              : (run.throughput ?? 0);
+          const remaining = Math.max(0, total - run.processed);
+          const etaSeconds = avgThroughput > 0 ? remaining / avgThroughput : null;
           const stageEntries = Object.values(runState.stages).sort(
             (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
           );
+          const hasActiveStage = !["complete", "cancelled", "error"].includes(run.stage);
+          const isCancelling = Boolean(cancelling[run.runId]);
 
           return (
             <div key={run.runId} className="card" style={{ display: "grid", gap: "12px" }}>
@@ -131,7 +147,9 @@ export function MonitorScreen(): JSX.Element {
                 </div>
                 <div style={{ textAlign: "right" }}>
                   <div style={{ fontSize: "12px", color: "var(--text-secondary)" }}>
-                    {run.throughput ? `${run.throughput.toFixed(1)} pages/sec` : "Calculating…"}
+                    {avgThroughput > 0
+                      ? `${avgThroughput.toFixed(1)} pages/sec (avg)`
+                      : "Calculating throughput…"}
                   </div>
                   <div
                     style={{
@@ -152,12 +170,80 @@ export function MonitorScreen(): JSX.Element {
                       }}
                     />
                   </div>
+                  {etaSeconds !== null && (
+                    <div
+                      style={{ fontSize: "11px", color: "var(--text-tertiary)", marginTop: "6px" }}
+                    >
+                      ETA {Math.max(0, Math.round(etaSeconds))}s
+                    </div>
+                  )}
                   <div
                     style={{ fontSize: "11px", color: "var(--text-tertiary)", marginTop: "6px" }}
                   >
                     Updated {new Date(run.timestamp).toLocaleTimeString()}
                   </div>
                 </div>
+              </div>
+
+              {history.length > 1 && (
+                <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                  <div style={{ fontSize: "12px", color: "var(--text-secondary)" }}>
+                    Throughput history
+                  </div>
+                  <svg width="160" height="36" viewBox="0 0 160 36" aria-hidden="true">
+                    <polyline
+                      fill="none"
+                      stroke="var(--color-accent)"
+                      strokeWidth="2"
+                      points={((): string => {
+                        const values = history.map((entry) => entry.value);
+                        const max = Math.max(...values, 1);
+                        const min = Math.min(...values, max);
+                        return values
+                          .map((value, index) => {
+                            const x = (index / Math.max(1, values.length - 1)) * 160;
+                            const norm = (value - min) / Math.max(1, max - min);
+                            const y = 34 - norm * 30;
+                            return `${x.toFixed(1)},${y.toFixed(1)}`;
+                          })
+                          .join(" ");
+                      })()}
+                    />
+                  </svg>
+                </div>
+              )}
+
+              <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                <div style={{ fontSize: "12px", color: "var(--text-secondary)" }}>Run controls</div>
+                <button
+                  className="btn btn-secondary btn-sm"
+                  disabled={!hasActiveStage || isCancelling}
+                  onClick={async () => {
+                    const confirmed = globalThis.confirm(
+                      "Cancel this run and delete its artifacts? This cannot be undone."
+                    );
+                    if (!confirmed) return;
+                    const windowRef: typeof globalThis & {
+                      asteria?: { ipc?: Record<string, unknown> };
+                    } = globalThis;
+                    const cancelRun = windowRef.asteria?.ipc?.["asteria:cancel-run-and-delete"] as (
+                      runId: string
+                    ) => Promise<import("../../ipc/contracts.js").IpcResult<void>>;
+                    if (!cancelRun) return;
+                    setCancelling((prev) => ({ ...prev, [run.runId]: true }));
+                    try {
+                      const result = await cancelRun(run.runId);
+                      if (!result.ok) throw new Error(result.error.message);
+                    } catch (error) {
+                      const message = error instanceof Error ? error.message : "Cancel failed";
+                      globalThis.alert(message);
+                    } finally {
+                      setCancelling((prev) => ({ ...prev, [run.runId]: false }));
+                    }
+                  }}
+                >
+                  {isCancelling ? "Cancelling…" : "Cancel & Delete"}
+                </button>
               </div>
 
               <div style={{ display: "grid", gap: "8px" }}>
@@ -184,6 +270,31 @@ export function MonitorScreen(): JSX.Element {
                         {stageEvent.total.toLocaleString()}
                       </div>
                       <div>{new Date(stageEvent.timestamp).toLocaleTimeString()}</div>
+                      <div
+                        style={{
+                          gridColumn: "1 / -1",
+                          height: "4px",
+                          background: "var(--bg-surface)",
+                          borderRadius: "999px",
+                          overflow: "hidden",
+                        }}
+                        aria-hidden="true"
+                      >
+                        <div
+                          style={{
+                            width: `${Math.min(
+                              100,
+                              Math.round(
+                                (stageEvent.processed / Math.max(1, stageEvent.total)) * 100
+                              )
+                            )}%`,
+                            height: "100%",
+                            background: isStageError(stageEvent.stage)
+                              ? "var(--color-error)"
+                              : "var(--color-accent)",
+                          }}
+                        />
+                      </div>
                     </div>
                   ))}
                 </div>

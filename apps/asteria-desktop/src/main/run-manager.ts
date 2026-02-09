@@ -2,9 +2,10 @@ import fs from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import type { PipelineRunConfig, RunProgressEvent } from "../ipc/contracts.js";
 import { runPipeline } from "./pipeline-runner.js";
+import type { PipelineRunnerResult } from "./pipeline-runner.js";
 import { getRunDir, getRunManifestPath, getRunReportPath } from "./run-paths.js";
 import { writeJsonAtomic } from "./file-utils.js";
-import { updateRunIndex, type RunIndexStatus } from "./run-index.js";
+import { removeRunFromIndex, updateRunIndex, type RunIndexStatus } from "./run-index.js";
 import { clearRunProgress, emitRunProgress } from "./run-progress.js";
 
 type PauseController = {
@@ -27,8 +28,10 @@ type ActiveRun = {
   runId: string;
   projectId: string;
   outputDir: string;
+  runDir: string;
   controller: AbortControllerLike;
   pauseController: PauseController;
+  task: Promise<PipelineRunnerResult>;
 };
 
 const activeRuns = new Map<string, ActiveRun>();
@@ -144,6 +147,9 @@ export const startRun = async (
   projectRoot: string,
   outputDir: string
 ): Promise<string> => {
+  if (activeRuns.size > 0) {
+    throw new Error("A run is already active. Cancel it before starting a new run.");
+  }
   const runId = `run-${Date.now()}-${randomUUID().split("-")[0] ?? "seed"}`;
   const controller = createAbortController();
   const pauseController = createPauseController();
@@ -188,14 +194,52 @@ export const startRun = async (
     runId,
     projectId: config.projectId,
     outputDir,
+    runDir,
     controller,
     pauseController,
+    task: runTask,
   });
 
   // Avoid unhandled rejection warnings for background runs
   void runTask.catch(() => undefined);
 
   return runId;
+};
+
+export const deleteRunArtifacts = async (outputDir: string, runId: string): Promise<void> => {
+  if (activeRuns.has(runId)) {
+    throw new Error("Cannot delete an active run.");
+  }
+  const runDir = getRunDir(outputDir, runId);
+  await fs.rm(runDir, { recursive: true, force: true });
+  await removeRunFromIndex(outputDir, runId);
+};
+
+export const cancelRunAndDelete = async (runId: string): Promise<void> => {
+  const active = activeRuns.get(runId);
+  if (!active) {
+    throw new Error("No active run found for cancellation.");
+  }
+  active.pauseController.resume();
+  active.controller.abort();
+  emitRunProgress(
+    {
+      runId,
+      projectId: active.projectId,
+      stage: "cancelling",
+      processed: 0,
+      total: 0,
+      timestamp: new Date().toISOString(),
+    },
+    true
+  );
+  try {
+    await active.task;
+  } catch {
+    // Ignore pipeline errors after abort.
+  }
+  await fs.rm(active.runDir, { recursive: true, force: true });
+  await removeRunFromIndex(active.outputDir, runId);
 };
 
 export const cancelRun = async (runId: string): Promise<boolean> => {

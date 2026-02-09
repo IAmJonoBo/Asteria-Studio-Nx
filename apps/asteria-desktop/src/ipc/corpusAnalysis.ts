@@ -1,5 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import sharp from "sharp";
 import type { CorpusSummary, PageBoundsEstimate, PipelineRunConfig } from "./contracts.js";
 import { validatePipelineRunConfig } from "./validation.js";
 
@@ -63,7 +64,29 @@ const probeJpegSize: DimensionProvider = async (filePath) => {
 
 const shouldProbe = (filePath: string): boolean => {
   const ext = path.extname(filePath).toLowerCase();
-  return ext === ".jpg" || ext === ".jpeg";
+  return (
+    ext === ".jpg" ||
+    ext === ".jpeg" ||
+    ext === ".png" ||
+    ext === ".tif" ||
+    ext === ".tiff" ||
+    ext === ".pdf"
+  );
+};
+
+const probeImageSize: DimensionProvider = async (filePath) => {
+  try {
+    const ext = path.extname(filePath).toLowerCase();
+    const isPdf = ext === ".pdf";
+    const image = isPdf ? sharp(filePath, { density: 300, page: 0 }) : sharp(filePath);
+    const meta = await image.metadata();
+    const width = meta.width ?? 0;
+    const height = meta.height ?? 0;
+    if (!width || !height) return null;
+    return { width, height };
+  } catch {
+    return null;
+  }
 };
 
 const computeVariance = (values: number[]): number => {
@@ -76,7 +99,7 @@ const computeVariance = (values: number[]): number => {
 
 const inferTargetMetrics = async (
   config: PipelineRunConfig,
-  dimensionProvider: DimensionProvider
+  _dimensionProvider: DimensionProvider
 ): Promise<{
   inferredDimensionsMm?: { width: number; height: number };
   dimensionConfidence: number;
@@ -87,7 +110,11 @@ const inferTargetMetrics = async (
     config.pages.map(async (page) => {
       if (!shouldProbe(page.originalPath)) return null;
       try {
-        const dimensions = await dimensionProvider(page.originalPath);
+        const ext = path.extname(page.originalPath).toLowerCase();
+        const dimensions =
+          ext === ".jpg" || ext === ".jpeg"
+            ? await probeJpegSize(page.originalPath)
+            : await probeImageSize(page.originalPath);
         return dimensions ? { width: dimensions.width, height: dimensions.height } : null;
       } catch {
         return null;
@@ -162,12 +189,12 @@ export const estimatePageBounds = async (
   const targetPx = computeTargetDimensionsPx(targetDimensionsMm, targetDpi);
   const bleedPx = mmToPx(options?.bleedMm ?? DEFAULT_BLEED_MM, targetDpi);
   const trimPx = mmToPx(options?.trimMm ?? 0, targetDpi);
-  const dimensionProvider = options?.dimensionProvider ?? probeJpegSize;
+  const _dimensionProvider = options?.dimensionProvider ?? probeJpegSize;
 
   const bounds: PageBoundsEstimate[] = [];
   for (const page of pages) {
     if (shouldProbe(page.originalPath)) {
-      await dimensionProvider(page.originalPath);
+      await _dimensionProvider(page.originalPath);
     }
 
     const pageWidth = targetPx.width;

@@ -434,10 +434,7 @@ describe("App", () => {
       asteria?: { ipc: Record<string, unknown> };
     };
     const previousAsteria = windowRef.asteria;
-    const listProjects = vi
-      .fn()
-      .mockResolvedValueOnce(ok([]))
-      .mockResolvedValueOnce(ok([]));
+    const listProjects = vi.fn().mockResolvedValueOnce(ok([])).mockResolvedValueOnce(ok([]));
     const importCorpus = vi.fn().mockResolvedValue(
       ok({
         id: "new-project",
@@ -457,11 +454,7 @@ describe("App", () => {
     };
 
     const originalPrompt = globalThis.prompt;
-    (
-      globalThis as typeof globalThis & {
-        prompt: ((message?: string) => string | null) | undefined;
-      }
-    ).prompt = undefined;
+    (globalThis as unknown as { prompt?: (message?: string) => string | null }).prompt = undefined;
 
     render(<App />);
 

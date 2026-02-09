@@ -416,10 +416,46 @@ const areBaselineGridOverridesEqual = (
   );
 };
 
+const isAbsoluteFilePath = (value: string): boolean =>
+  value.startsWith("/") || /^[A-Za-z]:\\/.test(value);
+
+const buildRunPreviewPath = (
+  runDir: string,
+  pageId: string,
+  kind: "source" | "normalized"
+): string => {
+  const separator = runDir.includes("\\") ? "\\" : "/";
+  const trimmedRunDir = runDir.replace(/[\\/]+$/, "");
+  return `${trimmedRunDir}${separator}previews${separator}${pageId}-${kind}.png`;
+};
+
+const derivePreviewDimensions = (
+  sidecar: PageLayoutSidecar | null | undefined
+): { width: number; height: number } | null => {
+  if (!sidecar) return null;
+  const cropBox = sidecar.normalization?.cropBox;
+  if (cropBox && cropBox.length === 4) {
+    return { width: cropBox[2] + 1, height: cropBox[3] + 1 };
+  }
+  const pageMask = sidecar.normalization?.pageMask;
+  if (pageMask && pageMask.length === 4) {
+    return { width: pageMask[2] + 1, height: pageMask[3] + 1 };
+  }
+  const elements = sidecar.elements ?? [];
+  if (elements.length === 0) return null;
+  const maxX = Math.max(...elements.map((element) => element.bbox[2] ?? 0));
+  const maxY = Math.max(...elements.map((element) => element.bbox[3] ?? 0));
+  return maxX > 0 && maxY > 0 ? { width: maxX + 1, height: maxY + 1 } : null;
+};
+
 const resolvePreviewSrc = (preview?: PreviewRef): string | undefined => {
   if (!preview?.path) return undefined;
-  if (preview.path.startsWith("/")) return `file://${preview.path}`;
-  return preview.path;
+  if (preview.path.startsWith("asteria://")) return preview.path;
+  const sanitized = preview.path.startsWith("file://") ? preview.path.slice(7) : preview.path;
+  if (isAbsoluteFilePath(sanitized)) {
+    return `asteria://asset?path=${encodeURIComponent(sanitized)}`;
+  }
+  return sanitized;
 };
 
 const createToggleSelected =
@@ -954,8 +990,12 @@ const getReasonInfo = (code: string): ReasonInfo => {
 const ITEM_HEIGHT = 86;
 const OVERSCAN = 6;
 
-const useReviewQueuePages = (runId?: string, runDir?: string): ReviewPage[] => {
+const useReviewQueuePages = (
+  runId?: string,
+  runDir?: string
+): { pages: ReviewPage[]; isLoading: boolean } => {
   const [pages, setPages] = useState<ReviewPage[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
 
   useEffect((): void | (() => void) => {
     let cancelled = false;
@@ -974,6 +1014,7 @@ const useReviewQueuePages = (runId?: string, runDir?: string): ReviewPage[] => {
         if (!cancelled) setPages([]);
         return;
       }
+      setIsLoading(true);
       try {
         const queueResult = await windowRef.asteria.ipc["asteria:fetch-review-queue"](
           runId,
@@ -981,8 +1022,12 @@ const useReviewQueuePages = (runId?: string, runDir?: string): ReviewPage[] => {
         );
         if (cancelled) return;
         setPages(mapReviewQueue(unwrapIpcResult(queueResult, "Fetch review queue")));
+        setIsLoading(false);
       } catch {
-        if (!cancelled) setPages([]);
+        if (!cancelled) {
+          setPages([]);
+          setIsLoading(false);
+        }
       }
     };
     loadQueue();
@@ -991,7 +1036,7 @@ const useReviewQueuePages = (runId?: string, runDir?: string): ReviewPage[] => {
     };
   }, [runDir, runId]);
 
-  return pages;
+  return { pages, isLoading };
 };
 
 const useQueueWorker = (pages: ReviewPage[]): ReviewPage[] => {
@@ -1091,9 +1136,10 @@ const useSidecarData = (
   runId: string | undefined,
   runDir: string | undefined,
   currentPage: ReviewPage | undefined
-): { sidecar: PageLayoutSidecar | null; sidecarError: string | null } => {
+): { sidecar: PageLayoutSidecar | null; sidecarError: string | null; isLoading: boolean } => {
   const [sidecar, setSidecar] = useState<PageLayoutSidecar | null>(null);
   const [sidecarError, setSidecarError] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
 
   useEffect((): void | (() => void) => {
     let cancelled = false;
@@ -1119,6 +1165,7 @@ const useSidecarData = (
         setSidecarError(null);
         return;
       }
+      setIsLoading(true);
       try {
         const sidecarResult = await windowRef.asteria.ipc["asteria:fetch-sidecar"](
           runId,
@@ -1129,15 +1176,18 @@ const useSidecarData = (
         if (!sidecarResult.ok) {
           setSidecarError(sidecarResult.error.message);
           setSidecar(null);
+          setIsLoading(false);
           return;
         }
         setSidecar(sidecarResult.value ?? null);
         setSidecarError(null);
+        setIsLoading(false);
       } catch (error) {
         if (cancelled) return;
         const message = error instanceof Error ? error.message : "Failed to load sidecar";
         setSidecarError(message);
         setSidecar(null);
+        setIsLoading(false);
       }
     };
     void loadSidecar();
@@ -1146,7 +1196,7 @@ const useSidecarData = (
     };
   }, [currentPage, runDir, runId]);
 
-  return { sidecar, sidecarError };
+  return { sidecar, sidecarError, isLoading };
 };
 
 type OverlayRenderParams = {
@@ -1444,10 +1494,12 @@ type ReviewQueueLayoutProps = {
   runId?: string;
   queuePages: ReviewPage[];
   currentPage: ReviewPage | undefined;
+  isQueueLoading: boolean;
   selectedIndex: number;
   decisions: Map<string, DecisionValue>;
   overlaysVisible: boolean;
   showSourcePreview: boolean;
+  inspectorOpen: boolean;
   zoom: number;
   rotationDeg: number;
   overlayLayers: OverlayLayersState;
@@ -1464,6 +1516,7 @@ type ReviewQueueLayoutProps = {
   pan: { x: number; y: number };
   isPanning: boolean;
   sidecarError: string | null;
+  isSidecarLoading: boolean;
   normalizedSrc?: string;
   sourceSrc?: string;
   overlaySvg: JSX.Element | null;
@@ -1500,12 +1553,14 @@ type ReviewQueueLayoutProps = {
   isTemplateActionPending: boolean;
   templateActionStatus: string | null;
   templateActionError: string | null;
+  isBusy: boolean;
   onApplyScopeChange: (scope: TemplateScope) => void;
   onSelectIndex: (index: number) => void;
   onScroll: (scrollTop: number) => void;
   onToggleSelected: (pageId: string) => void;
   onToggleOverlays: () => void;
   onToggleSource: () => void;
+  onToggleInspector: () => void;
   onZoomOut: () => void;
   onZoomIn: () => void;
   onResetView: () => void;
@@ -1542,10 +1597,12 @@ const ReviewQueueLayout = ({
   runId,
   queuePages,
   currentPage,
+  isQueueLoading,
   selectedIndex,
   decisions,
   overlaysVisible,
   showSourcePreview,
+  inspectorOpen,
   zoom,
   rotationDeg,
   overlayLayers,
@@ -1562,6 +1619,7 @@ const ReviewQueueLayout = ({
   pan,
   isPanning,
   sidecarError,
+  isSidecarLoading,
   normalizedSrc,
   sourceSrc,
   overlaySvg,
@@ -1598,12 +1656,14 @@ const ReviewQueueLayout = ({
   isTemplateActionPending,
   templateActionStatus,
   templateActionError,
+  isBusy,
   onApplyScopeChange,
   onSelectIndex,
   onScroll,
   onToggleSelected,
   onToggleOverlays,
   onToggleSource,
+  onToggleInspector,
   onZoomOut,
   onZoomIn,
   onResetView,
@@ -1635,6 +1695,31 @@ const ReviewQueueLayout = ({
   onUndo,
   onSubmit,
 }: ReviewQueueLayoutProps): JSX.Element => {
+  const [normalizedLoadedStatus, setNormalizedLoadedStatus] = useState<"loaded" | "error" | null>(
+    null
+  );
+  const [sourceLoadedStatus, setSourceLoadedStatus] = useState<"loaded" | "error" | null>(null);
+
+  const setNormalizedStatus = setNormalizedLoadedStatus;
+  const _setSourceStatus = setSourceLoadedStatus;
+
+  const normalizedStatus: "idle" | "loading" | "loaded" | "error" = normalizedSrc
+    ? (normalizedLoadedStatus ?? "loading")
+    : "idle";
+  const sourceStatus: "idle" | "loading" | "loaded" | "error" = sourceSrc
+    ? (sourceLoadedStatus ?? "loading")
+    : "idle";
+
+  if (isQueueLoading) {
+    return (
+      <div className="empty-state">
+        <div className="review-queue-spinner" aria-hidden="true" />
+        <h2 className="empty-state-title">Loading review queue...</h2>
+        <p className="empty-state-description">Fetching flagged pages and previews.</p>
+      </div>
+    );
+  }
+
   if (queuePages.length === 0 || !currentPage) {
     return (
       <div className="empty-state">
@@ -1652,6 +1737,14 @@ const ReviewQueueLayout = ({
 
   const decision = decisions.get(currentPage.id);
   const selectedCount = selectedIds.size;
+  const interactionDisabled = isBusy || isSidecarLoading;
+  const busyMessage = isSubmitting
+    ? "Submitting review decisions..."
+    : isApplyingOverride
+      ? "Applying layout adjustments..."
+      : isTemplateActionPending
+        ? "Saving template update..."
+        : "Processing, please wait.";
   const totalHeight = queuePages.length * ITEM_HEIGHT;
   const startIndex = Math.max(0, Math.floor(scrollTop / ITEM_HEIGHT) - OVERSCAN);
   const endIndex = Math.min(
@@ -1659,94 +1752,61 @@ const ReviewQueueLayout = ({
     Math.ceil((scrollTop + viewportHeight) / ITEM_HEIGHT) + OVERSCAN
   );
   const visiblePages = queuePages.slice(startIndex, endIndex + 1);
+  const shellClassName = inspectorOpen
+    ? "review-queue-shell"
+    : "review-queue-shell review-queue--inspector-collapsed";
+  const shellBusyClass = isBusy || isSidecarLoading ? " is-busy" : "";
 
   return (
-    <div style={{ display: "flex", height: "100%", overflow: "hidden" }}>
-      {/* Page list sidebar */}
-      <div
-        style={{
-          width: "300px",
-          borderRight: "1px solid var(--border)",
-          background: "var(--bg-surface)",
-          display: "flex",
-          flexDirection: "column",
-          flexShrink: 0,
-        }}
-      >
-        <div style={{ padding: "16px", borderBottom: "1px solid var(--border)" }}>
-          <h2 style={{ margin: "0 0 8px", fontSize: "16px", fontWeight: 600 }}>Review Queue</h2>
-          <p style={{ margin: 0, fontSize: "12px", color: "var(--text-secondary)" }}>
-            {queuePages.length} pages need attention
-          </p>
+    <div className={`${shellClassName}${shellBusyClass}`} aria-busy={isBusy || isSidecarLoading}>
+      <aside className="review-queue-rail" aria-label="Review queue list">
+        <div className="review-queue-rail-header">
+          <div>
+            <p className="review-queue-rail-title">Review Queue</p>
+            <p className="review-queue-rail-subtitle">{queuePages.length} pages need attention</p>
+          </div>
+          <span className="review-queue-rail-run">Run {runId}</span>
         </div>
-
         <div
           ref={listRef}
-          style={{ flex: 1, overflow: "auto", position: "relative" }}
+          className="review-queue-rail-list"
           onScroll={(event) => onScroll(event.currentTarget.scrollTop)}
         >
-          <div style={{ height: totalHeight, position: "relative" }}>
+          <div className="review-queue-rail-spacer" style={{ height: totalHeight }}>
             {visiblePages.map((page, offset) => {
               const index = startIndex + offset;
               const pageDecision = decisions.get(page.id);
               const isSelected = selectedIds.has(page.id);
+              const isActive = index === selectedIndex;
               return (
                 <button
                   key={page.id}
                   onClick={() => onSelectIndex(index)}
-                  style={{
-                    width: "100%",
-                    position: "absolute",
-                    top: index * ITEM_HEIGHT,
-                    left: 0,
-                    right: 0,
-                    height: ITEM_HEIGHT,
-                    padding: "12px 16px",
-                    border: "none",
-                    borderBottom: "1px solid var(--border-subtle)",
-                    background: index === selectedIndex ? "var(--bg-surface-hover)" : "transparent",
-                    color: "var(--text-primary)",
-                    textAlign: "left",
-                    cursor: "pointer",
-                    transition: "background 150ms",
-                  }}
+                  className={`review-queue-item ${isActive ? "is-active" : ""}`}
+                  style={{ top: index * ITEM_HEIGHT }}
+                  aria-current={isActive}
                 >
-                  <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                  <div className="review-queue-item-inner">
                     <input
+                      className="review-queue-item-checkbox"
                       type="checkbox"
                       checked={isSelected}
                       onChange={() => onToggleSelected(page.id)}
                       onClick={(event) => event.stopPropagation()}
                       aria-label={`Select ${page.filename} for batch actions`}
                     />
-                    <div style={{ flex: 1 }}>
-                      <div
-                        style={{
-                          display: "flex",
-                          justifyContent: "space-between",
-                          marginBottom: "4px",
-                        }}
-                      >
-                        <span style={{ fontWeight: 500, fontSize: "13px" }}>{page.filename}</span>
+                    <div className="review-queue-item-body">
+                      <div className="review-queue-item-row">
+                        <span className="review-queue-item-title">{page.filename}</span>
                         {pageDecision && (
-                          <span
-                            className={`badge ${getDecisionBadgeClass(pageDecision)}`}
-                            style={{ fontSize: "10px" }}
-                          >
+                          <span className={`badge ${getDecisionBadgeClass(pageDecision)}`}>
                             {pageDecision}
                           </span>
                         )}
                       </div>
-                      <div style={{ fontSize: "11px", color: "var(--text-secondary)" }}>
-                        {page.reason}
-                      </div>
-                      <div style={{ marginTop: "4px" }}>
-                        <span
-                          style={{
-                            fontSize: "11px",
-                            color: getConfidenceColor(page.confidence),
-                          }}
-                        >
+                      <div className="review-queue-item-reason">{page.reason}</div>
+                      <div className="review-queue-item-confidence">
+                        <span style={{ color: getConfidenceColor(page.confidence) }}>
                           {(page.confidence * 100).toFixed(0)}% confidence
                         </span>
                       </div>
@@ -1757,877 +1817,780 @@ const ReviewQueueLayout = ({
             })}
           </div>
         </div>
-      </div>
+      </aside>
 
-      {/* Main review area */}
-      <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-        {/* Toolbar */}
-        <div
-          style={{
-            padding: "12px 16px",
-            borderBottom: "1px solid var(--border)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            background: "var(--bg-primary)",
-          }}
-        >
+      <section className="review-queue-workspace">
+        <header className="review-queue-toolbar">
           <div>
-            <h3 style={{ margin: 0, fontSize: "16px", fontWeight: 600 }}>{currentPage.filename}</h3>
-            <p style={{ margin: "4px 0 0", fontSize: "12px", color: "var(--text-secondary)" }}>
+            <h3 className="review-queue-title">{currentPage.filename}</h3>
+            <p className="review-queue-subtitle">
               Page {selectedIndex + 1} of {queuePages.length}
             </p>
           </div>
-
-          <div style={{ display: "flex", gap: "8px" }}>
+          <div className="review-queue-toolbar-actions">
             <button
               className="btn btn-secondary btn-sm"
               onClick={onToggleOverlays}
               aria-pressed={overlaysVisible}
+              disabled={interactionDisabled}
             >
+              <Icon name="stack" size={16} className="review-queue-btn-icon" />
               {overlaysVisible ? "Hide" : "Show"} Overlays
-              <kbd style={{ marginLeft: "8px" }}>Space</kbd>
+              <kbd className="review-kbd">Space</kbd>
             </button>
             <button
               className="btn btn-secondary btn-sm"
               onClick={onToggleSource}
               aria-pressed={showSourcePreview}
-              disabled={!sourceSrc}
+              disabled={!sourceSrc || interactionDisabled}
             >
+              <Icon name="folder" size={16} className="review-queue-btn-icon" />
               {showSourcePreview ? "Hide" : "Show"} Source
             </button>
-            <button className="btn btn-secondary btn-sm" onClick={onZoomOut}>
-              −
+            <div className="review-queue-toolbar-group">
+              <button
+                className="btn btn-secondary btn-sm"
+                onClick={onZoomOut}
+                disabled={interactionDisabled}
+              >
+                −
+              </button>
+              <button
+                className="btn btn-secondary btn-sm"
+                onClick={onZoomIn}
+                disabled={interactionDisabled}
+              >
+                +
+              </button>
+              <button
+                className="btn btn-secondary btn-sm"
+                onClick={onResetView}
+                disabled={interactionDisabled}
+              >
+                Reset <kbd className="review-kbd">0</kbd>
+              </button>
+              <span className="review-queue-toolbar-metric">{Math.round(zoom * 100)}%</span>
+            </div>
+            <div className="review-queue-toolbar-divider" />
+            <div className="review-queue-toolbar-group">
+              <button
+                className="btn btn-secondary btn-sm"
+                onClick={onRotateLeft}
+                disabled={interactionDisabled}
+              >
+                ⟲ <kbd className="review-kbd">[</kbd>
+              </button>
+              <button
+                className="btn btn-secondary btn-sm"
+                onClick={onRotateRight}
+                disabled={interactionDisabled}
+              >
+                ⟳ <kbd className="review-kbd">]</kbd>
+              </button>
+              <button
+                className="btn btn-secondary btn-sm"
+                onClick={onMicroRotateLeft}
+                disabled={interactionDisabled}
+              >
+                −0.1° <kbd className="review-kbd">Alt+[</kbd>
+              </button>
+              <button
+                className="btn btn-secondary btn-sm"
+                onClick={onMicroRotateRight}
+                disabled={interactionDisabled}
+              >
+                +0.1° <kbd className="review-kbd">Alt+]</kbd>
+              </button>
+              <button
+                className="btn btn-secondary btn-sm"
+                onClick={onResetRotation}
+                disabled={interactionDisabled}
+              >
+                Reset rotation
+              </button>
+              <span className="review-queue-toolbar-metric">{rotationDeg.toFixed(1)}°</span>
+            </div>
+            <button
+              className="btn btn-ghost btn-sm"
+              onClick={onToggleInspector}
+              aria-expanded={inspectorOpen}
+            >
+              <Icon name="settings" size={16} className="review-queue-btn-icon" />
+              {inspectorOpen ? "Hide" : "Show"} Inspector
             </button>
-            <button className="btn btn-secondary btn-sm" onClick={onZoomIn}>
-              +
-            </button>
-            <button className="btn btn-secondary btn-sm" onClick={onResetView}>
-              Reset <kbd>0</kbd>
-            </button>
-            <span style={{ fontSize: "12px", color: "var(--text-secondary)" }}>
-              {Math.round(zoom * 100)}%
-            </span>
-            <div style={{ width: "1px", background: "var(--border)", margin: "0 4px" }} />
-            <button className="btn btn-secondary btn-sm" onClick={onRotateLeft}>
-              ⟲ <kbd>[</kbd>
-            </button>
-            <button className="btn btn-secondary btn-sm" onClick={onRotateRight}>
-              ⟳ <kbd>]</kbd>
-            </button>
-            <button className="btn btn-secondary btn-sm" onClick={onMicroRotateLeft}>
-              −0.1° <kbd>Alt+[</kbd>
-            </button>
-            <button className="btn btn-secondary btn-sm" onClick={onMicroRotateRight}>
-              +0.1° <kbd>Alt+]</kbd>
-            </button>
-            <button className="btn btn-secondary btn-sm" onClick={onResetRotation}>
-              Reset rotation
-            </button>
-            <span style={{ fontSize: "12px", color: "var(--text-secondary)" }}>
-              {rotationDeg.toFixed(1)}°
-            </span>
           </div>
-        </div>
+        </header>
 
-        {/* Image viewer */}
-        <button
-          style={{
-            flex: 1,
-            background: "var(--bg-surface)",
-            position: "relative",
-            overflow: "hidden",
-            border: "none",
-            padding: 0,
-            textAlign: "left",
-            cursor: isPanning ? "grabbing" : "grab",
-          }}
-          aria-label="Preview viewer"
-          type="button"
-          onMouseDown={onViewerMouseDown}
-          onMouseMove={onViewerMouseMove}
-          onMouseUp={onViewerMouseUp}
-          onMouseLeave={onViewerMouseUp}
-          onWheel={onViewerWheel}
-          onKeyDown={onViewerKeyDown}
-        >
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns:
-                showSourcePreview && sourceSrc ? "minmax(0, 1fr) minmax(0, 1fr)" : "1fr",
-              gap: "24px",
-              alignItems: "center",
-              justifyContent: "center",
-              padding: "24px",
-              minHeight: "100%",
-            }}
+        <div className="review-queue-viewer">
+          <button
+            className="review-queue-canvas"
+            aria-label="Preview viewer"
+            type="button"
+            onMouseDown={onViewerMouseDown}
+            onMouseMove={onViewerMouseMove}
+            onMouseUp={onViewerMouseUp}
+            onMouseLeave={onViewerMouseUp}
+            onWheel={onViewerWheel}
+            onKeyDown={onViewerKeyDown}
+            style={{ cursor: isPanning ? "grabbing" : "grab" }}
+            disabled={interactionDisabled}
           >
             <div
-              style={{
-                border: "1px solid var(--border)",
-                borderRadius: "8px",
-                background: "var(--bg-primary)",
-                padding: "12px",
-                overflow: "hidden",
-              }}
+              className={`review-queue-canvas-grid ${
+                showSourcePreview && sourceSrc ? "is-split" : ""
+              }`}
             >
-              {normalizedSrc ? (
-                <div
-                  style={{
-                    transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom}) rotate(${rotationDeg}deg)`,
-                    transformOrigin: "center center",
-                    transition: isPanning ? "none" : "transform 120ms",
-                    display: "inline-block",
-                  }}
-                >
-                  <div style={{ position: "relative", display: "inline-block" }}>
-                    <img
-                      src={normalizedSrc}
-                      alt={`Normalized preview for ${currentPage.filename}`}
-                      style={{ display: "block", maxWidth: "100%", height: "auto" }}
-                    />
-                    {overlaySvg}
-                  </div>
-                </div>
-              ) : (
-                <div style={{ color: "var(--text-secondary)" }}>No normalized preview</div>
-              )}
-            </div>
-            {showSourcePreview && sourceSrc && (
-              <div
-                style={{
-                  border: "1px solid var(--border)",
-                  borderRadius: "8px",
-                  background: "var(--bg-primary)",
-                  padding: "12px",
-                }}
-              >
-                <img
-                  src={sourceSrc}
-                  alt={`Source preview for ${currentPage.filename}`}
-                  style={{ display: "block", maxWidth: "100%", height: "auto" }}
-                />
-              </div>
-            )}
-          </div>
-          {sidecarError && (
-            <output
-              style={{
-                position: "absolute",
-                bottom: "12px",
-                right: "12px",
-                background: "var(--bg-primary)",
-                color: "var(--color-error)",
-                border: "1px solid var(--border)",
-                padding: "6px 10px",
-                fontSize: "11px",
-                borderRadius: "6px",
-              }}
-            >
-              {sidecarError}
-            </output>
-          )}
-        </button>
-
-        {/* Action panel */}
-        <div
-          style={{
-            padding: "16px",
-            borderTop: "1px solid var(--border)",
-            background: "var(--bg-primary)",
-          }}
-        >
-          <div style={{ display: "grid", gap: "16px", marginBottom: "12px" }}>
-            <div>
-              <strong style={{ fontSize: "13px" }}>Why flagged</strong>
-              {currentPage.issues.length === 0 ? (
-                <p style={{ margin: "8px 0 0", fontSize: "12px", color: "var(--text-secondary)" }}>
-                  No automated issues were recorded for this page.
-                </p>
-              ) : (
-                <ul style={{ margin: "8px 0 0", paddingLeft: "18px", fontSize: "12px" }}>
-                  {currentPage.issues.map((issue) => {
-                    const info = getReasonInfo(issue);
-                    return (
-                      <li key={`${currentPage.id}-${issue}`} style={{ marginBottom: "6px" }}>
-                        <div style={{ fontWeight: 600 }}>{info.label}</div>
-                        <div style={{ color: "var(--text-secondary)" }}>{info.explanation}</div>
-                        <div style={{ color: "var(--text-tertiary)" }}>
-                          Recommended: {info.action}
-                        </div>
-                      </li>
-                    );
-                  })}
-                </ul>
-              )}
-            </div>
-
-            <div>
-              <strong style={{ fontSize: "13px" }}>Overlay layers</strong>
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "1fr 1fr",
-                  gap: "8px",
-                  marginTop: "8px",
-                }}
-              >
-                {[
-                  { key: "pageBounds", label: "Page bounds" },
-                  { key: "cropBox", label: "Crop box" },
-                  { key: "trimBox", label: "Trim box" },
-                  { key: "pageMask", label: "Page mask" },
-                  { key: "textBlocks", label: "Text blocks" },
-                  { key: "titles", label: "Titles" },
-                  { key: "runningHeads", label: "Running heads" },
-                  { key: "folios", label: "Folios" },
-                  { key: "ornaments", label: "Ornaments" },
-                ].map((layer) => (
-                  <label
-                    key={layer.key}
-                    style={{ display: "flex", alignItems: "center", gap: "8px" }}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={overlayLayers[layer.key as OverlayLayerKey]}
-                      onChange={(event) =>
-                        onToggleOverlayLayer(layer.key as OverlayLayerKey, event.target.checked)
-                      }
-                    />
-                    <span style={{ fontSize: "12px" }}>{layer.label}</span>
-                  </label>
-                ))}
-              </div>
-            </div>
-
-            <div>
-              <strong style={{ fontSize: "13px" }}>Guide groups</strong>
-              <div style={{ marginTop: "8px", display: "grid", gap: "10px" }}>
-                <label style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                  <input
-                    type="checkbox"
-                    checked={guidesVisible}
-                    onChange={onToggleGuidesVisible}
-                    aria-label="Toggle guides"
-                  />
-                  <span style={{ fontSize: "12px" }}>Guides enabled</span>
-                </label>
-                <label style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                  <input
-                    type="checkbox"
-                    checked={snappingEnabled}
-                    onChange={onToggleSnapping}
-                    aria-label="Toggle snapping"
-                  />
-                  <span style={{ fontSize: "12px" }}>Snapping enabled</span>
-                </label>
-                {GUIDE_GROUP_ORDER.map((group) => {
-                  const opacity = guideGroupOpacities[group];
-                  const isChecked = soloGuideGroup
-                    ? soloGuideGroup === group
-                    : guideGroupVisibility[group];
-                  return (
-                    <div key={group} style={{ display: "grid", gap: "6px" }}>
-                      <label style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                        <input
-                          type="checkbox"
-                          checked={isChecked}
-                          onChange={(event) => {
-                            const nativeEvent = event.nativeEvent as unknown as MouseEvent;
-                            onToggleGuideGroup(group, event.target.checked, {
-                              altKey: nativeEvent.altKey,
-                            });
-                          }}
-                          aria-label={`${GUIDE_GROUP_LABELS[group]} guide visibility`}
-                        />
-                        <span style={{ fontSize: "12px" }}>{GUIDE_GROUP_LABELS[group]}</span>
-                        {soloGuideGroup === group && (
-                          <span style={{ fontSize: "10px", color: "var(--text-tertiary)" }}>
-                            Solo
-                          </span>
-                        )}
-                      </label>
-                      <label style={{ display: "grid", gap: "4px", fontSize: "11px" }}>
-                        <span style={{ color: "var(--text-secondary)" }}>Opacity</span>
-                        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                          <input
-                            type="range"
-                            min={0}
-                            max={1}
-                            step={0.05}
-                            value={opacity}
-                            onChange={(event) =>
-                              onGuideGroupOpacityChange(group, Number(event.target.value))
-                            }
-                            aria-label={`${GUIDE_GROUP_LABELS[group]} guide opacity`}
-                          />
-                          <span style={{ fontSize: "11px", color: "var(--text-secondary)" }}>
-                            {Math.round(opacity * 100)}%
-                          </span>
-                        </div>
-                      </label>
-                    </div>
-                  );
-                })}
-              </div>
-              <p style={{ margin: "6px 0 0", fontSize: "11px", color: "var(--text-tertiary)" }}>
-                Alt-click a group to solo it.
-              </p>
-              <div style={{ marginTop: "12px" }}>
-                <strong style={{ fontSize: "12px" }}>Guide layers</strong>
-                <div style={{ marginTop: "8px", display: "grid", gap: "6px" }}>
-                  {guideLayerRegistry.map((layer) => (
-                    <label key={layer.id} style={{ display: "flex", gap: "8px" }}>
-                      <input
-                        type="checkbox"
-                        checked={guideLayerVisibility[layer.id] ?? layer.defaultVisible}
-                        onChange={(event) => onToggleGuideLayer(layer.id, event.target.checked)}
-                        aria-label={`${resolveGuideLayerLabel(layer.id)} guide layer`}
-                      />
-                      <span style={{ fontSize: "12px" }}>{resolveGuideLayerLabel(layer.id)}</span>
-                    </label>
-                  ))}
-                </div>
-                <div style={{ marginTop: "8px" }}>
-                  <button className="btn btn-secondary btn-sm" onClick={onResetGuideVisibility}>
-                    Reset guides visibility
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            <div>
-              <strong style={{ fontSize: "13px" }}>Batch actions</strong>
-              <div style={{ marginTop: "8px", display: "flex", flexWrap: "wrap", gap: "8px" }}>
-                <span style={{ fontSize: "12px", color: "var(--text-secondary)" }}>
-                  Selected: {selectedCount}
-                </span>
-                <button
-                  className="btn btn-secondary btn-sm"
-                  onClick={() => onApplyDecisionToSelection("accept")}
-                  disabled={selectedCount === 0}
-                >
-                  Accept selected
-                </button>
-                <button
-                  className="btn btn-secondary btn-sm"
-                  onClick={() => onApplyDecisionToSelection("flag")}
-                  disabled={selectedCount === 0}
-                >
-                  Flag selected
-                </button>
-                <button
-                  className="btn btn-secondary btn-sm"
-                  onClick={() => onApplyDecisionToSelection("reject")}
-                  disabled={selectedCount === 0}
-                >
-                  Reject selected
-                </button>
-                <button className="btn btn-secondary btn-sm" onClick={onAcceptSameReason}>
-                  Accept all with same reason
-                </button>
-                <button className="btn btn-secondary btn-sm" disabled>
-                  Reprocess selected (planned)
-                </button>
-              </div>
-            </div>
-
-            <div>
-              <strong style={{ fontSize: "13px" }}>Adjustments</strong>
-              <div style={{ marginTop: "8px", display: "grid", gap: "8px" }}>
-                <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
-                  <button
-                    className={`btn btn-sm ${adjustmentMode === "crop" ? "btn-primary" : "btn-secondary"}`}
-                    onClick={() => onSetAdjustmentMode(adjustmentMode === "crop" ? null : "crop")}
-                  >
-                    Crop handles
-                  </button>
-                  <button
-                    className={`btn btn-sm ${adjustmentMode === "trim" ? "btn-primary" : "btn-secondary"}`}
-                    onClick={() => onSetAdjustmentMode(adjustmentMode === "trim" ? null : "trim")}
-                  >
-                    Trim handles
-                  </button>
-                  <button className="btn btn-secondary btn-sm" onClick={onResetAdjustments}>
-                    Reset crop/trim
-                  </button>
-                </div>
-                <fieldset
-                  style={{ display: "grid", gap: "6px", border: "none", margin: 0, padding: 0 }}
-                >
-                  <legend style={{ fontSize: "12px", color: "var(--text-secondary)" }}>
-                    Apply override scope
-                  </legend>
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
-                    {(["page", "section", "template"] as TemplateScope[]).map((scope) => (
-                      <label
-                        key={scope}
-                        className={`btn btn-sm ${applyScope === scope ? "btn-primary" : "btn-secondary"}`}
-                        style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}
-                      >
-                        <input
-                          type="radio"
-                          name="apply-scope"
-                          value={scope}
-                          checked={applyScope === scope}
-                          onChange={() => onApplyScopeChange(scope)}
-                        />
-                        {APPLY_SCOPE_LABELS[scope]}
-                      </label>
-                    ))}
-                  </div>
-                  <span style={{ fontSize: "11px", color: "var(--text-tertiary)" }}>
-                    Targets: {applyTargetCount} page{applyTargetCount === 1 ? "" : "s"}
-                    {applyScope === "template" && templateSummary
-                      ? ` in ${templateSummary.label}`
-                      : ""}
-                    {applyScope === "section" ? " in contiguous block" : ""}
-                  </span>
-                </fieldset>
-                <div
-                  style={{ display: "flex", flexWrap: "wrap", gap: "8px", alignItems: "center" }}
-                >
-                  <button
-                    className="btn btn-primary btn-sm"
-                    onClick={onApplyOverride}
-                    disabled={isApplyingOverride}
-                  >
-                    {isApplyingOverride ? "Applying…" : "Apply override"}
-                  </button>
-                  {lastOverrideAppliedAt && (
-                    <span style={{ fontSize: "11px", color: "var(--text-secondary)" }}>
-                      Applied {new Date(lastOverrideAppliedAt).toLocaleTimeString()}
-                    </span>
-                  )}
-                  {overrideError && (
-                    <span style={{ fontSize: "11px", color: "var(--color-error)" }}>
-                      {overrideError}
-                    </span>
-                  )}
-                </div>
-                <p style={{ margin: 0, fontSize: "11px", color: "var(--text-tertiary)" }}>
-                  Drag the on-canvas handles to nudge crop or trim boxes; edges snap to book priors
-                  when close.
-                </p>
-              </div>
-            </div>
-
-            <div>
-              <strong style={{ fontSize: "13px" }}>Template inspector</strong>
-              <div style={{ marginTop: "8px", display: "grid", gap: "12px" }}>
-                <div
-                  style={{
-                    border: "1px solid var(--border)",
-                    borderRadius: "8px",
-                    padding: "10px",
-                    background: "var(--bg-surface)",
-                  }}
-                >
-                  <div style={{ fontWeight: 600, fontSize: "12px" }}>Template clusters</div>
-                  <div style={{ marginTop: "6px", fontSize: "12px" }}>
-                    {currentTemplateCluster ? (
-                      <span>
-                        Assigned cluster: <strong>{currentTemplateCluster.id}</strong> •{" "}
-                        {formatLayoutProfileLabel(currentTemplateCluster.pageType)}
-                        {templateAssignmentConfidence !== undefined
-                          ? ` • ${(templateAssignmentConfidence * 100).toFixed(0)}% confidence`
-                          : ""}
-                      </span>
-                    ) : (
-                      <span style={{ color: "var(--text-secondary)" }}>
-                        No template cluster assignment found for this page.
-                      </span>
-                    )}
-                  </div>
-                  {templateClusters.length > 0 ? (
-                    <div
-                      style={{
-                        display: "grid",
-                        gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
-                        gap: "8px",
-                        marginTop: "8px",
-                      }}
-                    >
-                      {templateClusters.map((cluster) => {
-                        const isCurrent = currentTemplateCluster?.id === cluster.id;
-                        return (
-                          <div
-                            key={cluster.id}
-                            style={{
-                              border: "1px solid var(--border)",
-                              borderRadius: "6px",
-                              padding: "8px",
-                              background: isCurrent ? "var(--bg-primary)" : "var(--bg-surface)",
-                              display: "grid",
-                              gap: "4px",
-                            }}
-                          >
-                            <div style={{ fontWeight: 600, fontSize: "12px" }}>
-                              {cluster.id}
-                              {isCurrent ? " • Current" : ""}
-                            </div>
-                            <div style={{ fontSize: "11px", color: "var(--text-secondary)" }}>
-                              {formatLayoutProfileLabel(cluster.pageType)}
-                            </div>
-                            <div style={{ fontSize: "11px", color: "var(--text-secondary)" }}>
-                              {cluster.pageIds.length} pages •{" "}
-                              {(cluster.confidence * 100).toFixed(0)}% confidence
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  ) : (
-                    <div
-                      style={{ marginTop: "8px", fontSize: "11px", color: "var(--text-secondary)" }}
-                    >
-                      No template clusters available in the sidecar.
-                    </div>
-                  )}
+              <div className="review-queue-preview-card">
+                {normalizedSrc ? (
                   <div
+                    className="review-queue-transform"
                     style={{
-                      marginTop: "10px",
-                      display: "flex",
-                      flexWrap: "wrap",
-                      gap: "8px",
-                      alignItems: "center",
+                      transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom}) rotate(${rotationDeg}deg)`,
+                      transition: isPanning ? "none" : "transform 120ms",
                     }}
                   >
-                    <button
-                      className="btn btn-secondary btn-sm"
-                      onClick={() => void handleTemplateClusterAction("confirm")}
-                      disabled={
-                        isTemplateActionPending ||
-                        (!currentTemplateCluster && !templateAssignmentId)
-                      }
-                      aria-label="Confirm template cluster"
-                    >
-                      {isTemplateActionPending ? "Saving…" : "Confirm cluster"}
-                    </button>
-                    <label
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "6px",
-                        fontSize: "11px",
-                      }}
-                    >
-                      <span>Correct to</span>
-                      <select
-                        value={selectedTemplateClusterId ?? ""}
-                        onChange={(event) => setSelectedTemplateClusterId(event.target.value)}
-                        disabled={templateClusters.length === 0}
-                        aria-label="Template cluster selection"
-                      >
-                        <option value="" disabled>
-                          Select cluster
-                        </option>
-                        {templateClusters.map((cluster) => (
-                          <option key={cluster.id} value={cluster.id}>
-                            {cluster.id} • {formatLayoutProfileLabel(cluster.pageType)}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    <button
-                      className="btn btn-secondary btn-sm"
-                      onClick={() => void handleTemplateClusterAction("correct")}
-                      disabled={
-                        isTemplateActionPending ||
-                        !selectedTemplateClusterId ||
-                        templateClusters.length === 0
-                      }
-                      aria-label="Correct template cluster"
-                    >
-                      {isTemplateActionPending ? "Saving…" : "Correct assignment"}
-                    </button>
-                    {templateActionStatus && (
-                      <span style={{ fontSize: "11px", color: "var(--text-secondary)" }}>
-                        {templateActionStatus}
-                      </span>
-                    )}
-                    {templateActionError && (
-                      <span style={{ fontSize: "11px", color: "var(--color-error)" }}>
-                        {templateActionError}
-                      </span>
-                    )}
-                  </div>
-                </div>
-                {templateSummary ? (
-                  <div>
-                    <div style={{ fontSize: "12px", fontWeight: 600, marginBottom: "6px" }}>
-                      Layout template summary
-                    </div>
-                    <div
-                      style={{
-                        border: "1px solid var(--border)",
-                        borderRadius: "8px",
-                        padding: "10px",
-                        background: "var(--bg-surface)",
-                      }}
-                    >
-                      <div style={{ fontWeight: 600, fontSize: "13px" }}>
-                        {templateSummary.label}
-                      </div>
-                      <div
-                        style={{
-                          fontSize: "12px",
-                          color: "var(--text-secondary)",
-                          marginTop: "4px",
-                        }}
-                      >
-                        {templateSummary.pages.length} pages • Avg{" "}
-                        {(templateSummary.averageConfidence * 100).toFixed(0)}% confidence • Min{" "}
-                        {(templateSummary.minConfidence * 100).toFixed(0)}%
-                      </div>
-                      <div
-                        style={{
-                          fontSize: "12px",
-                          color: "var(--text-secondary)",
-                          marginTop: "4px",
-                        }}
-                      >
-                        Guide coverage: {(templateSummary.guideCoverage * 100).toFixed(0)}%
-                      </div>
-                      <div style={{ marginTop: "6px", fontSize: "12px" }}>
-                        {templateSummary.issueSummary.length === 0 ? (
-                          <span style={{ color: "var(--text-secondary)" }}>
-                            No recurring issues.
-                          </span>
-                        ) : (
-                          <span>
-                            Common issues:{" "}
-                            {templateSummary.issueSummary
-                              .map((entry) => `${entry.issue} (${entry.count})`)
-                              .join(", ")}
-                          </span>
-                        )}
-                      </div>
+                    <div className="review-queue-preview-frame">
+                      <img
+                        src={normalizedSrc}
+                        alt={`Normalized preview for ${currentPage.filename}`}
+                        onLoad={() => setNormalizedStatus("loaded")}
+                        onError={() => setNormalizedStatus("error")}
+                      />
+                      {overlaySvg}
+                      {normalizedStatus === "loading" && (
+                        <div className="review-queue-preview-status">
+                          <div className="review-queue-spinner" aria-hidden="true" />
+                          <span>Loading preview...</span>
+                        </div>
+                      )}
+                      {normalizedStatus === "error" && (
+                        <div className="review-queue-preview-status">
+                          <Icon name="alert" size={18} />
+                          <span>Preview unavailable</span>
+                        </div>
+                      )}
+                      {isSidecarLoading && (
+                        <div className="review-queue-preview-status">
+                          <div className="review-queue-spinner" aria-hidden="true" />
+                          <span>Loading layout overlays...</span>
+                        </div>
+                      )}
                     </div>
                   </div>
                 ) : (
-                  <p style={{ margin: 0, fontSize: "12px", color: "var(--text-secondary)" }}>
-                    No layout template summary available for this page.
-                  </p>
-                )}
-                <div>
-                  <div style={{ fontSize: "12px", fontWeight: 600, marginBottom: "6px" }}>
-                    Representative pages (guides overlay)
+                  <div className="review-queue-preview-empty">
+                    {isSidecarLoading ? "Loading preview..." : "No normalized preview"}
                   </div>
-                  <div
-                    style={{
-                      display: "grid",
-                      gridTemplateColumns: "repeat(auto-fit, minmax(120px, 150px))",
-                      gap: "8px",
-                    }}
-                  >
-                    {representativePages.map((page) => {
-                      const preview =
-                        page.previews.overlay ?? page.previews.normalized ?? page.previews.source;
-                      const previewSrc = resolvePreviewSrc(preview);
+                )}
+              </div>
+              {showSourcePreview && sourceSrc && (
+                <div className="review-queue-preview-card">
+                  <img
+                    src={sourceSrc}
+                    alt={`Source preview for ${currentPage.filename}`}
+                    onLoad={() => setSourceLoadedStatus("loaded")}
+                    onError={() => setSourceLoadedStatus("error")}
+                  />
+                  {sourceStatus === "loading" && (
+                    <div className="review-queue-preview-status">
+                      <div className="review-queue-spinner" aria-hidden="true" />
+                      <span>Loading source...</span>
+                    </div>
+                  )}
+                  {sourceStatus === "error" && (
+                    <div className="review-queue-preview-status">
+                      <Icon name="alert" size={18} />
+                      <span>Source preview unavailable</span>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+            {sidecarError && (
+              <output className="review-queue-error" role="status">
+                {sidecarError}
+              </output>
+            )}
+          </button>
+        </div>
+      </section>
+
+      <aside
+        className={`review-queue-inspector ${inspectorOpen ? "is-open" : "is-collapsed"}`}
+        aria-label="Review inspector"
+      >
+        <div className="review-queue-inspector-header">
+          <div>
+            <p className="review-queue-inspector-title">Inspector</p>
+            <p className="review-queue-inspector-subtitle">Decisions and corrections</p>
+          </div>
+          <button
+            className="btn btn-ghost btn-sm"
+            onClick={onToggleInspector}
+            aria-expanded={inspectorOpen}
+          >
+            <Icon name="settings" size={16} className="review-queue-btn-icon" />
+            <span className="review-queue-inspector-button-label">
+              {inspectorOpen ? "Collapse" : "Expand"}
+            </span>
+          </button>
+        </div>
+        <div className="review-queue-inspector-body">
+          <section className="review-queue-panel">
+            <div className="review-queue-panel-title">Why flagged</div>
+            {currentPage.issues.length === 0 ? (
+              <p className="review-queue-panel-muted">No automated issues were recorded.</p>
+            ) : (
+              <ul className="review-queue-issues">
+                {currentPage.issues.map((issue) => {
+                  const info = getReasonInfo(issue);
+                  return (
+                    <li key={`${currentPage.id}-${issue}`}>
+                      <div className="review-queue-issue-title">{info.label}</div>
+                      <div className="review-queue-issue-body">{info.explanation}</div>
+                      <div className="review-queue-issue-action">Recommended: {info.action}</div>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </section>
+
+          <section className="review-queue-panel">
+            <div className="review-queue-panel-title">Overlay layers</div>
+            <div className="review-queue-grid-two">
+              {[
+                { key: "pageBounds", label: "Page bounds" },
+                { key: "cropBox", label: "Crop box" },
+                { key: "trimBox", label: "Trim box" },
+                { key: "pageMask", label: "Page mask" },
+                { key: "textBlocks", label: "Text blocks" },
+                { key: "titles", label: "Titles" },
+                { key: "runningHeads", label: "Running heads" },
+                { key: "folios", label: "Folios" },
+                { key: "ornaments", label: "Ornaments" },
+              ].map((layer) => (
+                <label key={layer.key} className="review-queue-toggle">
+                  <input
+                    type="checkbox"
+                    checked={overlayLayers[layer.key as OverlayLayerKey]}
+                    onChange={(event) =>
+                      onToggleOverlayLayer(layer.key as OverlayLayerKey, event.target.checked)
+                    }
+                  />
+                  <span>{layer.label}</span>
+                </label>
+              ))}
+            </div>
+          </section>
+
+          <section className="review-queue-panel">
+            <div className="review-queue-panel-title">Guide groups</div>
+            <div className="review-queue-panel-stack">
+              <label className="review-queue-toggle">
+                <input
+                  type="checkbox"
+                  checked={guidesVisible}
+                  onChange={onToggleGuidesVisible}
+                  aria-label="Toggle guides"
+                />
+                <span>Guides enabled</span>
+              </label>
+              <label className="review-queue-toggle">
+                <input
+                  type="checkbox"
+                  checked={snappingEnabled}
+                  onChange={onToggleSnapping}
+                  aria-label="Toggle snapping"
+                />
+                <span>Snapping enabled</span>
+              </label>
+              {GUIDE_GROUP_ORDER.map((group) => {
+                const opacity = guideGroupOpacities[group];
+                const isChecked = soloGuideGroup
+                  ? soloGuideGroup === group
+                  : guideGroupVisibility[group];
+                return (
+                  <div key={group} className="review-queue-panel-stack">
+                    <label className="review-queue-toggle">
+                      <input
+                        type="checkbox"
+                        checked={isChecked}
+                        onChange={(event) => {
+                          const nativeEvent = event.nativeEvent as unknown as MouseEvent;
+                          onToggleGuideGroup(group, event.target.checked, {
+                            altKey: nativeEvent.altKey,
+                          });
+                        }}
+                        aria-label={`${GUIDE_GROUP_LABELS[group]} guide visibility`}
+                      />
+                      <span>{GUIDE_GROUP_LABELS[group]}</span>
+                      {soloGuideGroup === group && <span className="review-queue-tag">Solo</span>}
+                    </label>
+                    <label className="review-queue-slider">
+                      <span>Opacity</span>
+                      <div className="review-queue-slider-row">
+                        <input
+                          type="range"
+                          min={0}
+                          max={1}
+                          step={0.05}
+                          value={opacity}
+                          onChange={(event) =>
+                            onGuideGroupOpacityChange(group, Number(event.target.value))
+                          }
+                          aria-label={`${GUIDE_GROUP_LABELS[group]} guide opacity`}
+                        />
+                        <span>{Math.round(opacity * 100)}%</span>
+                      </div>
+                    </label>
+                  </div>
+                );
+              })}
+              <p className="review-queue-panel-hint">Alt-click a group to solo it.</p>
+              <div className="review-queue-panel-subtitle">Guide layers</div>
+              <div className="review-queue-panel-stack">
+                {guideLayerRegistry.map((layer) => (
+                  <label key={layer.id} className="review-queue-toggle">
+                    <input
+                      type="checkbox"
+                      checked={guideLayerVisibility[layer.id] ?? layer.defaultVisible}
+                      onChange={(event) => onToggleGuideLayer(layer.id, event.target.checked)}
+                      aria-label={`${resolveGuideLayerLabel(layer.id)} guide layer`}
+                    />
+                    <span>{resolveGuideLayerLabel(layer.id)}</span>
+                  </label>
+                ))}
+                <button className="btn btn-secondary btn-sm" onClick={onResetGuideVisibility}>
+                  Reset guides visibility
+                </button>
+              </div>
+            </div>
+          </section>
+
+          <section className="review-queue-panel">
+            <div className="review-queue-panel-title">Batch actions</div>
+            <div className="review-queue-panel-row">
+              <span className="review-queue-panel-muted">Selected: {selectedCount}</span>
+              <button
+                className="btn btn-secondary btn-sm"
+                onClick={() => onApplyDecisionToSelection("accept")}
+                disabled={selectedCount === 0 || interactionDisabled}
+              >
+                Accept selected
+              </button>
+              <button
+                className="btn btn-secondary btn-sm"
+                onClick={() => onApplyDecisionToSelection("flag")}
+                disabled={selectedCount === 0 || interactionDisabled}
+              >
+                Flag selected
+              </button>
+              <button
+                className="btn btn-secondary btn-sm"
+                onClick={() => onApplyDecisionToSelection("reject")}
+                disabled={selectedCount === 0 || interactionDisabled}
+              >
+                Reject selected
+              </button>
+              <button
+                className="btn btn-secondary btn-sm"
+                onClick={onAcceptSameReason}
+                disabled={interactionDisabled}
+              >
+                Accept same reason
+              </button>
+              <button className="btn btn-secondary btn-sm" disabled>
+                Reprocess selected (planned)
+              </button>
+            </div>
+          </section>
+
+          <section className="review-queue-panel">
+            <div className="review-queue-panel-title">Adjustments</div>
+            <div className="review-queue-panel-stack">
+              <div className="review-queue-panel-row">
+                <button
+                  className={`btn btn-sm ${adjustmentMode === "crop" ? "btn-primary" : "btn-secondary"}`}
+                  onClick={() => onSetAdjustmentMode(adjustmentMode === "crop" ? null : "crop")}
+                  disabled={interactionDisabled}
+                >
+                  Crop handles
+                </button>
+                <button
+                  className={`btn btn-sm ${adjustmentMode === "trim" ? "btn-primary" : "btn-secondary"}`}
+                  onClick={() => onSetAdjustmentMode(adjustmentMode === "trim" ? null : "trim")}
+                  disabled={interactionDisabled}
+                >
+                  Trim handles
+                </button>
+                <button
+                  className="btn btn-secondary btn-sm"
+                  onClick={onResetAdjustments}
+                  disabled={interactionDisabled}
+                >
+                  Reset crop/trim
+                </button>
+              </div>
+              <fieldset className="review-queue-fieldset">
+                <legend>Apply override scope</legend>
+                <div className="review-queue-panel-row">
+                  {(["page", "section", "template"] as TemplateScope[]).map((scope) => (
+                    <label
+                      key={scope}
+                      className={`btn btn-sm ${applyScope === scope ? "btn-primary" : "btn-secondary"}`}
+                    >
+                      <input
+                        type="radio"
+                        name="apply-scope"
+                        value={scope}
+                        checked={applyScope === scope}
+                        onChange={() => onApplyScopeChange(scope)}
+                      />
+                      {APPLY_SCOPE_LABELS[scope]}
+                    </label>
+                  ))}
+                </div>
+                <span className="review-queue-panel-hint">
+                  Targets: {applyTargetCount} page{applyTargetCount === 1 ? "" : "s"}
+                  {applyScope === "template" && templateSummary
+                    ? ` in ${templateSummary.label}`
+                    : ""}
+                  {applyScope === "section" ? " in contiguous block" : ""}
+                </span>
+              </fieldset>
+              <div className="review-queue-panel-row">
+                <button
+                  className="btn btn-primary btn-sm"
+                  onClick={onApplyOverride}
+                  disabled={isApplyingOverride || interactionDisabled}
+                >
+                  {isApplyingOverride ? "Applying…" : "Apply override"}
+                </button>
+                {lastOverrideAppliedAt && (
+                  <span className="review-queue-panel-muted">
+                    Applied {new Date(lastOverrideAppliedAt).toLocaleTimeString()}
+                  </span>
+                )}
+                {overrideError && <span className="review-queue-panel-error">{overrideError}</span>}
+              </div>
+              <p className="review-queue-panel-hint">
+                Drag on-canvas handles to nudge crop or trim boxes; edges snap to book priors when
+                close.
+              </p>
+            </div>
+          </section>
+
+          <section className="review-queue-panel">
+            <div className="review-queue-panel-title">Template inspector</div>
+            <div className="review-queue-panel-stack">
+              <div className="review-queue-card">
+                <div className="review-queue-card-title">Template clusters</div>
+                <div className="review-queue-card-body">
+                  {currentTemplateCluster ? (
+                    <span>
+                      Assigned cluster: <strong>{currentTemplateCluster.id}</strong> •{" "}
+                      {formatLayoutProfileLabel(currentTemplateCluster.pageType)}
+                      {templateAssignmentConfidence !== undefined
+                        ? ` • ${(templateAssignmentConfidence * 100).toFixed(0)}% confidence`
+                        : ""}
+                    </span>
+                  ) : (
+                    <span className="review-queue-panel-muted">
+                      No template cluster assignment found for this page.
+                    </span>
+                  )}
+                </div>
+                {templateClusters.length > 0 ? (
+                  <div className="review-queue-card-grid">
+                    {templateClusters.map((cluster) => {
+                      const isCurrent = currentTemplateCluster?.id === cluster.id;
                       return (
                         <div
-                          key={page.id}
-                          style={{
-                            border: "1px solid var(--border)",
-                            borderRadius: "6px",
-                            padding: "6px",
-                            background: "var(--bg-primary)",
-                          }}
+                          key={cluster.id}
+                          className={`review-queue-chip ${isCurrent ? "is-current" : ""}`}
                         >
-                          {previewSrc ? (
-                            <img
-                              src={previewSrc}
-                              alt={`Preview for ${page.filename}`}
-                              style={{ display: "block", width: "100%", height: "auto" }}
-                            />
-                          ) : (
-                            <div style={{ fontSize: "11px", color: "var(--text-secondary)" }}>
-                              No preview
-                            </div>
-                          )}
-                          <div
-                            style={{
-                              fontSize: "10px",
-                              color: "var(--text-tertiary)",
-                              marginTop: "4px",
-                            }}
-                          >
-                            {page.filename}
+                          <div className="review-queue-chip-title">
+                            {cluster.id}
+                            {isCurrent ? " • Current" : ""}
+                          </div>
+                          <div>{formatLayoutProfileLabel(cluster.pageType)}</div>
+                          <div>
+                            {cluster.pageIds.length} pages • {(cluster.confidence * 100).toFixed(0)}
+                            %
                           </div>
                         </div>
                       );
                     })}
-                    {representativePages.length === 0 && (
-                      <div style={{ fontSize: "11px", color: "var(--text-secondary)" }}>
-                        No representative pages available.
-                      </div>
-                    )}
+                  </div>
+                ) : (
+                  <div className="review-queue-panel-muted">No template clusters available.</div>
+                )}
+                <div className="review-queue-panel-row">
+                  <button
+                    className="btn btn-secondary btn-sm"
+                    onClick={() => void handleTemplateClusterAction("confirm")}
+                    disabled={
+                      isTemplateActionPending ||
+                      interactionDisabled ||
+                      (!currentTemplateCluster && !templateAssignmentId)
+                    }
+                    aria-label="Confirm template cluster"
+                  >
+                    {isTemplateActionPending ? "Saving…" : "Confirm cluster"}
+                  </button>
+                  <label className="review-queue-select">
+                    <span>Correct to</span>
+                    <select
+                      value={selectedTemplateClusterId ?? ""}
+                      onChange={(event) => setSelectedTemplateClusterId(event.target.value)}
+                      disabled={templateClusters.length === 0}
+                      aria-label="Template cluster selection"
+                    >
+                      <option value="" disabled>
+                        Select cluster
+                      </option>
+                      {templateClusters.map((cluster) => (
+                        <option key={cluster.id} value={cluster.id}>
+                          {cluster.id} • {formatLayoutProfileLabel(cluster.pageType)}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <button
+                    className="btn btn-secondary btn-sm"
+                    onClick={() => void handleTemplateClusterAction("correct")}
+                    disabled={
+                      isTemplateActionPending ||
+                      interactionDisabled ||
+                      !selectedTemplateClusterId ||
+                      templateClusters.length === 0
+                    }
+                    aria-label="Correct template cluster"
+                  >
+                    {isTemplateActionPending ? "Saving…" : "Correct assignment"}
+                  </button>
+                  {templateActionStatus && (
+                    <span className="review-queue-panel-muted">{templateActionStatus}</span>
+                  )}
+                  {templateActionError && (
+                    <span className="review-queue-panel-error">{templateActionError}</span>
+                  )}
+                </div>
+              </div>
+              {templateSummary ? (
+                <div className="review-queue-card">
+                  <div className="review-queue-card-title">Layout template summary</div>
+                  <div className="review-queue-card-body">
+                    <strong>{templateSummary.label}</strong>
+                    <div className="review-queue-panel-muted">
+                      {templateSummary.pages.length} pages • Avg{" "}
+                      {(templateSummary.averageConfidence * 100).toFixed(0)}% • Min{" "}
+                      {(templateSummary.minConfidence * 100).toFixed(0)}%
+                    </div>
+                    <div className="review-queue-panel-muted">
+                      Guide coverage: {(templateSummary.guideCoverage * 100).toFixed(0)}%
+                    </div>
+                    <div>
+                      {templateSummary.issueSummary.length === 0 ? (
+                        <span className="review-queue-panel-muted">No recurring issues.</span>
+                      ) : (
+                        <span>
+                          Common issues:{" "}
+                          {templateSummary.issueSummary
+                            .map((entry) => `${entry.issue} (${entry.count})`)
+                            .join(", ")}
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </div>
-              </div>
-              <strong style={{ fontSize: "13px" }}>Baseline grid</strong>
-              <div style={{ marginTop: "8px", display: "grid", gap: "8px" }}>
-                <div
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
-                    gap: "8px",
-                  }}
-                >
-                  <label style={{ display: "grid", gap: "4px", fontSize: "11px" }}>
-                    <span>Spacing (px)</span>
-                    <input
-                      type="number"
-                      step="0.1"
-                      value={baselineSpacingPx ?? ""}
-                      onChange={(event) => {
-                        const value = event.target.value;
-                        const parsed = Number(value);
-                        setBaselineSpacingPx(
-                          value === "" || !Number.isFinite(parsed) ? null : parsed
-                        );
-                      }}
-                    />
-                  </label>
-                  <label style={{ display: "grid", gap: "4px", fontSize: "11px" }}>
-                    <span>Offset (px)</span>
-                    <input
-                      type="number"
-                      step="0.1"
-                      value={baselineOffsetPx ?? ""}
-                      onChange={(event) => {
-                        const value = event.target.value;
-                        const parsed = Number(value);
-                        setBaselineOffsetPx(
-                          value === "" || !Number.isFinite(parsed) ? null : parsed
-                        );
-                      }}
-                    />
-                  </label>
-                  <label style={{ display: "grid", gap: "4px", fontSize: "11px" }}>
-                    <span>Angle (°)</span>
-                    <input
-                      type="number"
-                      step="0.1"
-                      value={baselineAngleDeg ?? ""}
-                      onChange={(event) => {
-                        const value = event.target.value;
-                        const parsed = Number(value);
-                        setBaselineAngleDeg(
-                          value === "" || !Number.isFinite(parsed) ? null : parsed
-                        );
-                      }}
-                    />
-                  </label>
-                </div>
-                <div style={{ display: "flex", flexWrap: "wrap", gap: "12px" }}>
-                  <label style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                    <input
-                      type="checkbox"
-                      checked={baselineSnapToPeaks}
-                      onChange={(event) => setBaselineSnapToPeaks(event.target.checked)}
-                    />
-                    <span style={{ fontSize: "12px" }}>Snap to peaks</span>
-                  </label>
-                  <label style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                    <input
-                      type="checkbox"
-                      checked={baselineMarkCorrect}
-                      onChange={(event) => setBaselineMarkCorrect(event.target.checked)}
-                    />
-                    <span style={{ fontSize: "12px" }}>Mark correct</span>
-                  </label>
-                </div>
-                <div
-                  style={{ display: "flex", flexWrap: "wrap", gap: "8px", alignItems: "center" }}
-                >
-                  <button
-                    className="btn btn-primary btn-sm"
-                    onClick={onApplyOverride}
-                    disabled={isApplyingOverride}
-                  >
-                    {isApplyingOverride ? "Applying…" : "Apply override"}
-                  </button>
-                  {lastOverrideAppliedAt && (
-                    <span style={{ fontSize: "11px", color: "var(--text-secondary)" }}>
-                      Applied {new Date(lastOverrideAppliedAt).toLocaleTimeString()}
-                    </span>
-                  )}
-                  {overrideError && (
-                    <span style={{ fontSize: "11px", color: "var(--color-error)" }}>
-                      {overrideError}
-                    </span>
-                  )}
-                </div>
-                <p style={{ margin: 0, fontSize: "11px", color: "var(--text-tertiary)" }}>
-                  Tune spacing, offset, and angle for the page baseline grid. Snap-to-peaks aligns
-                  to detected line clusters, and mark-correct confirms the guide for training.
+              ) : (
+                <p className="review-queue-panel-muted">
+                  No layout template summary available for this page.
                 </p>
+              )}
+              <div className="review-queue-card">
+                <div className="review-queue-card-title">Representative pages</div>
+                <div className="review-queue-card-grid">
+                  {representativePages.map((page) => {
+                    const preview =
+                      page.previews.overlay ?? page.previews.normalized ?? page.previews.source;
+                    const previewSrc = resolvePreviewSrc(preview);
+                    return (
+                      <div key={page.id} className="review-queue-thumb">
+                        {previewSrc ? (
+                          <img src={previewSrc} alt={`Preview for ${page.filename}`} />
+                        ) : (
+                          <div className="review-queue-panel-muted">No preview</div>
+                        )}
+                        <div className="review-queue-thumb-label">{page.filename}</div>
+                      </div>
+                    );
+                  })}
+                  {representativePages.length === 0 && (
+                    <div className="review-queue-panel-muted">
+                      No representative pages available.
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
-          </div>
+          </section>
 
-          <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
-            <button
-              className={`btn ${decision === "accept" ? "btn-primary" : "btn-secondary"}`}
-              onClick={onAccept}
-              aria-label="Accept page (A)"
-            >
-              Accept <kbd>A</kbd>
-            </button>
-            <button
-              className={`btn ${decision === "flag" ? "btn-primary" : "btn-secondary"}`}
-              onClick={onFlag}
-              aria-label="Flag for later review (F)"
-            >
-              Flag <kbd>F</kbd>
-            </button>
-            <button
-              className={`btn ${decision === "reject" ? "btn-primary" : "btn-secondary"}`}
-              onClick={onReject}
-              aria-label="Reject page (R)"
-            >
-              Reject <kbd>R</kbd>
-            </button>
-            <div style={{ flex: 1 }} />
-            {decision && (
-              <button className="btn btn-ghost" onClick={onUndo} aria-label="Undo decision (U)">
-                Undo <kbd>U</kbd>
+          <section className="review-queue-panel">
+            <div className="review-queue-panel-title">Baseline grid</div>
+            <div className="review-queue-panel-stack">
+              <div className="review-queue-grid-three">
+                <label className="review-queue-field">
+                  <span>Spacing (px)</span>
+                  <input
+                    type="number"
+                    step="0.1"
+                    value={baselineSpacingPx ?? ""}
+                    onChange={(event) => {
+                      const value = event.target.value;
+                      const parsed = Number(value);
+                      setBaselineSpacingPx(
+                        value === "" || !Number.isFinite(parsed) ? null : parsed
+                      );
+                    }}
+                  />
+                </label>
+                <label className="review-queue-field">
+                  <span>Offset (px)</span>
+                  <input
+                    type="number"
+                    step="0.1"
+                    value={baselineOffsetPx ?? ""}
+                    onChange={(event) => {
+                      const value = event.target.value;
+                      const parsed = Number(value);
+                      setBaselineOffsetPx(value === "" || !Number.isFinite(parsed) ? null : parsed);
+                    }}
+                  />
+                </label>
+                <label className="review-queue-field">
+                  <span>Angle (°)</span>
+                  <input
+                    type="number"
+                    step="0.1"
+                    value={baselineAngleDeg ?? ""}
+                    onChange={(event) => {
+                      const value = event.target.value;
+                      const parsed = Number(value);
+                      setBaselineAngleDeg(value === "" || !Number.isFinite(parsed) ? null : parsed);
+                    }}
+                  />
+                </label>
+              </div>
+              <div className="review-queue-panel-row">
+                <label className="review-queue-toggle">
+                  <input
+                    type="checkbox"
+                    checked={baselineSnapToPeaks}
+                    onChange={(event) => setBaselineSnapToPeaks(event.target.checked)}
+                  />
+                  <span>Snap to peaks</span>
+                </label>
+                <label className="review-queue-toggle">
+                  <input
+                    type="checkbox"
+                    checked={baselineMarkCorrect}
+                    onChange={(event) => setBaselineMarkCorrect(event.target.checked)}
+                  />
+                  <span>Mark correct</span>
+                </label>
+              </div>
+              <div className="review-queue-panel-row">
+                <button
+                  className="btn btn-primary btn-sm"
+                  onClick={onApplyOverride}
+                  disabled={isApplyingOverride}
+                >
+                  {isApplyingOverride ? "Applying…" : "Apply override"}
+                </button>
+                {lastOverrideAppliedAt && (
+                  <span className="review-queue-panel-muted">
+                    Applied {new Date(lastOverrideAppliedAt).toLocaleTimeString()}
+                  </span>
+                )}
+                {overrideError && <span className="review-queue-panel-error">{overrideError}</span>}
+              </div>
+              <p className="review-queue-panel-hint">
+                Tune spacing, offset, and angle for the page baseline grid. Snap-to-peaks aligns to
+                detected line clusters.
+              </p>
+            </div>
+          </section>
+
+          <section className="review-queue-panel review-queue-panel--decisions">
+            <div className="review-queue-panel-title">Decisions</div>
+            <div className="review-queue-panel-row">
+              <button
+                className={`btn ${decision === "accept" ? "btn-primary" : "btn-secondary"}`}
+                onClick={onAccept}
+                aria-label="Accept page (A)"
+                disabled={interactionDisabled}
+              >
+                Accept <kbd className="review-kbd">A</kbd>
               </button>
-            )}
-            <span style={{ fontSize: "12px", color: "var(--text-tertiary)" }}>
-              <kbd>J</kbd>/<kbd>K</kbd> navigate
-            </span>
-            <button
-              className="btn btn-primary"
-              onClick={onSubmit}
-              disabled={!canSubmit}
-              aria-disabled={!canSubmit}
-              aria-label={
-                runId ? "Submit review decisions (Ctrl+Enter)" : "Run ID required to submit"
-              }
-            >
-              {isSubmitting ? "Submitting…" : "Submit Review"}
-            </button>
+              <button
+                className={`btn ${decision === "flag" ? "btn-primary" : "btn-secondary"}`}
+                onClick={onFlag}
+                aria-label="Flag for later review (F)"
+                disabled={interactionDisabled}
+              >
+                Flag <kbd className="review-kbd">F</kbd>
+              </button>
+              <button
+                className={`btn ${decision === "reject" ? "btn-primary" : "btn-secondary"}`}
+                onClick={onReject}
+                aria-label="Reject page (R)"
+                disabled={interactionDisabled}
+              >
+                Reject <kbd className="review-kbd">R</kbd>
+              </button>
+              {decision && (
+                <button
+                  className="btn btn-ghost"
+                  onClick={onUndo}
+                  aria-label="Undo decision (U)"
+                  disabled={interactionDisabled}
+                >
+                  Undo <kbd className="review-kbd">U</kbd>
+                </button>
+              )}
+            </div>
+            <div className="review-queue-panel-row">
+              <span className="review-queue-panel-hint">
+                <kbd className="review-kbd">J</kbd>/<kbd className="review-kbd">K</kbd> navigate
+              </span>
+              <button
+                className="btn btn-primary"
+                onClick={onSubmit}
+                disabled={!canSubmit || interactionDisabled}
+                aria-disabled={!canSubmit || interactionDisabled}
+                aria-label={
+                  runId ? "Submit review decisions (Ctrl+Enter)" : "Run ID required to submit"
+                }
+              >
+                {isSubmitting ? "Submitting…" : "Submit Review"}
+              </button>
+            </div>
+            {submitError && <div className="review-queue-panel-error">{submitError}</div>}
+          </section>
+        </div>
+      </aside>
+      {(isBusy || isSidecarLoading) && (
+        <div className="review-queue-busy-overlay" role="status" aria-live="polite">
+          <div className="review-queue-busy-card">
+            <div className="review-queue-spinner" aria-hidden="true" />
+            <div className="review-queue-busy-title">Processing</div>
+            <div className="review-queue-busy-subtitle">{busyMessage}</div>
           </div>
         </div>
-        {submitError && (
-          <div
-            role="alert"
-            style={{
-              padding: "8px 16px",
-              background: "var(--bg-surface)",
-              color: "var(--color-error)",
-              borderBottom: "1px solid var(--border)",
-              fontSize: "12px",
-            }}
-          >
-            {submitError}
-          </div>
-        )}
-      </div>
+      )}
     </div>
   );
 };
@@ -2636,7 +2599,7 @@ export function ReviewQueueScreen({
   runId,
   runDir,
 }: Readonly<ReviewQueueScreenProps>): JSX.Element {
-  const pages = useReviewQueuePages(runId, runDir);
+  const { pages, isLoading: isQueueLoading } = useReviewQueuePages(runId, runDir);
   const queuePages = useQueueWorker(pages);
   const { selectedIndex, setSelectedIndex } = useQueueSelection(queuePages);
   const { listRef, scrollTop, setScrollTop, viewportHeight } = useQueueViewport(selectedIndex);
@@ -2646,14 +2609,29 @@ export function ReviewQueueScreen({
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [showSourcePreview, setShowSourcePreview] = useState(false);
+  const [inspectorOpen, setInspectorOpen] = useState(true);
   const [zoom, setZoom] = useState(1);
   const [rotationDeg, setRotationDeg] = useState(0);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const panOriginRef = useRef<{ x: number; y: number } | null>(null);
   const [isPanning, setIsPanning] = useState(false);
   const currentPage = queuePages[selectedIndex];
-  const { sidecar, sidecarError } = useSidecarData(runId, runDir, currentPage);
-  const normalizedPreview = currentPage?.previews.normalized;
+  const {
+    sidecar,
+    sidecarError,
+    isLoading: isSidecarLoading,
+  } = useSidecarData(runId, runDir, currentPage);
+  const derivedDimensions = useMemo(() => derivePreviewDimensions(sidecar), [sidecar]);
+  const fallbackNormalizedPreview = useMemo((): PreviewRef | undefined => {
+    if (!runDir || !currentPage || !derivedDimensions) return undefined;
+    return {
+      path: buildRunPreviewPath(runDir, currentPage.id, "normalized"),
+      width: derivedDimensions.width,
+      height: derivedDimensions.height,
+    };
+  }, [currentPage, derivedDimensions, runDir]);
+  const normalizedPreview =
+    currentPage?.previews.normalized ?? fallbackNormalizedPreview ?? undefined;
   const sourcePreview = currentPage?.previews.source;
   const [adjustmentMode, setAdjustmentMode] = useState<AdjustmentMode>(null);
   const [cropBox, setCropBox] = useState<Box | null>(null);
@@ -3748,16 +3726,36 @@ export function ReviewQueueScreen({
 
   const hasDecisions = decisions.size > 0;
   const canSubmit = Boolean(runId) && hasDecisions && !isSubmitting;
-  const normalizedSrc = resolvePreviewSrc(normalizedPreview);
-  const sourceSrc = resolvePreviewSrc(sourcePreview);
+  const normalizedSrc =
+    resolvePreviewSrc(normalizedPreview) ||
+    (runDir && currentPage
+      ? resolvePreviewSrc({
+          path: buildRunPreviewPath(runDir, currentPage.id, "normalized"),
+          width: 0,
+          height: 0,
+        })
+      : undefined);
+  const sourceSrc =
+    resolvePreviewSrc(sourcePreview) ||
+    (runDir && currentPage
+      ? resolvePreviewSrc({
+          path: buildRunPreviewPath(runDir, currentPage.id, "source"),
+          width: 0,
+          height: 0,
+        })
+      : undefined);
   const activeCropBox = cropBox ?? sidecar?.normalization?.cropBox ?? null;
   const activeTrimBox = trimBox ?? null;
-  const overlayScale = calculateOverlayScale(sidecar, normalizedPreview);
+  const overlayScale = calculateOverlayScale(
+    sidecar,
+    normalizedPreview ?? fallbackNormalizedPreview
+  );
   const overlayScaleX = overlayScale?.x ?? 1;
   const overlayScaleY = overlayScale?.y ?? 1;
+  const overlayPreview = normalizedPreview ?? fallbackNormalizedPreview;
   const overlaySvg = buildOverlaySvg({
     sidecar,
-    normalizedPreview,
+    normalizedPreview: overlayPreview,
     overlaysVisible,
     overlayLayers,
     guideLayerVisibility,
@@ -3779,16 +3777,19 @@ export function ReviewQueueScreen({
     onGuidePointerDown: handleGuidePointerDown,
     activeGuideId,
   });
+  const isBusy = isSubmitting || isApplyingOverride || isTemplateActionPending;
 
   return (
     <ReviewQueueLayout
       runId={runId}
       queuePages={queuePages}
       currentPage={currentPage}
+      isQueueLoading={isQueueLoading}
       selectedIndex={selectedIndex}
       decisions={decisions}
       overlaysVisible={overlaysVisible}
       showSourcePreview={showSourcePreview}
+      inspectorOpen={inspectorOpen}
       zoom={zoom}
       rotationDeg={rotationDeg}
       overlayLayers={overlayLayers}
@@ -3805,6 +3806,7 @@ export function ReviewQueueScreen({
       pan={pan}
       isPanning={isPanning}
       sidecarError={sidecarError}
+      isSidecarLoading={isSidecarLoading}
       normalizedSrc={normalizedSrc}
       sourceSrc={sourceSrc}
       overlaySvg={overlaySvg}
@@ -3841,12 +3843,14 @@ export function ReviewQueueScreen({
       isTemplateActionPending={isTemplateActionPending}
       templateActionStatus={templateActionStatus}
       templateActionError={templateActionError}
+      isBusy={isBusy}
       onApplyScopeChange={setApplyScope}
       onSelectIndex={setSelectedIndex}
       onScroll={setScrollTop}
       onToggleSelected={toggleSelected}
       onToggleOverlays={() => setOverlaysVisible(!overlaysVisible)}
       onToggleSource={() => setShowSourcePreview(!showSourcePreview)}
+      onToggleInspector={() => setInspectorOpen((prev) => !prev)}
       onZoomOut={() => zoomBy(-0.1)}
       onZoomIn={() => zoomBy(0.1)}
       onResetView={resetView}

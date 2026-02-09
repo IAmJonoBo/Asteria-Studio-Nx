@@ -17,8 +17,14 @@ import type {
   RunSummary,
 } from "../ipc/contracts.js";
 
-const safePrompt = (message: string, defaultValue?: string): string | null =>
-  typeof globalThis.prompt === "function" ? globalThis.prompt(message, defaultValue) : null;
+const safePrompt = (message: string, defaultValue?: string): string | null => {
+  if (typeof globalThis.prompt !== "function") return null;
+  try {
+    return globalThis.prompt(message, defaultValue);
+  } catch {
+    return null;
+  }
+};
 
 export function App(): JSX.Element {
   const [theme, setTheme] = useTheme();
@@ -30,6 +36,7 @@ export function App(): JSX.Element {
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [projectsLoading, setProjectsLoading] = useState(true);
   const [projectsError, setProjectsError] = useState<string | null>(null);
+  const [activeRunId, setActiveRunId] = useState<string | null>(null);
   const [appPreferences, setAppPreferences] = useState<AppPreferences | null>(null);
   const [onboardingVisible, setOnboardingVisible] = useState(false);
   const [onboardingBusy, setOnboardingBusy] = useState(false);
@@ -146,6 +153,11 @@ export function App(): JSX.Element {
     } = globalThis;
     if (!windowRef.asteria?.onRunProgress) return;
     const unsubscribe = windowRef.asteria.onRunProgress((event): void => {
+      if (event.stage === "complete" || event.stage === "cancelled" || event.stage === "error") {
+        setActiveRunId((current) => (current === event.runId ? null : current));
+      } else {
+        setActiveRunId(event.runId);
+      }
       if (event.stage === "complete") {
         setSelectedRunId(event.runId);
         setSelectedRunDir(undefined);
@@ -397,6 +409,13 @@ export function App(): JSX.Element {
   }, [handleMenuAction]);
 
   const handleStartRun = async (project?: ProjectSummary): Promise<void> => {
+    if (activeRunId) {
+      setActiveScreen("monitor");
+      globalThis.alert(
+        "A run is already in progress. Cancel it in Live Monitor before starting a new run."
+      );
+      return;
+    }
     const selectedProject =
       project ?? projects.find((item) => item.id === activeProjectId) ?? projects[0];
     if (!selectedProject) {
@@ -475,10 +494,7 @@ export function App(): JSX.Element {
               "Override target height (mm)",
               String(scanConfig.targetDimensionsMm.height)
             );
-            const dpiOverride = safePrompt(
-              "Override target DPI",
-              String(scanConfig.targetDpi)
-            );
+            const dpiOverride = safePrompt("Override target DPI", String(scanConfig.targetDpi));
             const parsedWidth = parsePromptNumber(
               widthOverride,
               scanConfig.targetDimensionsMm.width
@@ -507,6 +523,9 @@ export function App(): JSX.Element {
       setActiveScreen("runs");
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to start run";
+      if (message.toLowerCase().includes("already active")) {
+        setActiveScreen("monitor");
+      }
       globalThis.alert(message);
     }
   };
@@ -724,6 +743,7 @@ export function App(): JSX.Element {
               isLoading={projectsLoading}
               error={projectsError}
               importState={importState}
+              activeRunId={activeRunId ?? undefined}
             />
           )}
           {activeScreen === "runs" && (

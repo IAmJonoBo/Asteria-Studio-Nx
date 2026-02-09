@@ -13,6 +13,7 @@ interface ProjectsScreenProps {
     status: "idle" | "working" | "success" | "error";
     message?: string;
   };
+  activeRunId?: string;
 }
 
 export function ProjectsScreen({
@@ -23,9 +24,11 @@ export function ProjectsScreen({
   isLoading = false,
   error = null,
   importState,
+  activeRunId,
 }: Readonly<ProjectsScreenProps>): JSX.Element {
   const isImporting = importState?.status === "working";
   const importMessage = importState?.message;
+  const runBlocked = Boolean(activeRunId);
   const noticeTone =
     importState?.status === "error"
       ? "error"
@@ -132,6 +135,11 @@ export function ProjectsScreen({
           {importMessage}
         </div>
       )}
+      {runBlocked && (
+        <div className="notice notice-working" role="status">
+          Run in progress ({activeRunId}). Cancel it in Live Monitor to start another run.
+        </div>
+      )}
 
       <div style={{ display: "grid", gap: "16px" }}>
         {projects.map((project) => (
@@ -182,7 +190,11 @@ export function ProjectsScreen({
                   >
                     Open →
                   </button>
-                  <button className="btn btn-primary btn-sm" onClick={() => onStartRun(project)}>
+                  <button
+                    className="btn btn-primary btn-sm"
+                    onClick={() => onStartRun(project)}
+                    disabled={runBlocked}
+                  >
                     Start Run
                   </button>
                 </div>

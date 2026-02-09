@@ -176,7 +176,7 @@ const renderLinearGuideLayer = (context: GuideRenderContext): ReactElement | nul
       pointerEvents="none"
       opacity={opacity}
     >
-      {visibleGuides.map((guide) => {
+      {visibleGuides.map((guide, index) => {
         const isMinor = guide.kind === "minor";
         const isActive = guide.id === activeGuideId;
         const isHovered = guide.id === hoveredGuideId;
@@ -190,7 +190,7 @@ const renderLinearGuideLayer = (context: GuideRenderContext): ReactElement | nul
         if (guide.axis === "x") {
           return (
             <line
-              key={guide.id}
+              key={`${layer.id}-${guide.id}-${index}`}
               x1={guide.position}
               y1={0}
               x2={guide.position}
@@ -203,7 +203,7 @@ const renderLinearGuideLayer = (context: GuideRenderContext): ReactElement | nul
         }
         return (
           <line
-            key={guide.id}
+            key={`${layer.id}-${guide.id}-${index}`}
             x1={0}
             y1={guide.position}
             x2={canvasWidth}
@@ -214,7 +214,7 @@ const renderLinearGuideLayer = (context: GuideRenderContext): ReactElement | nul
           />
         );
       })}
-      {visibleGuides.map((guide) => {
+      {visibleGuides.map((guide, index) => {
         if (!shouldShowLabel(guide)) return null;
         const labelX = guide.axis === "x" ? guide.position + 4 : 6;
         const labelY = guide.axis === "x" ? 14 : guide.position - 6;
@@ -226,7 +226,7 @@ const renderLinearGuideLayer = (context: GuideRenderContext): ReactElement | nul
               : palette;
         return (
           <text
-            key={`${guide.id}-label`}
+            key={`${layer.id}-${guide.id}-label-${index}`}
             x={labelX}
             y={labelY}
             fontSize={11}

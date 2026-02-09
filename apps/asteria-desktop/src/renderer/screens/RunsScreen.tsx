@@ -1,6 +1,11 @@
 import type { JSX } from "react";
 import { useEffect, useState } from "react";
-import type { IpcResult, RunConfigSnapshot, RunSummary } from "../../ipc/contracts.js";
+import type {
+  IpcResult,
+  ProjectSummary,
+  RunConfigSnapshot,
+  RunSummary,
+} from "../../ipc/contracts.js";
 import { unwrapIpcResultOr } from "../utils/ipc.js";
 import { Icon } from "../components/Icon.js";
 
@@ -22,7 +27,51 @@ export function RunsScreen({
   const [error, setError] = useState<string | null>(null);
   const [runConfig, setRunConfig] = useState<RunConfigSnapshot | null>(null);
   const [runConfigError, setRunConfigError] = useState<string | null>(null);
+  const [projects, setProjects] = useState<ProjectSummary[]>([]);
+  const [deleteBusy, setDeleteBusy] = useState<Record<string, boolean>>({});
   const selectedRun = runs.find((run) => run.runId === selectedRunId);
+  const resolvedConfig = runConfig?.resolvedConfig;
+  const projectById = new Map(projects.map((project) => [project.id, project]));
+
+  const refreshRuns = async (): Promise<void> => {
+    const windowRef: typeof globalThis & { asteria?: { ipc?: Record<string, unknown> } } =
+      globalThis;
+    if (!windowRef.asteria?.ipc) return;
+    const listRuns = windowRef.asteria.ipc["asteria:list-runs"] as
+      | (() => Promise<import("../../ipc/contracts.js").IpcResult<RunSummary[]>>)
+      | undefined;
+    const data: IpcResult<RunSummary[]> = listRuns ? await listRuns() : { ok: true, value: [] };
+    if (!data.ok) {
+      setError(data.error.message);
+      return;
+    }
+    setRuns(unwrapIpcResultOr(data, []));
+  };
+
+  const handleDeleteRun = async (run: RunSummary): Promise<void> => {
+    const projectName = projectById.get(run.projectId)?.name ?? run.projectId;
+    const confirmed = globalThis.confirm(
+      `Delete run ${run.runId} for ${projectName}? This will remove all artifacts.`
+    );
+    if (!confirmed) return;
+    const windowRef: typeof globalThis & { asteria?: { ipc?: Record<string, unknown> } } =
+      globalThis;
+    const deleteRun = windowRef.asteria?.ipc?.["asteria:delete-run"] as
+      | ((runId: string) => Promise<import("../../ipc/contracts.js").IpcResult<void>>)
+      | undefined;
+    if (!deleteRun) return;
+    setDeleteBusy((prev) => ({ ...prev, [run.runId]: true }));
+    try {
+      const result = await deleteRun(run.runId);
+      if (!result.ok) throw new Error(result.error.message);
+      await refreshRuns();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to delete run";
+      globalThis.alert(message);
+    } finally {
+      setDeleteBusy((prev) => ({ ...prev, [run.runId]: false }));
+    }
+  };
 
   useEffect((): void | (() => void) => {
     let cancelled = false;
@@ -57,6 +106,35 @@ export function RunsScreen({
       }
     };
     loadRuns();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect((): void | (() => void) => {
+    let cancelled = false;
+    const loadProjects = async (): Promise<void> => {
+      const windowRef: typeof globalThis & { asteria?: { ipc?: Record<string, unknown> } } =
+        globalThis;
+      if (!windowRef.asteria?.ipc) return;
+      try {
+        const listProjects = windowRef.asteria.ipc["asteria:list-projects"] as
+          | (() => Promise<import("../../ipc/contracts.js").IpcResult<ProjectSummary[]>>)
+          | undefined;
+        const data: IpcResult<ProjectSummary[]> = listProjects
+          ? await listProjects()
+          : { ok: true, value: [] };
+        if (!data.ok) return;
+        if (!cancelled) {
+          setProjects(unwrapIpcResultOr(data, []));
+        }
+      } catch {
+        if (!cancelled) {
+          setProjects([]);
+        }
+      }
+    };
+    void loadProjects();
     return () => {
       cancelled = true;
     };
@@ -178,7 +256,7 @@ export function RunsScreen({
                   {run.runId}
                 </h3>
                 <div style={{ fontSize: "12px", color: "var(--text-secondary)" }}>
-                  Project: {run.projectId}
+                  Project: {projectById.get(run.projectId)?.name ?? run.projectId}
                 </div>
                 {run.status && (
                   <div style={{ fontSize: "12px", color: "var(--text-secondary)" }}>
@@ -234,6 +312,19 @@ export function RunsScreen({
                 >
                   Open Review Queue
                 </button>
+                <button
+                  className="btn btn-secondary btn-sm"
+                  onClick={() => void handleDeleteRun(run)}
+                  disabled={
+                    Boolean(deleteBusy[run.runId]) ||
+                    run.status === "running" ||
+                    run.status === "queued" ||
+                    run.status === "paused" ||
+                    run.status === "cancelling"
+                  }
+                >
+                  {deleteBusy[run.runId] ? "Deleting…" : "Delete Run"}
+                </button>
               </div>
             </div>
           </div>
@@ -269,29 +360,32 @@ export function RunsScreen({
               )}
             </div>
           )}
-          {runConfig && (
+          {runConfig && !resolvedConfig && !runConfigError && (
+            <p style={{ color: "var(--text-secondary)", fontSize: "12px" }}>
+              Config snapshot missing resolved values for this run.
+            </p>
+          )}
+          {resolvedConfig && (
             <div style={{ display: "grid", gap: "8px", fontSize: "12px" }}>
               <div>
-                <strong>Target size:</strong>{" "}
-                {runConfig.resolvedConfig.project.target_dimensions.width} ×{" "}
-                {runConfig.resolvedConfig.project.target_dimensions.height}{" "}
-                {runConfig.resolvedConfig.project.target_dimensions.unit}
+                <strong>Target size:</strong> {resolvedConfig.project.target_dimensions.width} ×{" "}
+                {resolvedConfig.project.target_dimensions.height}{" "}
+                {resolvedConfig.project.target_dimensions.unit}
               </div>
               <div>
-                <strong>DPI:</strong> {runConfig.resolvedConfig.project.dpi}
+                <strong>DPI:</strong> {resolvedConfig.project.dpi}
               </div>
               <div>
                 <strong>Spread split:</strong>{" "}
-                {runConfig.resolvedConfig.steps.spread_split.enabled ? "enabled" : "disabled"} (
-                {runConfig.resolvedConfig.steps.spread_split.confidence_threshold})
+                {resolvedConfig.steps.spread_split.enabled ? "enabled" : "disabled"} (
+                {resolvedConfig.steps.spread_split.confidence_threshold})
               </div>
               <div>
-                <strong>QA mask coverage min:</strong>{" "}
-                {runConfig.resolvedConfig.steps.qa.mask_coverage_min}
+                <strong>QA mask coverage min:</strong> {resolvedConfig.steps.qa.mask_coverage_min}
               </div>
               <div>
                 <strong>Semantic threshold (body):</strong>{" "}
-                {runConfig.resolvedConfig.steps.qa.semantic_thresholds.body}
+                {resolvedConfig.steps.qa.semantic_thresholds.body}
               </div>
             </div>
           )}
