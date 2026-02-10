@@ -57,7 +57,7 @@
   },
   "packageManager": "pnpm@10.29.2",
   "engines": {
-    "node": "24.13.0"
+    "node": "24.13.1"
   },
   "devDependencies": {
     "@eslint/js": "9.9.0",
