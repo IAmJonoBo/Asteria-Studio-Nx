@@ -45,7 +45,7 @@ describe("ProjectsScreen", () => {
       />
     );
 
-    const openButton = screen.getByRole("button", { name: /open/i });
+    const openButton = screen.getByRole("button", { name: /run history/i });
     await user.click(openButton);
     expect(onOpenProject).toHaveBeenCalledWith("mind-myth-magick");
 

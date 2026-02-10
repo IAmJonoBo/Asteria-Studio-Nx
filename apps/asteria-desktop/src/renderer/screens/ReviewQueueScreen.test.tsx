@@ -189,11 +189,23 @@ describe("ReviewQueueScreen", () => {
 
     await user.click(screen.getByRole("button", { name: /accept page/i }));
     await user.click(screen.getByRole("button", { name: /undo decision/i }));
+    const page1Buttons = screen.getAllByRole("button", { name: /page-1\.png/i });
+    await user.click(page1Buttons[0]);
+    await user.type(
+      screen.getByLabelText(/reviewer note \(saved with decisions and training signals\)/i),
+      "Mask edge corrected on folio."
+    );
 
     await user.click(screen.getByRole("button", { name: /submit review/i }));
     expect(submitReview).toHaveBeenCalledWith(
       "run-3",
-      expect.arrayContaining([{ pageId: "page-1", decision: "accept" }])
+      expect.arrayContaining([
+        expect.objectContaining({
+          pageId: "page-1",
+          decision: "accept",
+          notes: "Mask edge corrected on folio.",
+        }),
+      ])
     );
   }, 30000);
 

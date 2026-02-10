@@ -2,6 +2,13 @@ import type { JSX } from "react";
 import { useEffect, useMemo, useState } from "react";
 import type { RunProgressEvent } from "../../ipc/contracts.js";
 import { Icon } from "../components/Icon.js";
+import {
+  formatStageLabel,
+  getOverallProgressPercent,
+  getStageProgressPercent,
+  getStageSortIndex,
+  isControlStage,
+} from "../utils/runProgress.js";
 
 interface RunProgressState {
   latest: RunProgressEvent;
@@ -10,21 +17,18 @@ interface RunProgressState {
   recentPages: string[];
 }
 
+interface MonitorScreenProps {
+  runProgressById?: Record<string, RunProgressEvent>;
+  runStageEventsById?: Record<string, Record<string, RunProgressEvent>>;
+  runRecentPagesById?: Record<string, string[]>;
+  runModalHiddenForRunId?: string | null;
+  onReopenRunProgress?: (runId: string) => void;
+}
+
 const isStageError = (stage: string): boolean => {
   const lowered = stage.toLowerCase();
   return lowered.includes("error") || lowered.includes("cancel");
 };
-
-const formatStageLabel = (stage: string): string =>
-  stage
-    .split(/[-_]+/)
-    .filter((part) => part.length > 0)
-    .map((part) => {
-      const upper = part.toUpperCase();
-      if (["AI", "OCR", "QA", "CV"].includes(upper)) return upper;
-      return part.charAt(0).toUpperCase() + part.slice(1);
-    })
-    .join(" ");
 
 const mergeRecentPages = (
   existing: string[] | undefined,
@@ -39,8 +43,26 @@ const mergeRecentPages = (
   return next.slice(0, 6);
 };
 
-export function MonitorScreen(): JSX.Element {
-  const [progressByRun, setProgressByRun] = useState<Record<string, RunProgressState>>({});
+const toRunProgressState = (
+  latest: RunProgressEvent,
+  stages?: Record<string, RunProgressEvent>,
+  recentPages?: string[]
+): RunProgressState => ({
+  latest,
+  stages: stages ?? { [latest.stage]: latest },
+  throughputHistory:
+    typeof latest.throughput === "number" ? [{ ts: Date.now(), value: latest.throughput }] : [],
+  recentPages: recentPages ?? latest.recentPageIds ?? [],
+});
+
+export function MonitorScreen({
+  runProgressById,
+  runStageEventsById,
+  runRecentPagesById,
+  runModalHiddenForRunId = null,
+  onReopenRunProgress,
+}: Readonly<MonitorScreenProps>): JSX.Element {
+  const [liveProgressByRun, setLiveProgressByRun] = useState<Record<string, RunProgressState>>({});
   const [cancelling, setCancelling] = useState<Record<string, boolean>>({});
 
   useEffect((): void | (() => void) => {
@@ -49,7 +71,7 @@ export function MonitorScreen(): JSX.Element {
     } = globalThis;
     if (!windowRef.asteria?.onRunProgress) return;
     const unsubscribe = windowRef.asteria.onRunProgress((event): void => {
-      setProgressByRun((prev) => {
+      setLiveProgressByRun((prev) => {
         const current = prev[event.runId];
         const stages = {
           ...(current?.stages ?? {}),
@@ -80,6 +102,24 @@ export function MonitorScreen(): JSX.Element {
       unsubscribe?.();
     };
   }, []);
+
+  const seededProgressByRun = useMemo((): Record<string, RunProgressState> => {
+    if (!runProgressById) return {};
+    return Object.fromEntries(
+      Object.entries(runProgressById).map(([runId, latest]) => [
+        runId,
+        toRunProgressState(latest, runStageEventsById?.[runId], runRecentPagesById?.[runId]),
+      ])
+    );
+  }, [runProgressById, runRecentPagesById, runStageEventsById]);
+
+  const progressByRun = useMemo(
+    () =>
+      Object.keys(seededProgressByRun).length > 0
+        ? { ...liveProgressByRun, ...seededProgressByRun }
+        : liveProgressByRun,
+    [liveProgressByRun, seededProgressByRun]
+  );
 
   const runs = useMemo(
     () =>
@@ -125,17 +165,27 @@ export function MonitorScreen(): JSX.Element {
       <div style={{ display: "grid", gap: "12px" }}>
         {runs.map((runState) => {
           const run = runState.latest;
-          const total = Math.max(1, run.total || 1);
-          const progress = Math.min(100, Math.round((run.processed / total) * 100));
+          const anchorEvent =
+            isControlStage(run.stage) && runStageEventsById?.[run.runId]
+              ? Object.values(runStageEventsById[run.runId] ?? {})
+                  .filter((event) => !isControlStage(event.stage))
+                  .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())[0] ?? run
+              : run;
+          const progress = getOverallProgressPercent(anchorEvent);
           const history = runState.throughputHistory;
           const avgThroughput =
             history.length > 0
               ? history.reduce((sum, entry) => sum + entry.value, 0) / history.length
-              : (run.throughput ?? 0);
-          const remaining = Math.max(0, total - run.processed);
+              : (anchorEvent.throughput ?? run.throughput ?? 0);
+          const remaining = Math.max(0, Math.max(anchorEvent.total || 0, 0) - anchorEvent.processed);
           const etaSeconds = avgThroughput > 0 ? remaining / avgThroughput : null;
           const stageEntries = Object.values(runState.stages).sort(
-            (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+            (a, b) => {
+              const indexDelta = getStageSortIndex(a.stage) - getStageSortIndex(b.stage);
+              return indexDelta !== 0
+                ? indexDelta
+                : new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime();
+            }
           );
           const hasActiveStage = !["complete", "cancelled", "error"].includes(run.stage);
           const isCancelling = Boolean(cancelling[run.runId]);
@@ -179,10 +229,14 @@ export function MonitorScreen(): JSX.Element {
                   <div
                     style={{ marginTop: "8px", fontSize: "12px", color: "var(--text-secondary)" }}
                   >
-                    {run.processed.toLocaleString()} / {run.total.toLocaleString()} pages
+                    {anchorEvent.processed.toLocaleString()} /{" "}
+                    {Math.max(anchorEvent.total || 0, 0).toLocaleString()} pages
                   </div>
                 </div>
                 <div style={{ textAlign: "right" }}>
+                  <div style={{ fontSize: "12px", color: "var(--text-secondary)" }}>
+                    Overall progress: {progress}%
+                  </div>
                   <div style={{ fontSize: "12px", color: "var(--text-secondary)" }}>
                     {avgThroughput > 0
                       ? `${avgThroughput.toFixed(1)} pages/sec (avg)`
@@ -301,6 +355,14 @@ export function MonitorScreen(): JSX.Element {
                 >
                   {isCancelling ? "Cancelling…" : "Cancel & Delete"}
                 </button>
+                {onReopenRunProgress && runModalHiddenForRunId === run.runId && hasActiveStage && (
+                  <button
+                    className="btn btn-secondary btn-sm"
+                    onClick={() => onReopenRunProgress(run.runId)}
+                  >
+                    Reopen Progress Modal
+                  </button>
+                )}
               </div>
 
               <div style={{ display: "grid", gap: "8px" }}>
@@ -308,54 +370,52 @@ export function MonitorScreen(): JSX.Element {
                   Stage breakdown
                 </div>
                 <div style={{ display: "grid", gap: "6px" }}>
-                  {stageEntries.map((stageEvent) => (
-                    <div
-                      key={`${run.runId}-${stageEvent.stage}`}
-                      style={{
-                        display: "grid",
-                        gridTemplateColumns: "1fr auto auto",
-                        gap: "12px",
-                        fontSize: "12px",
-                        color: isStageError(stageEvent.stage)
-                          ? "var(--color-error)"
-                          : "var(--text-secondary)",
-                      }}
-                    >
-                      <div style={{ fontWeight: 600, color: "inherit" }}>
-                        {formatStageLabel(stageEvent.stage)}
-                      </div>
-                      <div>
-                        {stageEvent.processed.toLocaleString()} /{" "}
-                        {stageEvent.total.toLocaleString()}
-                      </div>
-                      <div>{new Date(stageEvent.timestamp).toLocaleTimeString()}</div>
+                  {stageEntries.map((stageEvent) => {
+                    const isActiveStage = stageEvent.stage === run.stage;
+                    return (
                       <div
+                        key={`${run.runId}-${stageEvent.stage}`}
                         style={{
-                          gridColumn: "1 / -1",
-                          height: "4px",
-                          background: "var(--bg-surface)",
-                          borderRadius: "999px",
-                          overflow: "hidden",
+                          display: "grid",
+                          gridTemplateColumns: "1fr auto auto",
+                          gap: "12px",
+                          fontSize: "12px",
+                          color: isStageError(stageEvent.stage)
+                            ? "var(--color-error)"
+                            : "var(--text-secondary)",
                         }}
-                        aria-hidden="true"
                       >
+                        <div style={{ fontWeight: 600, color: "inherit" }}>
+                          {formatStageLabel(stageEvent.stage)}
+                        </div>
+                        <div>
+                          {stageEvent.processed.toLocaleString()} /{" "}
+                          {stageEvent.total.toLocaleString()}
+                        </div>
+                        <div>{new Date(stageEvent.timestamp).toLocaleTimeString()}</div>
                         <div
                           style={{
-                            width: `${Math.min(
-                              100,
-                              Math.round(
-                                (stageEvent.processed / Math.max(1, stageEvent.total)) * 100
-                              )
-                            )}%`,
-                            height: "100%",
-                            background: isStageError(stageEvent.stage)
-                              ? "var(--color-error)"
-                              : "var(--color-accent)",
+                            gridColumn: "1 / -1",
+                            height: "4px",
+                            background: "var(--bg-surface)",
+                            borderRadius: "999px",
+                            overflow: "hidden",
                           }}
-                        />
+                          aria-hidden="true"
+                        >
+                          <div
+                            style={{
+                              width: `${getStageProgressPercent(stageEvent, isActiveStage)}%`,
+                              height: "100%",
+                              background: isStageError(stageEvent.stage)
+                                ? "var(--color-error)"
+                                : "var(--color-accent)",
+                            }}
+                          />
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
                 {stageEntries.some((entry) => isStageError(entry.stage)) && (
                   <div style={{ fontSize: "12px", color: "var(--color-error)" }}>

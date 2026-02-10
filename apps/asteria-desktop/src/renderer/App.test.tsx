@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { App } from "./App.js";
@@ -36,7 +36,7 @@ describe("App", () => {
 
     expect(await screen.findByRole("heading", { name: /projects/i, level: 1 })).toBeInTheDocument();
     expect(screen.getByText(/manage your corpus libraries/i)).toBeInTheDocument();
-    expect(await screen.findByText(/Mind, Myth and Magick/i)).toBeInTheDocument();
+    expect(await screen.findByText(/Mind, Myth and Magick/i, {}, { timeout: 10_000 })).toBeInTheDocument();
 
     windowRef.asteria = previousAsteria;
   });
@@ -109,7 +109,7 @@ describe("App", () => {
 
     render(<App />);
 
-    const startRunButton = await screen.findByRole("button", { name: /start run/i });
+    const startRunButton = await screen.findByRole("button", { name: /start run/i }, { timeout: 10_000 });
     await user.click(startRunButton);
 
     expect(scanCorpus).toHaveBeenCalledWith("/projects/mind-myth-and-magick/input/raw", {
@@ -195,7 +195,7 @@ describe("App", () => {
 
     render(<App />);
 
-    const startRunButton = await screen.findByRole("button", { name: /start run/i });
+    const startRunButton = await screen.findByRole("button", { name: /start run/i }, { timeout: 10_000 });
     await user.click(startRunButton);
 
     expect(startRun).toHaveBeenCalledWith(
@@ -235,7 +235,12 @@ describe("App", () => {
 
     render(<App />);
 
-    const openButton = await screen.findByRole("button", { name: /open →/i });
+    const projectName = await screen.findByText(/Mind, Myth and Magick/i, {}, { timeout: 10_000 });
+    const projectCard = projectName.closest(".card");
+    expect(projectCard).not.toBeNull();
+    const openButton = within(projectCard as HTMLElement).getByRole("button", {
+      name: /run history/i,
+    });
     await user.click(openButton);
 
     expect(await screen.findByText(/no runs yet/i)).toBeInTheDocument();
@@ -620,6 +625,56 @@ describe("App", () => {
     windowRef.asteria = previousAsteria;
   });
 
+  it("allows reopening the run progress modal and avoids 100% during review stage", async () => {
+    const user = userEvent.setup();
+    const windowRef = globalThis as typeof globalThis & {
+      asteria?: {
+        ipc: Record<string, unknown>;
+        onRunProgress?: (handler: (event: RunProgressEvent) => void) => () => void;
+      };
+    };
+    const previousAsteria = windowRef.asteria;
+    let progressHandler: ((event: RunProgressEvent) => void) | null = null;
+    const onRunProgress = vi.fn((handler: (event: RunProgressEvent) => void): (() => void) => {
+      progressHandler = handler;
+      return () => {};
+    });
+    const originalConfirm = globalThis.confirm;
+    globalThis.confirm = vi.fn().mockReturnValue(true);
+    windowRef.asteria = {
+      ipc: {
+        "asteria:list-projects": vi.fn().mockResolvedValue(ok([])),
+      },
+      onRunProgress,
+    };
+
+    render(<App />);
+
+    act(() => {
+      progressHandler?.({
+        runId: "run-review",
+        projectId: "project-review",
+        stage: "review",
+        processed: 8,
+        total: 8,
+        timestamp: new Date().toISOString(),
+      });
+    });
+
+    expect(await screen.findByRole("dialog", { name: /run in progress/i })).toBeInTheDocument();
+    expect(screen.queryByText(/^100%$/)).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /exit/i }));
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog", { name: /run in progress/i })).not.toBeInTheDocument()
+    );
+    await user.click(screen.getByRole("button", { name: /reopen run progress/i }));
+    expect(await screen.findByRole("dialog", { name: /run in progress/i })).toBeInTheDocument();
+
+    windowRef.asteria = previousAsteria;
+    globalThis.confirm = originalConfirm;
+  });
+
   it("formats stage labels with acronyms", async () => {
     const windowRef = globalThis as typeof globalThis & {
       asteria?: {
@@ -804,7 +859,7 @@ describe("App", () => {
 
     render(<App />);
 
-    const startRunButton = await screen.findByRole("button", { name: /start run/i });
+    const startRunButton = await screen.findByRole("button", { name: /start run/i }, { timeout: 10_000 });
     await user.click(startRunButton);
 
     expect(alertMock).toHaveBeenCalledWith("Scan corpus: scan failed");

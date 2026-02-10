@@ -547,7 +547,9 @@ textarea:focus-visible {
   background: linear-gradient(160deg, rgba(15, 23, 42, 0.9), rgba(30, 41, 59, 0.92));
   box-shadow: var(--shadow-lg);
   position: relative;
-  overflow: hidden;
+  max-height: calc(100dvh - 48px);
+  overflow-x: hidden;
+  overflow-y: auto;
   font-family: "IBM Plex Sans", "Inter", system-ui, sans-serif;
   color: #f8fafc;
   --text-primary: #f8fafc;
@@ -586,6 +588,7 @@ textarea:focus-visible {
   gap: 16px;
   position: relative;
   z-index: 1;
+  top: 0;
 }
 
 .run-progress-header h2 {
@@ -806,6 +809,23 @@ textarea:focus-visible {
   color: var(--color-error);
   position: relative;
   z-index: 1;
+}
+
+.run-progress-reopen {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  z-index: 1490;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 10px 14px;
+  background: color-mix(in srgb, var(--bg-elevated) 86%, var(--color-accent) 14%);
+  color: var(--text-primary);
+  box-shadow: var(--shadow-lg);
+}
+
+.run-progress-reopen:hover {
+  border-color: color-mix(in srgb, var(--color-accent) 42%, var(--border) 58%);
 }
 
 @media (max-width: 860px) {
@@ -1523,6 +1543,7 @@ textarea:focus-visible {
 }
 
 .review-queue-field input,
+.review-queue-field textarea,
 .review-queue-select select {
   width: 100%;
   padding: 6px 8px;
@@ -1530,6 +1551,11 @@ textarea:focus-visible {
   border: 1px solid var(--border);
   background: var(--bg-primary);
   color: var(--text-primary);
+}
+
+.review-queue-field textarea {
+  resize: vertical;
+  min-height: 70px;
 }
 
 .review-queue-select {

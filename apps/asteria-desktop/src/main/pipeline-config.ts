@@ -7,7 +7,6 @@ import type {
   PipelineConfigOverrides,
   PipelineConfigSources,
 } from "../ipc/contracts.js";
-import { validateProjectId } from "../ipc/validation.js";
 import { resolveProjectsRoot } from "./preferences.js";
 
 export type { PipelineConfig, PipelineConfigOverrides, PipelineConfigSources };
@@ -186,17 +185,8 @@ export const loadPipelineConfig = async (configPath?: string): Promise<LoadedPip
 };
 
 export const loadProjectOverrides = async (projectId: string): Promise<LoadedProjectOverrides> => {
-  validateProjectId(projectId);
   const projectsRoot = await resolveProjectsRoot();
   const projectRoot = path.join(projectsRoot, projectId);
-  const relativeProjectRoot = path.relative(projectsRoot, projectRoot);
-  if (
-    relativeProjectRoot.startsWith("..") ||
-    path.isAbsolute(relativeProjectRoot) ||
-    relativeProjectRoot === ""
-  ) {
-    throw new Error("Invalid project id: outside projects directory");
-  }
   const candidates = [
     path.join(projectRoot, "pipeline.config.yaml"),
     path.join(projectRoot, "pipeline.config.yml"),

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, JSX } from "react";
 import { Navigation, type NavItem } from "./components/Navigation.js";
 import { CommandPalette } from "./components/CommandPalette.js";
@@ -9,6 +9,13 @@ import { RunsScreen, MonitorScreen, ExportsScreen, SettingsScreen } from "./scre
 import { useTheme } from "./hooks/useTheme.js";
 import { useKeyboardShortcut, useKeyboardShortcuts } from "./hooks/useKeyboardShortcut.js";
 import { unwrapIpcResult, unwrapIpcResultOr } from "./utils/ipc.js";
+import {
+  formatStageLabel,
+  getOverallProgressPercent,
+  getStageProgressPercent,
+  getStageSortIndex,
+  isControlStage,
+} from "./utils/runProgress.js";
 import type {
   AppPreferences,
   IpcResult,
@@ -27,38 +34,7 @@ const safePrompt = (message: string, defaultValue?: string): string | null => {
   }
 };
 
-/**
- * Convert kebab/snake-case stage identifiers into human-friendly labels while preserving acronyms.
- */
-const formatStageLabel = (stage: string): string =>
-  stage
-    .split(/[-_]+/)
-    .filter((part) => part.length > 0)
-    .map((part) => {
-      const upper = part.toUpperCase();
-      if (["AI", "OCR", "QA", "CV"].includes(upper)) return upper;
-      return part.charAt(0).toUpperCase() + part.slice(1);
-    })
-    .join(" ");
-
 const RUN_STATUS_SEPARATOR = "•";
-const STAGE_ORDER = [
-  "starting",
-  "scan",
-  "analysis",
-  "preprocess",
-  "deskew",
-  "dewarp",
-  "shading",
-  "layout-detection",
-  "normalize",
-  "second-pass",
-  "qa",
-  "export",
-  "complete",
-  "cancelled",
-  "error",
-];
 
 const isUiPreviewModeEnabled = (): boolean => {
   const windowRef = globalThis as typeof globalThis & { location?: { search?: string } };
@@ -263,30 +239,40 @@ export function App(): JSX.Element {
   }, []);
 
   const activeRunProgress = activeRunId ? (runProgressById[activeRunId] ?? null) : null;
-  const activeRunStages = activeRunId ? (runStageEventsById[activeRunId] ?? {}) : {};
+  const activeRunStages = useMemo(
+    () => (activeRunId ? (runStageEventsById[activeRunId] ?? {}) : {}),
+    [activeRunId, runStageEventsById]
+  );
   const activeRunRecentPages = activeRunId
     ? (runRecentPagesById[activeRunId] ?? activeRunProgress?.recentPageIds ?? [])
     : [];
   const activeRunStageEntries = Object.values(activeRunStages).sort((a, b) => {
-    const aIndex = STAGE_ORDER.indexOf(a.stage);
-    const bIndex = STAGE_ORDER.indexOf(b.stage);
-    if (aIndex !== -1 || bIndex !== -1) {
-      return (
-        (aIndex === -1 ? STAGE_ORDER.length : aIndex) -
-        (bIndex === -1 ? STAGE_ORDER.length : bIndex)
-      );
+    const aIndex = getStageSortIndex(a.stage);
+    const bIndex = getStageSortIndex(b.stage);
+    if (aIndex !== bIndex) {
+      return aIndex - bIndex;
     }
     return new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime();
   });
+  const progressAnchorEvent = useMemo((): RunProgressEvent | null => {
+    if (!activeRunProgress) return null;
+    if (!isControlStage(activeRunProgress.stage)) {
+      return activeRunProgress;
+    }
+    const fallback = Object.values(activeRunStages)
+      .filter((event) => !isControlStage(event.stage))
+      .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())[0];
+    return fallback ?? activeRunProgress;
+  }, [activeRunProgress, activeRunStages]);
   const isRunPaused = activeRunProgress?.stage === "paused";
-  const runProgressTotal = activeRunProgress?.total ?? 0;
+  const runProgressTotal = progressAnchorEvent?.total ?? activeRunProgress?.total ?? 0;
   const hasRunProgressTotal = runProgressTotal > 0;
-  const runProgressPercent =
-    activeRunProgress && hasRunProgressTotal
-      ? Math.min(100, Math.round((activeRunProgress.processed / runProgressTotal) * 100))
-      : 0;
-  const runThroughput = activeRunProgress?.throughput ?? null;
-  const runRemaining = Math.max(0, runProgressTotal - (activeRunProgress?.processed ?? 0));
+  const runProgressPercent = progressAnchorEvent ? getOverallProgressPercent(progressAnchorEvent) : 0;
+  const runThroughput = progressAnchorEvent?.throughput ?? activeRunProgress?.throughput ?? null;
+  const runRemaining = Math.max(
+    0,
+    runProgressTotal - (progressAnchorEvent?.processed ?? activeRunProgress?.processed ?? 0)
+  );
   const runEtaSeconds =
     runThroughput && hasRunProgressTotal ? runRemaining / Math.max(0.1, runThroughput) : null;
   const runProgressRingStyle = {
@@ -950,7 +936,17 @@ export function App(): JSX.Element {
               runProgressById={runProgressById}
             />
           )}
-          {activeScreen === "monitor" && <MonitorScreen />}
+          {activeScreen === "monitor" && (
+            <MonitorScreen
+              runProgressById={runProgressById}
+              runStageEventsById={runStageEventsById}
+              runRecentPagesById={runRecentPagesById}
+              runModalHiddenForRunId={runModalHiddenForRunId}
+              onReopenRunProgress={(runId) => {
+                setRunModalHiddenForRunId((current) => (current === runId ? null : current));
+              }}
+            />
+          )}
           {activeScreen === "review" && (
             <ReviewQueueScreen runId={selectedRunId} runDir={selectedRunDir} />
           )}
@@ -988,12 +984,16 @@ export function App(): JSX.Element {
                     <div className="run-progress-percent">{runProgressPercent}%</div>
                     <div className="run-progress-count">
                       {hasRunProgressTotal
-                        ? `${activeRunProgress.processed.toLocaleString()} / ${activeRunProgress.total.toLocaleString()}`
-                        : `${activeRunProgress.processed.toLocaleString()} pages`}
+                        ? `${(progressAnchorEvent?.processed ?? activeRunProgress.processed).toLocaleString()} / ${runProgressTotal.toLocaleString()}`
+                        : `${(progressAnchorEvent?.processed ?? activeRunProgress.processed).toLocaleString()} pages`}
                     </div>
                   </div>
                 </div>
                 <div className="run-progress-meta">
+                  <div className="run-progress-meta-row">
+                    <span>Overall progress</span>
+                    <strong>{runProgressPercent}%</strong>
+                  </div>
                   <div className="run-progress-meta-row">
                     <span>Stage</span>
                     <strong>{currentStageLabel}</strong>
@@ -1046,12 +1046,8 @@ export function App(): JSX.Element {
             <div className="run-progress-stage-grid">
               {activeRunStageEntries.length > 0 ? (
                 activeRunStageEntries.map((stageEvent) => {
-                  const stageTotal = stageEvent.total ?? 0;
-                  const stagePercent =
-                    stageTotal > 0
-                      ? Math.min(100, Math.round((stageEvent.processed / stageTotal) * 100))
-                      : 0;
                   const isActiveStage = stageEvent.stage === activeRunProgress.stage;
+                  const stagePercent = getStageProgressPercent(stageEvent, isActiveStage);
                   return (
                     <div
                       key={`stage-${stageEvent.stage}`}
@@ -1070,6 +1066,11 @@ export function App(): JSX.Element {
                       {stageEvent.currentPageId && (
                         <div className="run-progress-stage-meta">
                           Current: {stageEvent.currentPageId}
+                        </div>
+                      )}
+                      {stageEvent.stage === "review" && isActiveStage && (
+                        <div className="run-progress-stage-meta">
+                          Building review assets and writing final run outputs.
                         </div>
                       )}
                     </div>
@@ -1141,6 +1142,16 @@ export function App(): JSX.Element {
             )}
           </div>
         </div>
+      )}
+
+      {activeRunProgress && activeRunId && runModalHiddenForRunId === activeRunId && (
+        <button
+          className="run-progress-reopen"
+          onClick={() => setRunModalHiddenForRunId(null)}
+          aria-label="Reopen run progress"
+        >
+          Reopen run progress
+        </button>
       )}
 
       <CommandPalette

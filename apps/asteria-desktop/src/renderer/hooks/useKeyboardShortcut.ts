@@ -17,7 +17,25 @@ type KeyEvent = {
   metaKey: boolean;
   shiftKey: boolean;
   altKey: boolean;
+  target?: EventTarget | null;
   preventDefault: () => void;
+};
+
+const isEditableEventTarget = (target: EventTarget | null | undefined): boolean => {
+  if (!(target instanceof Element)) return false;
+  if (target instanceof HTMLInputElement) return true;
+  if (target instanceof HTMLTextAreaElement) return true;
+  if (target instanceof HTMLSelectElement) return true;
+  if (target.hasAttribute("contenteditable")) return true;
+  return Boolean(target.closest("[contenteditable], [role='textbox']"));
+};
+
+const isPrintableKey = (key: string): boolean => key.length === 1 || key === " " || key === "Spacebar";
+
+const shouldIgnoreShortcut = (event: KeyEvent): boolean => {
+  if (!isEditableEventTarget(event.target)) return false;
+  if (event.ctrlKey || event.metaKey || event.altKey) return false;
+  return isPrintableKey(event.key);
 };
 
 /**
@@ -36,6 +54,7 @@ export function useKeyboardShortcut(shortcut: KeyboardShortcut): void {
     const handler = (e: KeyEvent): void => {
       const current = shortcutRef.current;
       if (current.disabled) return;
+      if (shouldIgnoreShortcut(e)) return;
 
       const userAgent = globalThis.navigator?.userAgent ?? "";
       const isMac = userAgent.toUpperCase().includes("MAC");
@@ -75,6 +94,7 @@ export function useKeyboardShortcuts(shortcuts: KeyboardShortcut[]): void {
     const handler = (e: KeyEvent): void => {
       const activeShortcuts = shortcutsRef.current;
       if (!Array.isArray(activeShortcuts)) return;
+      if (shouldIgnoreShortcut(e)) return;
 
       const userAgent = globalThis.navigator?.userAgent ?? "";
       const isMac = userAgent.toUpperCase().includes("MAC");

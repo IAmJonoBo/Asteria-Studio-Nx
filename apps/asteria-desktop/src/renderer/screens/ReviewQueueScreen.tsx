@@ -1835,6 +1835,7 @@ type ReviewQueueLayoutProps = {
   isSubmitting: boolean;
   submitError: string | null;
   canSubmit: boolean;
+  currentNote: string;
   adjustmentMode: AdjustmentMode;
   baselineSpacingPx: number | null;
   baselineOffsetPx: number | null;
@@ -1903,6 +1904,7 @@ type ReviewQueueLayoutProps = {
   onReject: () => void;
   onUndo: () => void;
   onSubmit: () => void;
+  onCurrentNoteChange: (note: string) => void;
 };
 
 const ReviewQueueLayout = ({
@@ -1941,6 +1943,7 @@ const ReviewQueueLayout = ({
   isSubmitting,
   submitError,
   canSubmit,
+  currentNote,
   adjustmentMode,
   baselineSpacingPx,
   baselineOffsetPx,
@@ -2009,6 +2012,7 @@ const ReviewQueueLayout = ({
   onReject,
   onUndo,
   onSubmit,
+  onCurrentNoteChange,
 }: ReviewQueueLayoutProps): JSX.Element => {
   const [normalizedLoadStates, setNormalizedLoadStates] = useState<
     Partial<Record<string, "loaded" | "error">>
@@ -2216,7 +2220,8 @@ const ReviewQueueLayout = ({
           <div>
             <h3 className="review-queue-title">{currentPage.filename}</h3>
             <p className="review-queue-subtitle">
-              Page {selectedIndex + 1} of {queuePages.length}
+              Page {selectedIndex + 1} of {queuePages.length} • Manual corrections generate active
+              learning signals
             </p>
           </div>
           <div className="review-queue-toolbar-actions">
@@ -3010,6 +3015,16 @@ const ReviewQueueLayout = ({
                 {isSubmitting ? "Submitting…" : "Submit Review"}
               </button>
             </div>
+            <label className="review-queue-field" htmlFor="review-note-input">
+              <span>Reviewer note (saved with decisions and training signals)</span>
+              <textarea
+                id="review-note-input"
+                value={currentNote}
+                onChange={(event) => onCurrentNoteChange(event.target.value)}
+                rows={3}
+                placeholder="Describe what was corrected and why."
+              />
+            </label>
             {submitError && (
               <div className="review-queue-panel-error" role="alert">
                 {submitError}
@@ -3046,6 +3061,7 @@ export function ReviewQueueScreen({
   const { listRef, scrollTop, setScrollTop, viewportHeight } = useQueueViewport(selectedIndex);
   const [overlaysVisible, setOverlaysVisible] = useState(true);
   const [decisions, setDecisions] = useState<Map<string, DecisionValue>>(new Map());
+  const [reviewNotes, setReviewNotes] = useState<Map<string, string>>(new Map());
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -3803,13 +3819,23 @@ export function ReviewQueueScreen({
     setIsSubmitting(true);
     setSubmitError(null);
     try {
-      const payload = Array.from(decisions.entries()).map(([pageId, decisionValue]) => ({
-        pageId,
-        decision: decisionValue === "flag" ? "adjust" : decisionValue,
-      }));
+      const payload = Array.from(decisions.entries()).map(([pageId, decisionValue]) => {
+        const note = reviewNotes.get(pageId)?.trim();
+        return {
+          pageId,
+          decision: decisionValue === "flag" ? "adjust" : decisionValue,
+          ...(note ? { notes: note } : {}),
+        };
+      });
+      const submittedPageIds = payload.map((entry) => entry.pageId);
       const submitResult = await windowRef.asteria.ipc["asteria:submit-review"](runId, payload);
       unwrapIpcResult(submitResult, "Submit review");
       setDecisions(new Map());
+      setReviewNotes((prev) => {
+        const next = new Map(prev);
+        submittedPageIds.forEach((pageId) => next.delete(pageId));
+        return next;
+      });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to submit review";
       setSubmitError(message);
@@ -3879,8 +3905,10 @@ export function ReviewQueueScreen({
     setIsApplyingOverride(true);
     setOverrideError(null);
     const appliedAt = new Date().toISOString();
+    const reviewerNote = reviewNotes.get(currentPage.id)?.trim();
     try {
       const failures: string[] = [];
+      let nextOverrideMessage: string | null = null;
       for (const targetPage of applyTargets) {
         try {
           const result = await applyOverrideChannel(runId, targetPage.id, overrides);
@@ -3899,9 +3927,10 @@ export function ReviewQueueScreen({
             : `${failures[0]} (and ${remainingCount} other error${suffix})`;
         // Log all failures so the full list is visible for debugging.
         console.error("Failed to apply overrides for some pages:", failures);
-        setOverrideError(
-          `Applied with ${failures.length} error${failures.length === 1 ? "" : "s"}: ${failureSummary}`
-        );
+        nextOverrideMessage = `Applied with ${failures.length} error${
+          failures.length === 1 ? "" : "s"
+        }: ${failureSummary}`;
+        setOverrideError(nextOverrideMessage);
       } else {
         setLastOverrideAppliedAt(appliedAt);
         baselineBoxesRef.current = {
@@ -3911,37 +3940,36 @@ export function ReviewQueueScreen({
         baselineRotationRef.current = rotationDeg;
         baselineGuidesRef.current = baselineGridOverrides;
       }
-      if (applyScope !== "page") {
-        const recordTemplateTrainingChannel = getIpcChannel<
-          [runId: string, signal: Record<string, unknown>],
-          void
-        >("asteria:record-template-training");
-        if (recordTemplateTrainingChannel) {
-          try {
-            const result = await recordTemplateTrainingChannel(runId, {
-              templateId: templateKey,
-              scope: applyScope,
-              appliedAt,
-              pages: applyTargets.map((page) => page.id),
-              overrides,
-              sourcePageId: currentPage.id,
-              layoutProfile: currentPage.layoutProfile,
-            });
-            unwrapIpcResult(result, "Record template training");
-          } catch (error) {
-            const message =
-              error instanceof Error ? error.message : "Failed to record template training signal";
-            setOverrideError(appendError(overrideError, `Training signal error: ${message}`));
-          }
+      const recordTemplateTrainingChannel = getIpcChannel<
+        [runId: string, signal: Record<string, unknown>],
+        void
+      >("asteria:record-template-training");
+      if (recordTemplateTrainingChannel) {
+        try {
+          const result = await recordTemplateTrainingChannel(runId, {
+            templateId: templateKey,
+            scope: applyScope,
+            appliedAt,
+            pages: applyTargets.map((page) => page.id),
+            overrides,
+            sourcePageId: currentPage.id,
+            layoutProfile: currentPage.layoutProfile,
+            note: reviewerNote || undefined,
+          });
+          unwrapIpcResult(result, "Record template training");
+        } catch (error) {
+          const message =
+            error instanceof Error ? error.message : "Failed to record template training signal";
+          nextOverrideMessage = appendError(nextOverrideMessage, `Training signal error: ${message}`);
+          setOverrideError(nextOverrideMessage);
         }
       }
       if (applyScope !== "page" && failures.length === 0) {
-        setOverrideError(
-          appendError(
-            overrideError,
-            `Overrides applied to multiple pages. Other pages in this ${applyScope} may show stale data until you refresh the review queue.`
-          )
+        nextOverrideMessage = appendError(
+          nextOverrideMessage,
+          `Overrides applied to multiple pages. Other pages in this ${applyScope} may show stale data until you refresh the review queue.`
         );
+        setOverrideError(nextOverrideMessage);
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to apply override";
@@ -3974,6 +4002,7 @@ export function ReviewQueueScreen({
     setTemplateActionStatus(null);
     setIsTemplateActionPending(true);
     const appliedAt = new Date().toISOString();
+    const reviewerNote = reviewNotes.get(currentPage.id)?.trim();
     const targetCluster =
       templateClusters.find((cluster) => cluster.id === resolvedTemplateId) ?? null;
     const overrides = {
@@ -3994,6 +4023,7 @@ export function ReviewQueueScreen({
         overrides,
         sourcePageId: currentPage.id,
         layoutProfile: currentPage.layoutProfile,
+        note: reviewerNote || undefined,
       });
       unwrapIpcResult(result, "Record template training");
       setTemplateActionStatus(
@@ -4258,6 +4288,7 @@ export function ReviewQueueScreen({
       isSubmitting={isSubmitting}
       submitError={submitError}
       canSubmit={canSubmit}
+      currentNote={currentPage ? (reviewNotes.get(currentPage.id) ?? "") : ""}
       adjustmentMode={adjustmentMode}
       baselineSpacingPx={baselineSpacingPx}
       baselineOffsetPx={baselineOffsetPx}
@@ -4331,6 +4362,19 @@ export function ReviewQueueScreen({
       onReject={handleReject}
       onUndo={handleUndo}
       onSubmit={() => void handleSubmitReview()}
+      onCurrentNoteChange={(note) => {
+        if (!currentPage) return;
+        setReviewNotes((prev) => {
+          const next = new Map(prev);
+          const trimmed = note.trim();
+          if (trimmed.length === 0) {
+            next.delete(currentPage.id);
+          } else {
+            next.set(currentPage.id, note);
+          }
+          return next;
+        });
+      }}
     />
   );
 }

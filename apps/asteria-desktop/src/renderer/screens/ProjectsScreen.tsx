@@ -1,3 +1,4 @@
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { JSX } from "react";
 import type { ProjectSummary, RunProgressEvent } from "../../ipc/contracts.js";
 import { Icon } from "../components/Icon.js";
@@ -28,9 +29,19 @@ export function ProjectsScreen({
   activeRunId,
   activeRunProgress,
 }: Readonly<ProjectsScreenProps>): JSX.Element {
+  const STALE_RUN_AGE_MS = 1000 * 60 * 60 * 24 * 30;
   const isImporting = importState?.status === "working";
   const importMessage = importState?.message;
   const runBlocked = Boolean(activeRunId);
+  const [runsByProject, setRunsByProject] = useState<Record<string, Array<{
+    runId: string;
+    projectId: string;
+    generatedAt?: string;
+    status?: string;
+  }>>>({});
+  const [runsError, setRunsError] = useState<string | null>(null);
+  const [runsLoading, setRunsLoading] = useState(false);
+  const [runOperationByProject, setRunOperationByProject] = useState<Record<string, string>>({});
   const progressTotal = Math.max(1, activeRunProgress?.total ?? 1);
   const progressPercent = activeRunProgress
     ? Math.min(100, Math.round((activeRunProgress.processed / progressTotal) * 100))
@@ -49,8 +60,137 @@ export function ProjectsScreen({
       : importState?.status === "success"
         ? "success"
         : importState?.status === "working"
-          ? "working"
+        ? "working"
           : "info";
+
+  const loadRuns = useCallback(async (): Promise<void> => {
+    const windowRef: typeof globalThis & {
+      asteria?: { ipc?: Record<string, unknown> };
+    } = globalThis;
+    const listRuns = windowRef.asteria?.ipc?.["asteria:list-runs"] as
+      | (() => Promise<import("../../ipc/contracts.js").IpcResult<
+          Array<{ runId: string; projectId: string; generatedAt?: string; status?: string }>
+        >>)
+      | undefined;
+    if (!listRuns) {
+      setRunsByProject({});
+      return;
+    }
+    setRunsLoading(true);
+    try {
+      const result = await listRuns();
+      if (!result.ok) throw new Error(result.error.message);
+      const grouped = result.value.reduce<
+        Record<string, Array<{ runId: string; projectId: string; generatedAt?: string; status?: string }>>
+      >((acc, run) => {
+        const group = acc[run.projectId] ?? [];
+        group.push({
+          runId: run.runId,
+          projectId: run.projectId,
+          generatedAt: run.generatedAt,
+          status: run.status,
+        });
+        acc[run.projectId] = group;
+        return acc;
+      }, {});
+      Object.values(grouped).forEach((group) =>
+        group.sort(
+          (a, b) =>
+            new Date(b.generatedAt ?? 0).getTime() - new Date(a.generatedAt ?? 0).getTime()
+        )
+      );
+      setRunsByProject(grouped);
+      setRunsError(null);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to load run history";
+      setRunsError(message);
+    } finally {
+      setRunsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadRuns();
+  }, [loadRuns]);
+
+  useEffect(() => {
+    if (!activeRunId) return;
+    const intervalId = globalThis.setInterval(() => {
+      void loadRuns();
+    }, 5000);
+    return (): void => {
+      globalThis.clearInterval(intervalId);
+    };
+  }, [activeRunId, loadRuns]);
+
+  const handleDeleteProjectRuns = useCallback(
+    async (projectId: string, staleOnly: boolean): Promise<void> => {
+      const runs = runsByProject[projectId] ?? [];
+      const now = Date.now();
+      const targetRuns = runs.filter((run) => {
+        if (!staleOnly) return run.runId !== activeRunId;
+        const ageMs = now - new Date(run.generatedAt ?? 0).getTime();
+        return ageMs >= STALE_RUN_AGE_MS && run.runId !== activeRunId;
+      });
+      if (targetRuns.length === 0) return;
+      const confirmed = globalThis.confirm(
+        staleOnly
+          ? `Delete ${targetRuns.length} stale run${targetRuns.length === 1 ? "" : "s"} for this project?`
+          : `Delete all ${targetRuns.length} run${targetRuns.length === 1 ? "" : "s"} for this project?`
+      );
+      if (!confirmed) return;
+      const windowRef: typeof globalThis & {
+        asteria?: { ipc?: Record<string, unknown> };
+      } = globalThis;
+      const deleteRun = windowRef.asteria?.ipc?.["asteria:delete-run"] as
+        | ((runId: string) => Promise<import("../../ipc/contracts.js").IpcResult<void>>)
+        | undefined;
+      if (!deleteRun) return;
+      setRunOperationByProject((prev) => ({
+        ...prev,
+        [projectId]: staleOnly ? "Deleting stale runs…" : "Deleting runs…",
+      }));
+      try {
+        for (const run of targetRuns) {
+          const result = await deleteRun(run.runId);
+          if (!result.ok) throw new Error(result.error.message);
+        }
+        setRunOperationByProject((prev) => ({
+          ...prev,
+          [projectId]: `Deleted ${targetRuns.length} run${targetRuns.length === 1 ? "" : "s"}.`,
+        }));
+        await loadRuns();
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Failed to delete project runs";
+        setRunOperationByProject((prev) => ({
+          ...prev,
+          [projectId]: message,
+        }));
+      }
+    },
+    [STALE_RUN_AGE_MS, activeRunId, loadRuns, runsByProject]
+  );
+
+  const runsMetaByProject = useMemo(
+    () =>
+      Object.fromEntries(
+        Object.entries(runsByProject).map(([projectId, runs]) => {
+          const now = Date.now();
+          const staleCount = runs.filter(
+            (run) => now - new Date(run.generatedAt ?? 0).getTime() >= STALE_RUN_AGE_MS
+          ).length;
+          return [
+            projectId,
+            {
+              count: runs.length,
+              staleCount,
+              latest: runs[0],
+            },
+          ];
+        })
+      ),
+    [STALE_RUN_AGE_MS, runsByProject]
+  );
   if (isLoading) {
     return (
       <div className="empty-state">
@@ -183,7 +323,30 @@ export function ProjectsScreen({
       )}
 
       <div style={{ display: "grid", gap: "16px" }}>
-        {projects.map((project) => (
+        {projects.map((project) => {
+          const projectMeta = runsMetaByProject[project.id] as
+            | {
+                count: number;
+                staleCount: number;
+                latest?: { runId: string; generatedAt?: string; status?: string };
+              }
+            | undefined;
+          const runSummaryText = !projectMeta
+            ? runsLoading
+              ? "Loading run history…"
+              : "No tracked runs yet."
+            : `${projectMeta.count} run${projectMeta.count === 1 ? "" : "s"} tracked${
+                projectMeta.staleCount > 0
+                  ? ` • ${projectMeta.staleCount} stale run${projectMeta.staleCount === 1 ? "" : "s"}`
+                  : ""
+              }${
+                projectMeta.latest
+                  ? ` • latest ${projectMeta.latest.runId}${
+                      projectMeta.latest.status ? ` (${projectMeta.latest.status})` : ""
+                    }`
+                  : ""
+              }`;
+          return (
           <div key={project.id} className="card">
             <div
               style={{
@@ -225,6 +388,14 @@ export function ProjectsScreen({
                     </span>
                   )}
                 </div>
+                <div style={{ marginTop: "8px", fontSize: "12px", color: "var(--text-secondary)" }}>
+                  {runSummaryText}
+                </div>
+                {runOperationByProject[project.id] && (
+                  <div style={{ marginTop: "6px", fontSize: "12px", color: "var(--text-secondary)" }}>
+                    {runOperationByProject[project.id]}
+                  </div>
+                )}
               </div>
               <div
                 style={{
@@ -241,12 +412,32 @@ export function ProjectsScreen({
                   <span className="badge badge-info">Processing</span>
                 )}
                 {project.status === "error" && <span className="badge badge-error">Error</span>}
-                <div style={{ display: "flex", gap: "8px" }}>
+                <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", justifyContent: "flex-end" }}>
                   <button
                     className="btn btn-secondary btn-sm"
                     onClick={() => onOpenProject(project.id)}
                   >
-                    Open →
+                    Run history
+                  </button>
+                  <button
+                    className="btn btn-secondary btn-sm"
+                    onClick={() => void handleDeleteProjectRuns(project.id, true)}
+                    disabled={
+                      projectMeta?.staleCount === 0 ||
+                      Boolean(activeRunId && activeRunProgress?.projectId === project.id)
+                    }
+                  >
+                    Delete stale
+                  </button>
+                  <button
+                    className="btn btn-secondary btn-sm"
+                    onClick={() => void handleDeleteProjectRuns(project.id, false)}
+                    disabled={
+                      projectMeta?.count === 0 ||
+                      Boolean(activeRunId && activeRunProgress?.projectId === project.id)
+                    }
+                  >
+                    Delete runs
                   </button>
                   <button
                     className="btn btn-primary btn-sm"
@@ -259,8 +450,14 @@ export function ProjectsScreen({
               </div>
             </div>
           </div>
-        ))}
+          );
+        })}
       </div>
+      {runsError && (
+        <div className="notice notice-error" role="status">
+          {runsError}
+        </div>
+      )}
     </div>
   );
 }

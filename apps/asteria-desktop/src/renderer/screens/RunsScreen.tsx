@@ -1,5 +1,5 @@
 import type { JSX } from "react";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type {
   IpcResult,
   ProjectSummary,
@@ -38,6 +38,10 @@ export function RunsScreen({
   const selectedRun = runs.find((run) => run.runId === selectedRunId);
   const resolvedConfig = runConfig?.resolvedConfig;
   const projectById = new Map(projects.map((project) => [project.id, project]));
+  const hasLiveRun =
+    Object.values(runProgressById ?? {}).filter(
+      (event) => !["complete", "cancelled", "error"].includes(event.stage)
+    ).length > 0;
 
   const formatStageLabel = (stage: string): string =>
     stage
@@ -46,7 +50,7 @@ export function RunsScreen({
       .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
       .join(" ");
 
-  const refreshRuns = async (): Promise<void> => {
+  const refreshRuns = useCallback(async (): Promise<void> => {
     const windowRef: typeof globalThis & { asteria?: { ipc?: Record<string, unknown> } } =
       globalThis;
     if (!windowRef.asteria?.ipc) return;
@@ -60,7 +64,7 @@ export function RunsScreen({
     }
     setError(null);
     setRuns(unwrapIpcResultOr(data, []));
-  };
+  }, []);
 
   const handleDeleteRun = async (run: RunSummary): Promise<void> => {
     const projectName = projectById.get(run.projectId)?.name ?? run.projectId;
@@ -261,6 +265,16 @@ export function RunsScreen({
       cancelled = true;
     };
   }, [selectedRunDir, selectedRunId]);
+
+  useEffect(() => {
+    if (!hasLiveRun) return;
+    const intervalId = globalThis.setInterval(() => {
+      void refreshRuns();
+    }, 5000);
+    return (): void => {
+      globalThis.clearInterval(intervalId);
+    };
+  }, [hasLiveRun, refreshRuns]);
 
   if (isLoading) {
     return (

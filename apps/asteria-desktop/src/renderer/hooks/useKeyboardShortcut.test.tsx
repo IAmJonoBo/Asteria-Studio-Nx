@@ -34,6 +34,42 @@ describe("useKeyboardShortcuts", () => {
 
     expect(screen.getByTestId("log")).toHaveTextContent("a,b");
   });
+
+  it("ignores plain-key shortcuts while typing in editable fields", async () => {
+    const user = userEvent.setup();
+
+    function EditableHarness(): JSX.Element {
+      const [log, setLog] = useState<string[]>([]);
+      useKeyboardShortcuts([
+        {
+          key: "a",
+          handler: (): void => setLog((prev) => [...prev, "a"]),
+          description: "A",
+        },
+        {
+          key: "b",
+          ctrlKey: true,
+          handler: (): void => setLog((prev) => [...prev, "b"]),
+          description: "B",
+        },
+      ]);
+
+      return (
+        <div>
+          <textarea aria-label="Review notes" />
+          <div data-testid="editable-log">{log.join(",")}</div>
+        </div>
+      );
+    }
+
+    render(<EditableHarness />);
+    await user.click(screen.getByRole("textbox", { name: /review notes/i }));
+    await user.keyboard("a");
+    expect(screen.getByTestId("editable-log")).toHaveTextContent("");
+
+    await user.keyboard("{Control>}b{/Control}");
+    expect(screen.getByTestId("editable-log")).toHaveTextContent("b");
+  });
 });
 
 describe("useKeyboardShortcut", () => {

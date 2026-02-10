@@ -1250,7 +1250,20 @@ export function registerIpcHandlers(): void {
         const reviewPath = getRunReviewQueuePath(runDir);
         try {
           const data = await fs.readFile(reviewPath, "utf-8");
-          return JSON.parse(data) as ReviewQueue;
+          const queue = JSON.parse(data) as ReviewQueue;
+          return {
+            ...queue,
+            items: queue.items.map((item) => ({
+              ...item,
+              previews: item.previews?.map((preview) => {
+                if (!preview.path || path.isAbsolute(preview.path)) return preview;
+                return {
+                  ...preview,
+                  path: path.join(runDir, preview.path),
+                };
+              }),
+            })),
+          };
         } catch (error) {
           console.warn("[ipc] fetch-review-queue failed", { runId, error });
           return {
