@@ -22,9 +22,10 @@ Use quarantine only when deletion would break an active release or an in-flight 
 
 Add one entry per exception. Entries must be removed within the target removal date.
 
-| Item                           | Location                                         | Reason                             | Tracking Issue | Target Removal | Owner  |
-| ------------------------------ | ------------------------------------------------ | ---------------------------------- | -------------- | -------------- | ------ |
-| _Example: Deprecated exporter_ | apps/asteria-desktop/src/main/exporter-legacy.ts | Needed for rollback during release | GH-1234        | 2026-03-15     | @owner |
+| Item | Location | Reason | Tracking Issue | Target Removal | Owner |
+| ---- | -------- | ------ | -------------- | -------------- | ----- |
+
+_No active quarantine entries. Add a row only when an exception is approved._
 
 ## Review cadence
 

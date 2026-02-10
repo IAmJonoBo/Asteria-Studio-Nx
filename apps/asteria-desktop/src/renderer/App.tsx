@@ -9,6 +9,7 @@ import { RunsScreen, MonitorScreen, ExportsScreen, SettingsScreen } from "./scre
 import { useTheme } from "./hooks/useTheme.js";
 import { useKeyboardShortcut, useKeyboardShortcuts } from "./hooks/useKeyboardShortcut.js";
 import { unwrapIpcResult, unwrapIpcResultOr } from "./utils/ipc.js";
+import { isUiPreviewModeEnabled } from "./utils/previewMode.js";
 import {
   formatStageLabel,
   getOverallProgressPercent,
@@ -35,18 +36,6 @@ const safePrompt = (message: string, defaultValue?: string): string | null => {
 };
 
 const RUN_STATUS_SEPARATOR = "•";
-
-const isUiPreviewModeEnabled = (): boolean => {
-  const windowRef = globalThis as typeof globalThis & { location?: { search?: string } };
-  const search = windowRef.location?.search ?? "";
-  if (!search) return false;
-  try {
-    const value = new URLSearchParams(search).get("uiPreview");
-    return value === "1" || value === "true";
-  } catch {
-    return false;
-  }
-};
 
 export function App(): JSX.Element {
   const [theme, setTheme] = useTheme();

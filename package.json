@@ -52,7 +52,8 @@
     "validate": "pnpm ci:quality",
     "validate:fix": "pnpm trunk:fmt && pnpm ci:quality",
     "validate:affected": "pnpm affected:lint && pnpm affected:test && pnpm affected:build",
-    "hooks:setup": "git config core.hooksPath .githooks"
+    "hooks:setup": "git config core.hooksPath .githooks",
+    "ci:quarantine": "node tools/nx/run.mjs run workspace-tools:dead-code-quarantine-check"
   },
   "packageManager": "pnpm@10.29.2",
   "engines": {

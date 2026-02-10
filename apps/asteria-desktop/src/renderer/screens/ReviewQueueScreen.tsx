@@ -20,6 +20,7 @@ import { applyGuideOverrides } from "../guides/overrides.js";
 import { snapBoxWithSources, getBoxSnapCandidates } from "../utils/snapping.js";
 import type { SnapEdge, SnapSourceConfig } from "../utils/snapping.js";
 import { unwrapIpcResult } from "../utils/ipc.js";
+import { isUiPreviewModeEnabled } from "../utils/previewMode.js";
 import { Icon, type IconName } from "../components/Icon.js";
 
 type PreviewRef = {
@@ -1121,20 +1122,6 @@ const getReasonInfo = (code: string): ReasonInfo => {
       action: "Review manually.",
     }
   );
-};
-
-const UI_PREVIEW_QUERY_PARAM = "uiPreview";
-
-const isUiPreviewModeEnabled = (): boolean => {
-  const windowRef = globalThis as typeof globalThis & { location?: { search?: string } };
-  const search = windowRef.location?.search ?? "";
-  if (!search) return false;
-  try {
-    const previewValue = new URLSearchParams(search).get(UI_PREVIEW_QUERY_PARAM);
-    return previewValue === "1" || previewValue === "true";
-  } catch {
-    return false;
-  }
 };
 
 const toPreviewDataUrl = (title: string, tone: "warning" | "critical" | "info"): string => {
