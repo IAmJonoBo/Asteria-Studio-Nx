@@ -3,7 +3,10 @@
   "name": "asteria-desktop",
   "projectType": "application",
   "sourceRoot": "apps/asteria-desktop/src",
-  "tags": ["scope:desktop", "type:app"],
+  "tags": [
+    "scope:desktop",
+    "type:app"
+  ],
   "targets": {
     "lint": {
       "executor": "nx:run-commands",
@@ -28,7 +31,9 @@
     },
     "test": {
       "executor": "nx:run-commands",
-      "outputs": ["{workspaceRoot}/apps/asteria-desktop/coverage"],
+      "outputs": [
+        "{workspaceRoot}/apps/asteria-desktop/coverage"
+      ],
       "options": {
         "cwd": "apps/asteria-desktop",
         "command": "pnpm test"
@@ -47,7 +52,9 @@
     },
     "build:main": {
       "executor": "nx:run-commands",
-      "outputs": ["{workspaceRoot}/apps/asteria-desktop/dist/main"],
+      "outputs": [
+        "{workspaceRoot}/apps/asteria-desktop/dist/main"
+      ],
       "options": {
         "cwd": "apps/asteria-desktop",
         "command": "pnpm build:main"
@@ -69,7 +76,9 @@
     },
     "golden": {
       "executor": "nx:run-commands",
-      "outputs": ["{workspaceRoot}/.golden-artifacts"],
+      "outputs": [
+        "{workspaceRoot}/.golden-artifacts"
+      ],
       "options": {
         "cwd": "apps/asteria-desktop",
         "command": "pnpm golden:test"
@@ -87,6 +96,20 @@
       "options": {
         "cwd": "apps/asteria-desktop",
         "command": "pnpm package:verify"
+      }
+    },
+    "e2e:review-pane": {
+      "executor": "nx:run-commands",
+      "options": {
+        "cwd": "apps/asteria-desktop",
+        "command": "pnpm test:e2e -- review-pane.spec.ts"
+      }
+    },
+    "quality-gate:review-pane": {
+      "executor": "nx:run-commands",
+      "options": {
+        "cwd": "apps/asteria-desktop",
+        "command": "pnpm test -- src/renderer/screens/ReviewQueueScreen.test.tsx src/renderer/ReviewQueue.keyboard.test.tsx && pnpm test:e2e -- review-pane.spec.ts"
       }
     }
   }

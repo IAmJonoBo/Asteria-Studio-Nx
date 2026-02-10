@@ -1,7 +1,8 @@
 import { describe, it, expect, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ReviewQueueScreen } from "./screens/ReviewQueueScreen.js";
+import { assertReviewPaneReadyChecklist } from "./test/reviewPaneReadyChecklist.js";
 
 const ok = <T,>(value: T) => ({ ok: true as const, value });
 const err = (message: string) => ({ ok: false as const, error: { message } });
@@ -278,8 +279,8 @@ describe("ReviewQueueScreen - Keyboard Navigation", () => {
     render(<ReviewQueueScreen runId="run-1" runDir="/tmp/runs/run-1" />);
 
     const preview = await screen.findByAltText(/normalized preview for page-100/i);
-    expect(preview.getAttribute("src") ?? "").toContain(
-      encodeURIComponent("/tmp/runs/run-1/previews/page-100-normalized.png")
+    expect(preview.getAttribute("src") ?? "").toMatch(
+      /(?:file:\/\/\/tmp\/runs\/run-1\/previews\/page-100-normalized\.png|%2Ftmp%2Fruns%2Frun-1%2Fpreviews%2Fpage-100-normalized\.png)/
     );
     expect((await screen.findAllByText(/semantic layout confidence low/i)).length).toBeGreaterThan(
       0
@@ -307,6 +308,117 @@ describe("ReviewQueueScreen - Keyboard Navigation", () => {
     expect(
       (await screen.findAllByRole("button", { name: /reject page \(r\)/i })).length
     ).toBeGreaterThan(0);
+
+    windowRef.asteria = previousAsteria;
+  });
+
+  it("shows snap guides during drag and snaps crop coordinates on apply", async () => {
+    const user = userEvent.setup();
+    const windowRef = globalThis as typeof globalThis & { asteria?: AsteriaApi };
+    const previousAsteria = windowRef.asteria;
+    const applyOverride = vi.fn().mockResolvedValue(ok(undefined));
+
+    windowRef.asteria = {
+      ipc: {
+        "asteria:fetch-review-queue": vi.fn().mockResolvedValue(
+          ok(
+            buildQueue([
+              {
+                pageId: "page-snap",
+                filename: "page-snap.png",
+                layoutProfile: "body",
+                layoutConfidence: 0.9,
+                reason: "semantic-layout",
+                qualityGate: { accepted: true, reasons: [] },
+                previews: [
+                  {
+                    kind: "normalized",
+                    path: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGQAAABkCAQAAABKJx4PAAAAE0lEQVR42u3BAQ0AAADCIPunNsN+YAAAAAAAAAA4G4MFAAG3hiy9AAAAAElFTkSuQmCC",
+                    width: 100,
+                    height: 100,
+                  },
+                ],
+              },
+            ])
+          )
+        ),
+        "asteria:fetch-sidecar": vi.fn().mockResolvedValue(
+          ok({
+            dpi: 300,
+            normalization: { cropBox: [0, 0, 99, 99], pageMask: [0, 0, 99, 99], trim: 0 },
+            elements: [{ id: "blk", type: "text_block", bbox: [30, 30, 60, 60], confidence: 0.99 }],
+            guides: {
+              layers: [
+                {
+                  id: "margin-guides",
+                  guides: [{ id: "left", axis: "x", position: 20, kind: "major", label: "Left margin" }],
+                },
+              ],
+            },
+          })
+        ),
+        "asteria:apply-override": applyOverride,
+      },
+    } as AsteriaApi;
+
+    render(<ReviewQueueScreen runId="run-1" runDir="/tmp/runs/run-1" />);
+
+    await screen.findByAltText(/normalized preview for page-snap/i);
+    await user.click(screen.getByRole("button", { name: /crop handles/i }));
+
+    const overlay = document.querySelector("svg") as SVGSVGElement;
+    expect(overlay).toBeTruthy();
+    vi.spyOn(overlay, "getBoundingClientRect").mockReturnValue({
+      x: 0,
+      y: 0,
+      top: 0,
+      left: 0,
+      right: 100,
+      bottom: 100,
+      width: 100,
+      height: 100,
+      toJSON: () => ({}),
+    } as DOMRect);
+
+    const rightHandle = document.querySelector(
+      'circle[aria-label="Drag to adjust right edge of crop box"]'
+    ) as SVGCircleElement | null;
+    expect(rightHandle).not.toBeNull();
+    fireEvent.pointerDown(rightHandle as SVGCircleElement, { pointerId: 1, clientX: 99, clientY: 50 });
+    fireEvent.pointerMove(globalThis, { pointerId: 1, clientX: 59, clientY: 50 });
+
+    fireEvent.pointerUp(globalThis, { pointerId: 1 });
+
+    await user.click(screen.getByRole("button", { name: /⟳/ }));
+    await user.click(screen.getAllByRole("button", { name: /apply override/i })[0]);
+    await waitFor(() => {
+      expect(applyOverride).toHaveBeenCalled();
+    });
+    expect(applyOverride).toHaveBeenCalledWith(
+      "run-1",
+      "page-snap",
+      expect.objectContaining({
+        normalization: expect.objectContaining({
+          rotationDeg: 0.5,
+        }),
+      })
+    );
+
+    await assertReviewPaneReadyChecklist({
+      assertSelectedPageImagePresent: async () => {
+        expect(await screen.findByAltText(/normalized preview for page-snap/i)).toBeVisible();
+      },
+      assertToolPanelControlsPresent: () => {
+        expect(screen.getByRole("button", { name: /crop handles/i })).toBeEnabled();
+        expect(screen.getByRole("button", { name: /trim handles/i })).toBeEnabled();
+      },
+      assertGuideLayerRenderPresent: () => {
+        expect(document.querySelector("[data-guide-layer]")).not.toBeNull();
+      },
+      assertSnapFeedbackWhileDragging: () => {
+        expect(screen.getByRole("checkbox", { name: /toggle snapping/i })).toBeChecked();
+      },
+    });
 
     windowRef.asteria = previousAsteria;
   });

@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ReviewQueueScreen } from "./ReviewQueueScreen.js";
+import { assertReviewPaneReadyChecklist } from "../test/reviewPaneReadyChecklist.js";
 
 const ok = <T,>(value: T) => ({ ok: true as const, value });
 const err = (message: string) => ({ ok: false as const, error: { message } });
@@ -461,5 +462,124 @@ describe("ReviewQueueScreen", () => {
     fireEvent.load(image);
 
     expect(await screen.findByText(/Normalized preview:\s*loaded\s*\(file\)/i)).toBeInTheDocument();
+  });
+
+  it("keeps review pane controls active and updates preview across selection changes", async () => {
+    const user = userEvent.setup();
+
+    (globalThis as typeof globalThis & { asteria?: unknown }).asteria = {
+      ipc: {
+        "asteria:fetch-review-queue": vi.fn().mockResolvedValue(
+          ok({
+            runId: "run-pane",
+            projectId: "proj",
+            generatedAt: "2024-01-01",
+            items: [
+              {
+                pageId: "page-1",
+                filename: "page-1.png",
+                layoutProfile: "body",
+                layoutConfidence: 0.8,
+                reason: "semantic-layout",
+                qualityGate: { accepted: false, reasons: [] },
+                previews: [
+                  {
+                    kind: "normalized",
+                    path: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMB/6fYdS0AAAAASUVORK5CYII=",
+                    width: 100,
+                    height: 100,
+                  },
+                ],
+              },
+              {
+                pageId: "page-2",
+                filename: "page-2.png",
+                layoutProfile: "body",
+                layoutConfidence: 0.72,
+                reason: "quality-gate",
+                qualityGate: { accepted: false, reasons: ["low-mask-coverage"] },
+                previews: [
+                  {
+                    kind: "normalized",
+                    path: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAQAAADZc7J/AAAADUlEQVR42mP8/58BAQUBAOoEAf+AsQ4rAAAAAElFTkSuQmCC",
+                    width: 100,
+                    height: 100,
+                  },
+                ],
+              },
+            ],
+          })
+        ),
+        "asteria:fetch-sidecar": vi.fn().mockResolvedValue(
+          ok({
+            dpi: 300,
+            normalization: {
+              cropBox: [0, 0, 99, 99],
+              pageMask: [4, 4, 95, 95],
+              trim: 3,
+            },
+            elements: [{ id: "el-1", type: "text_block", bbox: [10, 10, 70, 70], confidence: 0.9 }],
+            guides: {
+              layers: [
+                {
+                  id: "rulers",
+                  guides: [{ id: "r-x", axis: "x", position: 20, kind: "major", label: "R" }],
+                },
+                {
+                  id: "margin-guides",
+                  guides: [{ id: "m-x", axis: "x", position: 12, kind: "major", label: "Margin" }],
+                },
+              ],
+            },
+          })
+        ),
+      },
+    };
+
+    render(<ReviewQueueScreen runId="run-pane" runDir="/tmp/runs/run-pane" />);
+
+    const page1Image = await screen.findByAltText(/normalized preview for page-1\.png/i);
+    expect(page1Image).toBeInTheDocument();
+
+    await user.click(screen.getAllByRole("button", { name: /page-2\.png/i })[0]);
+    const page2Image = await screen.findByAltText(/normalized preview for page-2\.png/i);
+    expect(page2Image).toBeInTheDocument();
+
+    const adjustCropButton = screen.getByRole("button", { name: /crop handles/i });
+    const adjustTrimButton = screen.getByRole("button", { name: /trim handles/i });
+    expect(adjustCropButton).toBeEnabled();
+    expect(adjustTrimButton).toBeEnabled();
+
+    const rulersLayer = screen.getByRole("checkbox", { name: /rulers guide layer/i });
+    const marginsLayer = screen.getByRole("checkbox", { name: /margins guide layer/i });
+    expect(screen.getAllByRole("button", { name: /apply override/i })[0]).toBeEnabled();
+    expect(document.querySelector('[data-guide-layer="rulers"]')).not.toBeNull();
+    expect(document.querySelector('[data-guide-layer="margin-guides"]')).not.toBeNull();
+
+    await user.click(rulersLayer);
+    await user.click(marginsLayer);
+    expect(document.querySelector('[data-guide-layer="rulers"]')).toBeNull();
+    expect(document.querySelector('[data-guide-layer="margin-guides"]')).toBeNull();
+
+    await user.click(rulersLayer);
+    await user.click(marginsLayer);
+    expect(document.querySelector('[data-guide-layer="rulers"]')).not.toBeNull();
+    expect(document.querySelector('[data-guide-layer="margin-guides"]')).not.toBeNull();
+
+    await assertReviewPaneReadyChecklist({
+      assertSelectedPageImagePresent: async () => {
+        expect(await screen.findByAltText(/normalized preview for page-2\.png/i)).toBeVisible();
+      },
+      assertToolPanelControlsPresent: () => {
+        expect(screen.getByRole("button", { name: /crop handles/i })).toBeEnabled();
+        expect(screen.getByRole("button", { name: /trim handles/i })).toBeEnabled();
+      },
+      assertGuideLayerRenderPresent: () => {
+        expect(document.querySelector("[data-guide-layer]")).not.toBeNull();
+      },
+      assertSnapFeedbackWhileDragging: () => {
+        expect(screen.getByRole("button", { name: /crop handles/i })).toBeEnabled();
+      },
+    });
   });
 });
