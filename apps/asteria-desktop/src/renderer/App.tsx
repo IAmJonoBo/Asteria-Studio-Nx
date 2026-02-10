@@ -267,7 +267,9 @@ export function App(): JSX.Element {
   const isRunPaused = activeRunProgress?.stage === "paused";
   const runProgressTotal = progressAnchorEvent?.total ?? activeRunProgress?.total ?? 0;
   const hasRunProgressTotal = runProgressTotal > 0;
-  const runProgressPercent = progressAnchorEvent ? getOverallProgressPercent(progressAnchorEvent) : 0;
+  const runProgressPercent = progressAnchorEvent
+    ? getOverallProgressPercent(progressAnchorEvent)
+    : 0;
   const runThroughput = progressAnchorEvent?.throughput ?? activeRunProgress?.throughput ?? null;
   const runRemaining = Math.max(
     0,

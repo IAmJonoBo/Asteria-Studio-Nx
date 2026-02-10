@@ -107,9 +107,7 @@ const api: IpcChannels = {
     validatePipelineConfigOverrides(overrides as Record<string, unknown>);
     return safeInvoke("asteria:save-project-config", projectId, overrides);
   },
-  "asteria:get-run-config": async (
-    runId: Parameters<IpcChannels["asteria:get-run-config"]>[0]
-  ) => {
+  "asteria:get-run-config": async (runId: Parameters<IpcChannels["asteria:get-run-config"]>[0]) => {
     validateRunId(runId);
     return safeInvoke("asteria:get-run-config", runId);
   },

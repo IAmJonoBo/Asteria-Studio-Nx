@@ -648,10 +648,7 @@ export interface IpcChannels {
   "asteria:cancel-run-and-delete": (_runId: string) => Promise<IpcResult<void>>;
   "asteria:pause-run": (_runId: string) => Promise<IpcResult<void>>;
   "asteria:resume-run": (_runId: string) => Promise<IpcResult<void>>;
-  "asteria:fetch-page": (
-    _runId: string,
-    _pageId: string
-  ) => Promise<IpcResult<PageData>>;
+  "asteria:fetch-page": (_runId: string, _pageId: string) => Promise<IpcResult<PageData>>;
   "asteria:fetch-sidecar": (
     _runId: string,
     _pageId: string

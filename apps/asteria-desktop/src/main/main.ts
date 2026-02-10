@@ -92,12 +92,13 @@ const registerAssetProtocol = (allowedRoots: string[]): void => {
     }
   };
 
-  const rootEntriesPromise = Promise.all(roots.map((root) => resolveRealOrNormalizedPath(root))).then(
-    (resolvedRoots) =>
-      resolvedRoots.map((root) => ({
-        root,
-        rootWithSep: root.endsWith(path.sep) ? root : `${root}${path.sep}`,
-      }))
+  const rootEntriesPromise = Promise.all(
+    roots.map((root) => resolveRealOrNormalizedPath(root))
+  ).then((resolvedRoots) =>
+    resolvedRoots.map((root) => ({
+      root,
+      rootWithSep: root.endsWith(path.sep) ? root : `${root}${path.sep}`,
+    }))
   );
 
   protocol.registerFileProtocol("asteria", (request, callback) => {
@@ -125,7 +126,8 @@ const registerAssetProtocol = (allowedRoots: string[]): void => {
 
         const rootEntries = await rootEntriesPromise;
         const isAllowedPath = rootEntries.some(
-          ({ root, rootWithSep }) => targetRealPath === root || targetRealPath.startsWith(rootWithSep)
+          ({ root, rootWithSep }) =>
+            targetRealPath === root || targetRealPath.startsWith(rootWithSep)
         );
         if (!isAllowedPath) {
           callback({ error: -10 });

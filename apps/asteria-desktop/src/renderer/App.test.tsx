@@ -36,7 +36,9 @@ describe("App", () => {
 
     expect(await screen.findByRole("heading", { name: /projects/i, level: 1 })).toBeInTheDocument();
     expect(screen.getByText(/manage your corpus libraries/i)).toBeInTheDocument();
-    expect(await screen.findByText(/Mind, Myth and Magick/i, {}, { timeout: 10_000 })).toBeInTheDocument();
+    expect(
+      await screen.findByText(/Mind, Myth and Magick/i, {}, { timeout: 10_000 })
+    ).toBeInTheDocument();
 
     windowRef.asteria = previousAsteria;
   });
@@ -109,7 +111,11 @@ describe("App", () => {
 
     render(<App />);
 
-    const startRunButton = await screen.findByRole("button", { name: /start run/i }, { timeout: 10_000 });
+    const startRunButton = await screen.findByRole(
+      "button",
+      { name: /start run/i },
+      { timeout: 10_000 }
+    );
     await user.click(startRunButton);
 
     expect(scanCorpus).toHaveBeenCalledWith("/projects/mind-myth-and-magick/input/raw", {
@@ -195,7 +201,11 @@ describe("App", () => {
 
     render(<App />);
 
-    const startRunButton = await screen.findByRole("button", { name: /start run/i }, { timeout: 10_000 });
+    const startRunButton = await screen.findByRole(
+      "button",
+      { name: /start run/i },
+      { timeout: 10_000 }
+    );
     await user.click(startRunButton);
 
     expect(startRun).toHaveBeenCalledWith(
@@ -859,7 +869,11 @@ describe("App", () => {
 
     render(<App />);
 
-    const startRunButton = await screen.findByRole("button", { name: /start run/i }, { timeout: 10_000 });
+    const startRunButton = await screen.findByRole(
+      "button",
+      { name: /start run/i },
+      { timeout: 10_000 }
+    );
     await user.click(startRunButton);
 
     expect(alertMock).toHaveBeenCalledWith("Scan corpus: scan failed");

@@ -486,13 +486,11 @@ describe("IPC handler registration", () => {
     const outputDir = path.join(process.cwd(), "pipeline-results");
     const runDir = getRunDir(outputDir, "run-1");
     const result = unwrap(
-      await (
-        handler as (
-          event: unknown,
-          runId: string,
-          formats: Array<"png">
-        ) => Promise<unknown>
-      )({}, "run-1", ["png"])
+      await (handler as (event: unknown, runId: string, formats: Array<"png">) => Promise<unknown>)(
+        {},
+        "run-1",
+        ["png"]
+      )
     );
     expect(String(result)).toContain(path.join(runDir, "exports"));
   });
@@ -566,13 +564,11 @@ describe("IPC handler registration", () => {
       throw new Error("sharp-fail");
     });
 
-    await (
-      handler as (
-        event: unknown,
-        runId: string,
-        formats: Array<"tiff">
-      ) => Promise<unknown>
-    )({}, "run-warn", ["tiff"]);
+    await (handler as (event: unknown, runId: string, formats: Array<"tiff">) => Promise<unknown>)(
+      {},
+      "run-warn",
+      ["tiff"]
+    );
 
     expect(warnSpy).toHaveBeenCalled();
   });
@@ -583,13 +579,11 @@ describe("IPC handler registration", () => {
     expect(handler).toBeDefined();
 
     const result = unwrap(
-      await (
-        handler as (
-          event: unknown,
-          runId: string,
-          pageId: string
-        ) => Promise<unknown>
-      )({}, "run-1", "p99")
+      await (handler as (event: unknown, runId: string, pageId: string) => Promise<unknown>)(
+        {},
+        "run-1",
+        "p99"
+      )
     );
 
     expect(result).toMatchObject({ id: "p99", filename: "page-p99.png" });
@@ -603,13 +597,11 @@ describe("IPC handler registration", () => {
     const runDir = getRunDir(path.join(process.cwd(), "pipeline-results"), "run-1");
 
     const result = unwrap(
-      await (
-        handler as (
-          event: unknown,
-          runId: string,
-          pageId: string
-        ) => Promise<unknown>
-      )({}, "run-1", "p1")
+      await (handler as (event: unknown, runId: string, pageId: string) => Promise<unknown>)(
+        {},
+        "run-1",
+        "p1"
+      )
     );
 
     expect(result).toMatchObject({ id: "p1", filename: "page.png" });
@@ -624,13 +616,11 @@ describe("IPC handler registration", () => {
 
     const runDir = getRunDir(path.join(process.cwd(), "pipeline-results"), "run-9");
     const result = unwrap(
-      await (
-        handler as (
-          event: unknown,
-          runId: string,
-          pageId: string
-        ) => Promise<unknown>
-      )({}, "run-9", "p9")
+      await (handler as (event: unknown, runId: string, pageId: string) => Promise<unknown>)(
+        {},
+        "run-9",
+        "p9"
+      )
     );
 
     expect(result).toMatchObject({ pageId: "p9" });
@@ -644,13 +634,11 @@ describe("IPC handler registration", () => {
     readFile.mockResolvedValueOnce(JSON.stringify({ source: {} }));
 
     const result = unwrap(
-      await (
-        handler as (
-          event: unknown,
-          runId: string,
-          pageId: string
-        ) => Promise<unknown>
-      )({}, "run-1", "p1")
+      await (handler as (event: unknown, runId: string, pageId: string) => Promise<unknown>)(
+        {},
+        "run-1",
+        "p1"
+      )
     );
 
     expect(result).toMatchObject({ id: "p1", filename: "p1" });
@@ -666,13 +654,11 @@ describe("IPC handler registration", () => {
 
     const runDir = getRunDir(path.join(process.cwd(), "pipeline-results"), "run-9");
     const result = unwrap(
-      await (
-        handler as (
-          event: unknown,
-          runId: string,
-          pageId: string
-        ) => Promise<unknown>
-      )({}, "run-9", "p1")
+      await (handler as (event: unknown, runId: string, pageId: string) => Promise<unknown>)(
+        {},
+        "run-9",
+        "p1"
+      )
     );
 
     expect(result).toMatchObject({ pageId: "p1" });
@@ -688,13 +674,11 @@ describe("IPC handler registration", () => {
     const outputDir = path.join(process.cwd(), "pipeline-results");
     const runDir = getRunDir(outputDir, "run-miss");
     const result = unwrap(
-      await (
-        handler as (
-          event: unknown,
-          runId: string,
-          pageId: string
-        ) => Promise<unknown>
-      )({}, "run-miss", "p3")
+      await (handler as (event: unknown, runId: string, pageId: string) => Promise<unknown>)(
+        {},
+        "run-miss",
+        "p3"
+      )
     );
 
     expect(result).toBeNull();
@@ -936,13 +920,11 @@ describe("IPC handler registration", () => {
       .mockRejectedValueOnce(new Error("missing"));
 
     const result = unwrap(
-      await (
-        handler as (
-          event: unknown,
-          runId: string,
-          formats: Array<"png">
-        ) => Promise<unknown>
-      )({}, "run-missing", ["png"])
+      await (handler as (event: unknown, runId: string, formats: Array<"png">) => Promise<unknown>)(
+        {},
+        "run-missing",
+        ["png"]
+      )
     );
 
     expect(String(result)).toContain("exports");
@@ -994,10 +976,7 @@ describe("IPC handler registration", () => {
     const outputDir = path.join(process.cwd(), "pipeline-results");
     const runDir = getRunDir(outputDir, "run-1");
     const result = unwrap(
-      await (handler as (event: unknown, runId: string) => Promise<unknown>)(
-        {},
-        "run-1"
-              )
+      await (handler as (event: unknown, runId: string) => Promise<unknown>)({}, "run-1")
     );
 
     expect(result).toMatchObject({ runId: "run-1", projectId: "proj" });
@@ -1020,10 +999,7 @@ describe("IPC handler registration", () => {
     const outputDir = path.join(process.cwd(), "pipeline-results");
     const runDir = getRunDir(outputDir, "run-5");
     const result = unwrap(
-      await (handler as (event: unknown, runId: string) => Promise<unknown>)(
-        {},
-        "run-5"
-              )
+      await (handler as (event: unknown, runId: string) => Promise<unknown>)({}, "run-5")
     );
 
     expect(result).toMatchObject({ runId: "run-5", projectId: "proj" });
@@ -1039,10 +1015,7 @@ describe("IPC handler registration", () => {
       .mockRejectedValueOnce(new Error("missing"));
 
     const result = unwrap(
-      await (handler as (event: unknown, runId: string) => Promise<unknown>)(
-        {},
-        "run-2"
-              )
+      await (handler as (event: unknown, runId: string) => Promise<unknown>)({}, "run-2")
     );
 
     expect(result).toMatchObject({ runId: "run-2", items: [] });
@@ -1054,13 +1027,11 @@ describe("IPC handler registration", () => {
     expect(handler).toBeDefined();
 
     unwrap(
-      await (
-        handler as (
-          event: unknown,
-          runId: string,
-          decisions: unknown[]
-        ) => Promise<unknown>
-      )({}, "run-3", [{ pageId: "p1", decision: "accept" }])
+      await (handler as (event: unknown, runId: string, decisions: unknown[]) => Promise<unknown>)(
+        {},
+        "run-3",
+        [{ pageId: "p1", decision: "accept" }]
+      )
     );
   });
 
@@ -1075,13 +1046,11 @@ describe("IPC handler registration", () => {
     const trainingPageDir = path.join(trainingDir, "page");
     const trainingTemplateDir = path.join(trainingDir, "template");
 
-    await (
-      handler as (
-        event: unknown,
-        runId: string,
-        decisions: unknown[]
-      ) => Promise<void>
-    )({}, "run-train-1", [{ pageId: "page1", decision: "accept" }]);
+    await (handler as (event: unknown, runId: string, decisions: unknown[]) => Promise<void>)(
+      {},
+      "run-train-1",
+      [{ pageId: "page1", decision: "accept" }]
+    );
 
     expect(mkdir).toHaveBeenCalledWith(path.join(runDir, "reviews"), { recursive: true });
     expect(mkdir).toHaveBeenCalledWith(trainingPageDir, { recursive: true });
@@ -1107,13 +1076,11 @@ describe("IPC handler registration", () => {
 
     const outputDir = path.join(process.cwd(), "pipeline-results");
     const runDir = getRunDir(outputDir, "run-train-2");
-    await (
-      handler as (
-        event: unknown,
-        runId: string,
-        decisions: unknown[]
-      ) => Promise<void>
-    )({}, "run-train-2", [{ pageId: "page1", decision: "accept", notes: "looks good" }]);
+    await (handler as (event: unknown, runId: string, decisions: unknown[]) => Promise<void>)(
+      {},
+      "run-train-2",
+      [{ pageId: "page1", decision: "accept", notes: "looks good" }]
+    );
 
     const writeCall = writeFile.mock.calls.find(
       (call) => String(call[0]).includes("training/page") && String(call[0]).includes("page1.json")
@@ -1194,13 +1161,11 @@ describe("IPC handler registration", () => {
 
     const outputDir = path.join(process.cwd(), "pipeline-results");
     const runDir = getRunDir(outputDir, "run-grid");
-    await (
-      handler as (
-        event: unknown,
-        runId: string,
-        decisions: unknown[]
-      ) => Promise<void>
-    )({}, "run-grid", [{ pageId: "page-10", decision: "adjust", overrides }]);
+    await (handler as (event: unknown, runId: string, decisions: unknown[]) => Promise<void>)(
+      {},
+      "run-grid",
+      [{ pageId: "page-10", decision: "adjust", overrides }]
+    );
 
     const sidecarWrite = writeFile.mock.calls.find(
       (call) =>
@@ -1265,16 +1230,14 @@ describe("IPC handler registration", () => {
       .mockResolvedValueOnce(JSON.stringify(sidecar2)) // page2 sidecar
       .mockRejectedValueOnce(new Error("no override")); // page2 override (fails)
 
-    await (
-      handler as (
-        event: unknown,
-        runId: string,
-        decisions: unknown[]
-      ) => Promise<void>
-    )({}, "run-train-3", [
-      { pageId: "page1", decision: "accept" },
-      { pageId: "page2", decision: "accept" },
-    ]);
+    await (handler as (event: unknown, runId: string, decisions: unknown[]) => Promise<void>)(
+      {},
+      "run-train-3",
+      [
+        { pageId: "page1", decision: "accept" },
+        { pageId: "page2", decision: "accept" },
+      ]
+    );
 
     const writeCall = writeFile.mock.calls.find(
       (call) =>
@@ -1333,16 +1296,14 @@ describe("IPC handler registration", () => {
       .mockResolvedValueOnce(JSON.stringify(sidecar)) // page2 sidecar
       .mockRejectedValueOnce(new Error("no override")); // page2 override (fails)
 
-    await (
-      handler as (
-        event: unknown,
-        runId: string,
-        decisions: unknown[]
-      ) => Promise<void>
-    )({}, "run-train-4", [
-      { pageId: "page1", decision: "accept" },
-      { pageId: "page2", decision: "reject" },
-    ]);
+    await (handler as (event: unknown, runId: string, decisions: unknown[]) => Promise<void>)(
+      {},
+      "run-train-4",
+      [
+        { pageId: "page1", decision: "accept" },
+        { pageId: "page2", decision: "reject" },
+      ]
+    );
 
     const writeCall = writeFile.mock.calls.find(
       (call) => String(call[0]).includes("training") && String(call[0]).includes("manifest.json")
@@ -1370,13 +1331,11 @@ describe("IPC handler registration", () => {
 
     readFile.mockRejectedValueOnce(new Error("missing report"));
 
-    await (
-      handler as (
-        event: unknown,
-        runId: string,
-        decisions: unknown[]
-      ) => Promise<void>
-    )({}, "run-train-5", [{ pageId: "page1", decision: "accept" }]);
+    await (handler as (event: unknown, runId: string, decisions: unknown[]) => Promise<void>)(
+      {},
+      "run-train-5",
+      [{ pageId: "page1", decision: "accept" }]
+    );
 
     const writeCall = writeFile.mock.calls.find(
       (call) => String(call[0]).includes("training") && String(call[0]).includes("manifest.json")
@@ -1413,17 +1372,15 @@ describe("IPC handler registration", () => {
       .mockResolvedValueOnce(JSON.stringify(sidecar3)) // page3 sidecar
       .mockRejectedValueOnce(new Error("no override")); // page3 override (fails)
 
-    await (
-      handler as (
-        event: unknown,
-        runId: string,
-        decisions: unknown[]
-      ) => Promise<void>
-    )({}, "run-train-6", [
-      { pageId: "page1", decision: "accept" },
-      { pageId: "page2", decision: "reject" },
-      { pageId: "page3", decision: "reject" },
-    ]);
+    await (handler as (event: unknown, runId: string, decisions: unknown[]) => Promise<void>)(
+      {},
+      "run-train-6",
+      [
+        { pageId: "page1", decision: "accept" },
+        { pageId: "page2", decision: "reject" },
+        { pageId: "page3", decision: "reject" },
+      ]
+    );
 
     const template1Call = writeFile.mock.calls.find(
       (call) =>
@@ -1455,19 +1412,17 @@ describe("IPC handler registration", () => {
     readFile.mockRejectedValueOnce(new Error("missing-sidecar"));
 
     const runDir = getRunDir(path.join(process.cwd(), "pipeline-results"), "run-training");
-    await (
-      handler as (
-        event: unknown,
-        runId: string,
-        decisions: unknown[]
-      ) => Promise<void>
-    )({}, "run-training", [
-      {
-        pageId: "page-7",
-        decision: "accept",
-        overrides: { normalization: { rotationDeg: 0.5 } },
-      },
-    ]);
+    await (handler as (event: unknown, runId: string, decisions: unknown[]) => Promise<void>)(
+      {},
+      "run-training",
+      [
+        {
+          pageId: "page-7",
+          decision: "accept",
+          overrides: { normalization: { rotationDeg: 0.5 } },
+        },
+      ]
+    );
 
     const trainingDir = path.join(runDir, "training");
     expect(rename).toHaveBeenCalledWith(
@@ -1581,10 +1536,7 @@ describe("IPC handler registration", () => {
     readFile.mockResolvedValueOnce(JSON.stringify({ configSnapshot: null }));
 
     const result = unwrap(
-      await (handler as (event: unknown, runId: string) => Promise<unknown>)(
-        {},
-        "run-4"
-              )
+      await (handler as (event: unknown, runId: string) => Promise<unknown>)({}, "run-4")
     );
 
     expect(result).toBeNull();
@@ -1671,10 +1623,7 @@ describe("IPC handler registration", () => {
     );
 
     const result = unwrap(
-      await (handler as (event: unknown, runId: string) => Promise<unknown>)(
-        {},
-        "run-1"
-              )
+      await (handler as (event: unknown, runId: string) => Promise<unknown>)({}, "run-1")
     );
 
     expect(result).toMatchObject({
@@ -1690,10 +1639,7 @@ describe("IPC handler registration", () => {
     readFile.mockRejectedValueOnce(new Error("missing"));
 
     const result = unwrap(
-      await (handler as (event: unknown, runId: string) => Promise<unknown>)(
-        {},
-        "run-404"
-              )
+      await (handler as (event: unknown, runId: string) => Promise<unknown>)({}, "run-404")
     );
 
     expect(result).toBeNull();

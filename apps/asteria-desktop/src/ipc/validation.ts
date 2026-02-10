@@ -323,7 +323,12 @@ export const validatePageLayoutOverrides = (overrides: Record<string, unknown>):
     const normalization = overrides.normalization as Record<string, unknown>;
     validateBoxTuple(normalization.cropBox, "overrides.normalization.cropBox");
     validateBoxTuple(normalization.trimBox, "overrides.normalization.trimBox");
-    assertOptionalRange(normalization.rotationDeg, "overrides.normalization.rotationDeg", -180, 180);
+    assertOptionalRange(
+      normalization.rotationDeg,
+      "overrides.normalization.rotationDeg",
+      -180,
+      180
+    );
   }
 
   if (overrides.elements !== undefined && !Array.isArray(overrides.elements)) {

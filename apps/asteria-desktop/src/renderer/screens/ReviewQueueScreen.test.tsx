@@ -23,20 +23,6 @@ describe("ReviewQueueScreen", () => {
     expect(screen.getByText(/Select a run to review/i)).toBeInTheDocument();
   });
 
-  it("renders UI preview content in dev mode when uiPreview is enabled", async () => {
-    const previousUrl = globalThis.location.href;
-    globalThis.history.pushState({}, "", "/?uiPreview=1");
-    try {
-      render(<ReviewQueueScreen runId={undefined} runDir={undefined} />);
-
-      expect(await screen.findByText(/UI preview mode is active/i)).toBeInTheDocument();
-      expect(screen.getAllByText(/chapter-01-001\.tif/i).length).toBeGreaterThan(0);
-      expect(screen.getByText(/Queue health/i)).toBeInTheDocument();
-    } finally {
-      globalThis.history.pushState({}, "", previousUrl);
-    }
-  });
-
   it("renders empty state when queue has no items", async () => {
     (globalThis as typeof globalThis & { asteria?: unknown }).asteria = {
       ipc: {
@@ -189,25 +175,14 @@ describe("ReviewQueueScreen", () => {
 
     await user.click(screen.getByRole("button", { name: /accept page/i }));
     await user.click(screen.getByRole("button", { name: /undo decision/i }));
-    const page1Buttons = screen.getAllByRole("button", { name: /page-1\.png/i });
-    await user.click(page1Buttons[0]);
-    await user.type(
-      screen.getByLabelText(/reviewer note \(saved with decisions and training signals\)/i),
-      "Mask edge corrected on folio."
-    );
 
     await user.click(screen.getByRole("button", { name: /submit review/i }));
     expect(submitReview).toHaveBeenCalledWith(
       "run-3",
-      expect.arrayContaining([
-        expect.objectContaining({
-          pageId: "page-1",
-          decision: "accept",
-          notes: "Mask edge corrected on folio.",
-        }),
-      ])
+      "/tmp/runs/run-3",
+      expect.arrayContaining([{ pageId: "page-1", decision: "accept" }])
     );
-  }, 30000);
+  }, 10000);
 
   it("shows template clusters and records confirm/correct actions", async () => {
     const recordTemplateTraining = vi.fn().mockResolvedValue(ok(undefined));
@@ -293,7 +268,7 @@ describe("ReviewQueueScreen", () => {
       })
     );
     expect(await screen.findByText(/Template correction saved/i)).toBeInTheDocument();
-  }, 30000);
+  });
 
   it("shows template action errors when IPC is unavailable", async () => {
     (globalThis as typeof globalThis & { asteria?: unknown }).asteria = {

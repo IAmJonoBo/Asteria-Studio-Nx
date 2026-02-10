@@ -167,9 +167,11 @@ export function MonitorScreen({
           const run = runState.latest;
           const anchorEvent =
             isControlStage(run.stage) && runStageEventsById?.[run.runId]
-              ? Object.values(runStageEventsById[run.runId] ?? {})
+              ? (Object.values(runStageEventsById[run.runId] ?? {})
                   .filter((event) => !isControlStage(event.stage))
-                  .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())[0] ?? run
+                  .sort(
+                    (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+                  )[0] ?? run)
               : run;
           const progress = getOverallProgressPercent(anchorEvent);
           const history = runState.throughputHistory;
@@ -177,16 +179,17 @@ export function MonitorScreen({
             history.length > 0
               ? history.reduce((sum, entry) => sum + entry.value, 0) / history.length
               : (anchorEvent.throughput ?? run.throughput ?? 0);
-          const remaining = Math.max(0, Math.max(anchorEvent.total || 0, 0) - anchorEvent.processed);
-          const etaSeconds = avgThroughput > 0 ? remaining / avgThroughput : null;
-          const stageEntries = Object.values(runState.stages).sort(
-            (a, b) => {
-              const indexDelta = getStageSortIndex(a.stage) - getStageSortIndex(b.stage);
-              return indexDelta !== 0
-                ? indexDelta
-                : new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime();
-            }
+          const remaining = Math.max(
+            0,
+            Math.max(anchorEvent.total || 0, 0) - anchorEvent.processed
           );
+          const etaSeconds = avgThroughput > 0 ? remaining / avgThroughput : null;
+          const stageEntries = Object.values(runState.stages).sort((a, b) => {
+            const indexDelta = getStageSortIndex(a.stage) - getStageSortIndex(b.stage);
+            return indexDelta !== 0
+              ? indexDelta
+              : new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime();
+          });
           const hasActiveStage = !["complete", "cancelled", "error"].includes(run.stage);
           const isCancelling = Boolean(cancelling[run.runId]);
           const recentPages = runState.recentPages ?? [];

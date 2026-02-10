@@ -30,7 +30,8 @@ const isEditableEventTarget = (target: EventTarget | null | undefined): boolean 
   return Boolean(target.closest("[contenteditable], [role='textbox']"));
 };
 
-const isPrintableKey = (key: string): boolean => key.length === 1 || key === " " || key === "Spacebar";
+const isPrintableKey = (key: string): boolean =>
+  key.length === 1 || key === " " || key === "Spacebar";
 
 const shouldIgnoreShortcut = (event: KeyEvent): boolean => {
   if (!isEditableEventTarget(event.target)) return false;

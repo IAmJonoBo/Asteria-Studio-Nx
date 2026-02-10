@@ -141,7 +141,9 @@ const isPathWithinRoots = (targetRealPath: string, roots: string[]): boolean => 
     root,
     rootWithSep: root.endsWith(path.sep) ? root : `${root}${path.sep}`,
   }));
-  return entries.some(({ root, rootWithSep }) => targetRealPath === root || targetRealPath.startsWith(rootWithSep));
+  return entries.some(
+    ({ root, rootWithSep }) => targetRealPath === root || targetRealPath.startsWith(rootWithSep)
+  );
 };
 
 const wrapIpcHandler =
@@ -1135,10 +1137,7 @@ export function registerIpcHandlers(): void {
     "asteria:get-run-config",
     wrapIpcHandler(
       "asteria:get-run-config",
-      async (
-        _event: IpcMainInvokeEvent,
-        runId: string
-      ): Promise<RunConfigSnapshot | null> => {
+      async (_event: IpcMainInvokeEvent, runId: string): Promise<RunConfigSnapshot | null> => {
         const runDir = await resolveTrustedRunDir(runId);
         const reportPath = getRunReportPath(runDir);
 
@@ -1158,10 +1157,7 @@ export function registerIpcHandlers(): void {
     "asteria:get-run-manifest",
     wrapIpcHandler(
       "asteria:get-run-manifest",
-      async (
-        _event: IpcMainInvokeEvent,
-        runId: string
-      ): Promise<RunManifestSummary | null> => {
+      async (_event: IpcMainInvokeEvent, runId: string): Promise<RunManifestSummary | null> => {
         const runDir = await resolveTrustedRunDir(runId);
         const manifestPath = getRunManifestPath(runDir);
         try {

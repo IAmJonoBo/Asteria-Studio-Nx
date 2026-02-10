@@ -1156,7 +1156,11 @@ const createUiPreviewPages = (): ReviewPage[] => [
         height: 1600,
       },
     },
-    issues: ["book-folio-missing", "spread-split-low-confidence", "potential-baseline-misalignment"],
+    issues: [
+      "book-folio-missing",
+      "spread-split-low-confidence",
+      "potential-baseline-misalignment",
+    ],
   },
 ];
 
@@ -2489,7 +2493,9 @@ const ReviewQueueLayout = ({
             {currentPage.issues.length === 0 ? (
               <p className="review-queue-panel-muted">No automated issues were recorded.</p>
             ) : (
-              <ul className="review-queue-issues">{renderIssueItems(currentPage.issues, currentPage.id)}</ul>
+              <ul className="review-queue-issues">
+                {renderIssueItems(currentPage.issues, currentPage.id)}
+              </ul>
             )}
           </section>
 
@@ -3073,11 +3079,7 @@ export function ReviewQueueScreen({
   const panOriginRef = useRef<{ x: number; y: number } | null>(null);
   const [isPanning, setIsPanning] = useState(false);
   const currentPage = queuePages[selectedIndex];
-  const {
-    sidecar,
-    sidecarError,
-    isLoading: isSidecarLoading,
-  } = useSidecarData(runId, currentPage);
+  const { sidecar, sidecarError, isLoading: isSidecarLoading } = useSidecarData(runId, currentPage);
   const derivedDimensions = useMemo(() => derivePreviewDimensions(sidecar), [sidecar]);
   const fallbackNormalizedPreview = useMemo((): PreviewRef | undefined => {
     if (!runDir || !currentPage || !derivedDimensions) return undefined;
@@ -3960,7 +3962,10 @@ export function ReviewQueueScreen({
         } catch (error) {
           const message =
             error instanceof Error ? error.message : "Failed to record template training signal";
-          nextOverrideMessage = appendError(nextOverrideMessage, `Training signal error: ${message}`);
+          nextOverrideMessage = appendError(
+            nextOverrideMessage,
+            `Training signal error: ${message}`
+          );
           setOverrideError(nextOverrideMessage);
         }
       }

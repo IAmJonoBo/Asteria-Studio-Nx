@@ -249,526 +249,606 @@ describe("Pipeline Runner", () => {
       .toFile("/tmp/normalized.png");
   });
 
-  it("runPipeline scans and analyzes pages", async () => {
-    const result = await runPipeline({
-      projectRoot,
-      projectId: "test-pipeline",
-      sampleCount: 3,
-    });
-
-    expect(result.success).toBe(true);
-    expect(result.projectId).toBe("test-pipeline");
-    expect(result.pageCount).toBe(3);
-    expect(result.scanConfig.pages).toHaveLength(3);
-    expect(result.analysisSummary.estimates).toHaveLength(3);
-    expect(result.pipelineResult.status).toBe("success");
-    const normalizationMetrics = (
-      result.pipelineResult.metrics as { normalization?: Record<string, number> }
-    ).normalization;
-    expect(normalizationMetrics?.reviewQueueCount).toBeDefined();
-    expect(normalizationMetrics?.strictAcceptRate).toBe(1);
-  }, PIPELINE_TEST_TIMEOUT_MS);
-
-  it("writes normalized outputs under the run directory", async () => {
-    const outputDir = path.join(tempDir, "output");
-    const result = await runPipeline({
-      projectRoot,
-      projectId: "test-run-dir",
-      sampleCount: 2,
-      outputDir,
-    });
-
-    const runDir = getRunDir(outputDir, result.runId);
-    const normalizedDir = getRunNormalizedDir(runDir);
-    const normalizedFiles = await fs.readdir(normalizedDir);
-
-    expect(normalizedFiles.length).toBeGreaterThan(0);
-    for (const file of normalizedFiles) {
-      expect(path.join(normalizedDir, file)).toContain(runDir);
-    }
-    await expect(fs.stat(path.join(outputDir, "normalized"))).rejects.toThrow();
-  }, PIPELINE_TEST_TIMEOUT_MS);
-
-  it("runPipeline handles target DPI override", async () => {
-    const result = await runPipeline({
-      projectRoot,
-      projectId: "test-dpi",
-      targetDpi: 600,
-      sampleCount: 2,
-    });
-
-    expect(result.success).toBe(true);
-    expect(result.analysisSummary.dpi).toBe(600);
-  }, PIPELINE_TEST_TIMEOUT_MS);
-
-  it("runPipeline uses full corpus and target dimensions override", async () => {
-    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "asteria-full-"));
-    await Promise.all(
-      ["a.jpg", "b.jpg", "c.jpg"].map((file) =>
-        fs.writeFile(path.join(tmpDir, file), Buffer.from([0xff, 0xd8, 0xff]))
-      )
-    );
-
-    const result = await runPipeline({
-      projectRoot: tmpDir,
-      projectId: "full-corpus",
-      targetDimensionsMm: { width: 200, height: 300 },
-    });
-
-    expect(result.pageCount).toBe(3);
-    expect(result.scanConfig.targetDimensionsMm).toMatchObject({ width: 200, height: 300 });
-  }, PIPELINE_TEST_TIMEOUT_MS);
-
-  it("runPipeline writes reports and sidecars when outputDir is set", async () => {
-    const outputDir = await fs.mkdtemp(path.join(os.tmpdir(), "asteria-output-"));
-    const normalizeMock = vi.mocked(normalizePage);
-    const callCountBefore = normalizeMock.mock.calls.length;
-    const result = await runPipeline({
-      projectRoot,
-      projectId: "test-output",
-      sampleCount: 2,
-      outputDir,
-    });
-
-    expect(result.success).toBe(true);
-    const runDir = getRunDir(outputDir, result.runId);
-    const normalizeCalls = normalizeMock.mock.calls.slice(callCountBefore).map((call) => call[3]);
-    expect(normalizeCalls.length).toBeGreaterThan(0);
-    normalizeCalls.forEach((callRunDir) => {
-      expect(callRunDir.startsWith(runDir)).toBe(true);
-    });
-    const files = await fs.readdir(runDir);
-    expect(files).toContain("report.json");
-    expect(files).toContain("review-queue.json");
-    const indexPath = path.join(outputDir, "run-index.json");
-    const indexRaw = await fs.readFile(indexPath, "utf-8");
-    const index = JSON.parse(indexRaw) as { runs?: Array<{ runId: string }> };
-    expect(index.runs?.some((entry) => entry.runId === result.runId)).toBe(true);
-    const sidecarDir = path.join(runDir, "sidecars");
-    const sidecars = await fs.readdir(sidecarDir);
-    expect(sidecars.length).toBeGreaterThan(0);
-    const sampleSidecarPath = path.join(sidecarDir, sidecars[0]);
-    const sidecarRaw = await fs.readFile(sampleSidecarPath, "utf-8");
-    const sidecar = JSON.parse(sidecarRaw) as { guides?: { layers?: unknown[] } };
-    expect(sidecar.guides?.layers?.length).toBeGreaterThan(0);
-    await expect(fs.stat(path.join(outputDir, "normalized"))).rejects.toThrow();
-    await expect(fs.stat(path.join(outputDir, "previews"))).rejects.toThrow();
-  }, PIPELINE_TEST_TIMEOUT_MS);
-
-  it("runPipeline keeps artifacts run-scoped across multiple runs", async () => {
-    const outputDir = await fs.mkdtemp(path.join(os.tmpdir(), "asteria-multi-run-"));
-    const resultA = await runPipeline({
-      projectRoot,
-      projectId: "multi-run-a",
-      sampleCount: 2,
-      outputDir,
-    });
-    const resultB = await runPipeline({
-      projectRoot,
-      projectId: "multi-run-b",
-      sampleCount: 2,
-      outputDir,
-    });
-
-    expect(resultA.success).toBe(true);
-    expect(resultB.success).toBe(true);
-    const runDirA = getRunDir(outputDir, resultA.runId);
-    const runDirB = getRunDir(outputDir, resultB.runId);
-    expect(runDirA).not.toEqual(runDirB);
-    await expect(fs.stat(path.join(outputDir, "normalized"))).rejects.toThrow();
-    await expect(fs.stat(path.join(outputDir, "previews"))).rejects.toThrow();
-    await expect(fs.stat(path.join(runDirA, "manifest.json"))).resolves.toBeTruthy();
-    await expect(fs.stat(path.join(runDirB, "manifest.json"))).resolves.toBeTruthy();
-  }, PIPELINE_TEST_TIMEOUT_MS);
-
-  it("cancels mid-run and writes parseable report + manifest", async () => {
-    const outputDir = await fs.mkdtemp(path.join(os.tmpdir(), "asteria-cancel-"));
-    const controller = new globalThis.AbortController();
-    let waitCalls = 0;
-    let releasePause: (() => void) | undefined;
-    const waitIfPaused = (): Promise<void> => {
-      waitCalls += 1;
-      if (waitCalls === 2) {
-        return new Promise<void>((resolve) => {
-          releasePause = resolve;
-        });
-      }
-      return Promise.resolve();
-    };
-
-    const runPromise = runPipeline({
-      projectRoot,
-      projectId: "cancel-test",
-      outputDir,
-      signal: controller.signal,
-      waitIfPaused,
-    });
-
-    const waitStart = Date.now();
-    while (!releasePause && Date.now() - waitStart < 10_000) {
-      await new Promise((resolve) => setTimeout(resolve, 20));
-    }
-
-    if (!releasePause) {
-      throw new Error(
-        `Expected pipeline to reach pause gate for cancellation test (waitIfPaused calls: ${waitCalls})`
-      );
-    }
-
-    controller.abort();
-    releasePause();
-
-    const result = await runPromise;
-    expect(result.success).toBe(false);
-    expect(result.pipelineResult.status).toBe("cancelled");
-
-    const runDir = getRunDir(outputDir, result.runId);
-    const reportRaw = await fs.readFile(path.join(runDir, "report.json"), "utf-8");
-    const manifestRaw = await fs.readFile(getRunManifestPath(runDir), "utf-8");
-    const report = JSON.parse(reportRaw) as { status?: string };
-    const manifest = JSON.parse(manifestRaw) as { status?: string };
-    expect(report.status).toBe("cancelled");
-    expect(manifest.status).toBe("cancelled");
-  }, PIPELINE_TEST_TIMEOUT_MS);
-
-  it("routes low semantic confidence to review queue", async () => {
-    const outputDir = await fs.mkdtemp(path.join(os.tmpdir(), "asteria-output-"));
-    const semanticPagePath = path.join(projectRoot, "semantic-low.jpg");
-    await fs.writeFile(semanticPagePath, Buffer.from([0xff, 0xd8, 0xff, 0xc0]));
-
-    const result = await runPipeline({
-      projectRoot,
-      projectId: "semantic-review",
-      outputDir,
-    });
-
-    expect(result.success).toBe(true);
-    const reviewPath = path.join(outputDir, "runs", result.runId, "review-queue.json");
-    const raw = await fs.readFile(reviewPath, "utf-8");
-    const queue = JSON.parse(raw) as { items?: Array<Record<string, unknown>> };
-    expect(queue.items?.some((item) => item.reason === "semantic-layout")).toBe(true);
-    const semanticItem = queue.items?.find((item) => item.reason === "semantic-layout") as
-      | { qualityGate?: { accepted?: boolean } }
-      | undefined;
-    expect(semanticItem?.qualityGate?.accepted).toBe(true);
-  }, PIPELINE_TEST_TIMEOUT_MS);
-
-  it("splits two-page spreads when enabled", async () => {
-    const spreadDir = await fs.mkdtemp(path.join(os.tmpdir(), "asteria-spread-"));
-    await createSpreadImage(spreadDir, "spread.png", { gutter: true });
-
-    const outputDir = await fs.mkdtemp(path.join(os.tmpdir(), "asteria-spread-out-"));
-    const result = await runPipeline({
-      projectRoot: spreadDir,
-      projectId: "spread-test",
-      enableSpreadSplit: true,
-      spreadSplitConfidence: 0.6,
-      outputDir,
-    });
-
-    expect(result.success).toBe(true);
-    expect(result.scanConfig.pages.length).toBe(2);
-  }, PIPELINE_TEST_TIMEOUT_MS);
-
-  it("does not split when spread detection fails", async () => {
-    const spreadDir = await fs.mkdtemp(path.join(os.tmpdir(), "asteria-no-split-"));
-    await createSpreadImage(spreadDir, "single.png", { gutter: false });
-
-    const result = await runPipeline({
-      projectRoot: spreadDir,
-      projectId: "no-split-detect",
-      enableSpreadSplit: true,
-      spreadSplitConfidence: 0.6,
-    });
-
-    expect(result.success).toBe(true);
-    expect(result.scanConfig.pages.length).toBe(1);
-  }, PIPELINE_TEST_TIMEOUT_MS);
-
-  it("fails closed when spread confidence is low", async () => {
-    const spreadDir = await fs.mkdtemp(path.join(os.tmpdir(), "asteria-nospread-"));
-    await createSpreadImage(spreadDir, "single.png", { gutter: true });
-
-    const result = await runPipeline({
-      projectRoot: spreadDir,
-      projectId: "no-split",
-      enableSpreadSplit: true,
-      spreadSplitConfidence: 1.1,
-    });
-
-    expect(result.success).toBe(true);
-    expect(result.scanConfig.pages.length).toBe(1);
-  }, PIPELINE_TEST_TIMEOUT_MS);
-
-  it("writes spread metadata to manifest and review queue", async () => {
-    const spreadDir = await fs.mkdtemp(path.join(os.tmpdir(), "asteria-spread-meta-"));
-    await createSpreadImage(spreadDir, "spread.png", { gutter: true });
-
-    const outputDir = await fs.mkdtemp(path.join(os.tmpdir(), "asteria-spread-meta-out-"));
-    const result = await runPipeline({
-      projectRoot: spreadDir,
-      projectId: "spread-meta",
-      enableSpreadSplit: true,
-      spreadSplitConfidence: 0.6,
-      outputDir,
-      pipelineConfigOverrides: {
-        steps: {
-          qa: {
-            mask_coverage_min: 0.95,
-          },
-        },
-      } as Partial<PipelineConfig>,
-    });
-
-    expect(result.success).toBe(true);
-    const runDir = getRunDir(outputDir, result.runId);
-    const manifestRaw = await fs.readFile(getRunManifestPath(runDir), "utf-8");
-    const manifest = JSON.parse(manifestRaw) as {
-      pages?: Array<{
-        pageId: string;
-        spread?: { sourcePageId?: string; side?: string };
-      }>;
-    };
-    const manifestSpreads = manifest.pages?.map((page) => page.spread).filter(Boolean) ?? [];
-    expect(manifestSpreads.length).toBe(2);
-    manifest.pages?.forEach((page) => {
-      if (!page.spread) return;
-      const baseId = page.pageId.slice(0, -2);
-      expect(page.spread.sourcePageId).toBe(baseId);
-      expect(["left", "right"]).toContain(page.spread.side);
-    });
-
-    const reviewRaw = await fs.readFile(path.join(runDir, "review-queue.json"), "utf-8");
-    const reviewQueue = JSON.parse(reviewRaw) as {
-      items?: Array<{ spread?: { sourcePageId?: string; side?: string }; pageId: string }>;
-    };
-    const reviewSpreads = reviewQueue.items?.map((item) => item.spread).filter(Boolean) ?? [];
-    expect(reviewSpreads.length).toBe(2);
-    reviewQueue.items?.forEach((item) => {
-      if (!item.spread) return;
-      const baseId = item.pageId.slice(0, -2);
-      expect(item.spread.sourcePageId).toBe(baseId);
-      expect(["left", "right"]).toContain(item.spread.side);
-    });
-  }, PIPELINE_TEST_TIMEOUT_MS);
-
-  it("runPipeline cleans stale normalized exports when checksums change", async () => {
-    const outputDir = await fs.mkdtemp(path.join(os.tmpdir(), "asteria-cleanup-"));
-    const nowSpy = vi.spyOn(Date, "now").mockReturnValue(1700000000000);
-    const runId = `run-${Date.now()}`;
-    const runDir = getRunDir(outputDir, runId);
-    const normalizedDir = path.join(runDir, "normalized");
-    const previewDir = path.join(runDir, "previews");
-    await fs.mkdir(normalizedDir, { recursive: true });
-    await fs.mkdir(previewDir, { recursive: true });
-
-    const staleFile = path.join(normalizedDir, "stale.png");
-    const stalePreview = path.join(previewDir, "stale-preview.png");
-    await fs.writeFile(staleFile, Buffer.alloc(10));
-    await fs.writeFile(stalePreview, Buffer.alloc(10));
-
-    const manifest = {
-      pages: [
-        {
-          pageId: "page-0",
-          checksum: "old-checksum",
-          normalizedFile: "stale.png",
-          previews: ["stale-preview.png"],
-        },
-      ],
-    };
-    await fs.writeFile(getRunManifestPath(runDir), JSON.stringify(manifest, null, 2));
-
-    try {
+  it(
+    "runPipeline scans and analyzes pages",
+    async () => {
       const result = await runPipeline({
         projectRoot,
-        projectId: "cleanup-test",
-        outputDir,
-        sampleCount: 1,
-        runId,
+        projectId: "test-pipeline",
+        sampleCount: 3,
       });
 
       expect(result.success).toBe(true);
-      await expect(fs.stat(staleFile)).rejects.toThrow();
-      await expect(fs.stat(stalePreview)).rejects.toThrow();
-    } finally {
-      nowSpy.mockRestore();
-    }
-  }, PIPELINE_TEST_TIMEOUT_MS);
+      expect(result.projectId).toBe("test-pipeline");
+      expect(result.pageCount).toBe(3);
+      expect(result.scanConfig.pages).toHaveLength(3);
+      expect(result.analysisSummary.estimates).toHaveLength(3);
+      expect(result.pipelineResult.status).toBe("success");
+      const normalizationMetrics = (
+        result.pipelineResult.metrics as { normalization?: Record<string, number> }
+      ).normalization;
+      expect(normalizationMetrics?.reviewQueueCount).toBeDefined();
+      expect(normalizationMetrics?.strictAcceptRate).toBe(1);
+    },
+    PIPELINE_TEST_TIMEOUT_MS
+  );
 
-  it("writes run-scoped artifacts and avoids global folders", async () => {
-    const outputDir = await fs.mkdtemp(path.join(os.tmpdir(), "asteria-run-scope-"));
-    const result = await runPipeline({
-      projectRoot,
-      projectId: "run-scope",
-      outputDir,
-      sampleCount: 2,
-    });
-
-    expect(result.success).toBe(true);
-    const runDir = getRunDir(outputDir, result.runId);
-    await expect(fs.stat(path.join(runDir, "sidecars"))).resolves.toBeTruthy();
-    await expect(fs.stat(path.join(runDir, "normalized"))).resolves.toBeTruthy();
-    await expect(fs.stat(path.join(runDir, "previews"))).resolves.toBeTruthy();
-    await expect(fs.stat(path.join(runDir, "overlays"))).resolves.toBeTruthy();
-    await expect(fs.stat(getRunManifestPath(runDir))).resolves.toBeTruthy();
-
-    await expect(fs.stat(path.join(outputDir, "sidecars"))).rejects.toThrow();
-    await expect(fs.stat(path.join(outputDir, "normalized"))).rejects.toThrow();
-    await expect(fs.stat(path.join(outputDir, "previews"))).rejects.toThrow();
-    await expect(fs.stat(path.join(outputDir, "overlays"))).rejects.toThrow();
-  }, PIPELINE_TEST_TIMEOUT_MS);
-
-  it("runs two pipelines in parallel without output collisions", async () => {
-    const outputDir = await fs.mkdtemp(path.join(os.tmpdir(), "asteria-parallel-"));
-    const runIdA = "run-parallel-a";
-    const runIdB = "run-parallel-b";
-
-    const [resultA, resultB] = await Promise.all([
-      runPipeline({
+  it(
+    "writes normalized outputs under the run directory",
+    async () => {
+      const outputDir = path.join(tempDir, "output");
+      const result = await runPipeline({
         projectRoot,
-        projectId: "parallel-a",
+        projectId: "test-run-dir",
+        sampleCount: 2,
         outputDir,
-        sampleCount: 1,
-        runId: runIdA,
-      }),
-      runPipeline({
+      });
+
+      const runDir = getRunDir(outputDir, result.runId);
+      const normalizedDir = getRunNormalizedDir(runDir);
+      const normalizedFiles = await fs.readdir(normalizedDir);
+
+      expect(normalizedFiles.length).toBeGreaterThan(0);
+      for (const file of normalizedFiles) {
+        expect(path.join(normalizedDir, file)).toContain(runDir);
+      }
+      await expect(fs.stat(path.join(outputDir, "normalized"))).rejects.toThrow();
+    },
+    PIPELINE_TEST_TIMEOUT_MS
+  );
+
+  it(
+    "runPipeline handles target DPI override",
+    async () => {
+      const result = await runPipeline({
         projectRoot,
-        projectId: "parallel-b",
+        projectId: "test-dpi",
+        targetDpi: 600,
+        sampleCount: 2,
+      });
+
+      expect(result.success).toBe(true);
+      expect(result.analysisSummary.dpi).toBe(600);
+    },
+    PIPELINE_TEST_TIMEOUT_MS
+  );
+
+  it(
+    "runPipeline uses full corpus and target dimensions override",
+    async () => {
+      const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "asteria-full-"));
+      await Promise.all(
+        ["a.jpg", "b.jpg", "c.jpg"].map((file) =>
+          fs.writeFile(path.join(tmpDir, file), Buffer.from([0xff, 0xd8, 0xff]))
+        )
+      );
+
+      const result = await runPipeline({
+        projectRoot: tmpDir,
+        projectId: "full-corpus",
+        targetDimensionsMm: { width: 200, height: 300 },
+      });
+
+      expect(result.pageCount).toBe(3);
+      expect(result.scanConfig.targetDimensionsMm).toMatchObject({ width: 200, height: 300 });
+    },
+    PIPELINE_TEST_TIMEOUT_MS
+  );
+
+  it(
+    "runPipeline writes reports and sidecars when outputDir is set",
+    async () => {
+      const outputDir = await fs.mkdtemp(path.join(os.tmpdir(), "asteria-output-"));
+      const normalizeMock = vi.mocked(normalizePage);
+      const callCountBefore = normalizeMock.mock.calls.length;
+      const result = await runPipeline({
+        projectRoot,
+        projectId: "test-output",
+        sampleCount: 2,
         outputDir,
-        sampleCount: 1,
-        runId: runIdB,
-      }),
-    ]);
+      });
 
-    expect(resultA.success).toBe(true);
-    expect(resultB.success).toBe(true);
+      expect(result.success).toBe(true);
+      const runDir = getRunDir(outputDir, result.runId);
+      const normalizeCalls = normalizeMock.mock.calls.slice(callCountBefore).map((call) => call[3]);
+      expect(normalizeCalls.length).toBeGreaterThan(0);
+      normalizeCalls.forEach((callRunDir) => {
+        expect(callRunDir.startsWith(runDir)).toBe(true);
+      });
+      const files = await fs.readdir(runDir);
+      expect(files).toContain("report.json");
+      expect(files).toContain("review-queue.json");
+      const indexPath = path.join(outputDir, "run-index.json");
+      const indexRaw = await fs.readFile(indexPath, "utf-8");
+      const index = JSON.parse(indexRaw) as { runs?: Array<{ runId: string }> };
+      expect(index.runs?.some((entry) => entry.runId === result.runId)).toBe(true);
+      const sidecarDir = path.join(runDir, "sidecars");
+      const sidecars = await fs.readdir(sidecarDir);
+      expect(sidecars.length).toBeGreaterThan(0);
+      const sampleSidecarPath = path.join(sidecarDir, sidecars[0]);
+      const sidecarRaw = await fs.readFile(sampleSidecarPath, "utf-8");
+      const sidecar = JSON.parse(sidecarRaw) as { guides?: { layers?: unknown[] } };
+      expect(sidecar.guides?.layers?.length).toBeGreaterThan(0);
+      await expect(fs.stat(path.join(outputDir, "normalized"))).rejects.toThrow();
+      await expect(fs.stat(path.join(outputDir, "previews"))).rejects.toThrow();
+    },
+    PIPELINE_TEST_TIMEOUT_MS
+  );
 
-    const runDirA = getRunDir(outputDir, runIdA);
-    const runDirB = getRunDir(outputDir, runIdB);
-    expect(runDirA).not.toBe(runDirB);
+  it(
+    "runPipeline keeps artifacts run-scoped across multiple runs",
+    async () => {
+      const outputDir = await fs.mkdtemp(path.join(os.tmpdir(), "asteria-multi-run-"));
+      const resultA = await runPipeline({
+        projectRoot,
+        projectId: "multi-run-a",
+        sampleCount: 2,
+        outputDir,
+      });
+      const resultB = await runPipeline({
+        projectRoot,
+        projectId: "multi-run-b",
+        sampleCount: 2,
+        outputDir,
+      });
 
-    await expect(fs.stat(getRunManifestPath(runDirA))).resolves.toBeTruthy();
-    await expect(fs.stat(getRunManifestPath(runDirB))).resolves.toBeTruthy();
-    await expect(fs.stat(path.join(runDirA, "review-queue.json"))).resolves.toBeTruthy();
-    await expect(fs.stat(path.join(runDirB, "review-queue.json"))).resolves.toBeTruthy();
+      expect(resultA.success).toBe(true);
+      expect(resultB.success).toBe(true);
+      const runDirA = getRunDir(outputDir, resultA.runId);
+      const runDirB = getRunDir(outputDir, resultB.runId);
+      expect(runDirA).not.toEqual(runDirB);
+      await expect(fs.stat(path.join(outputDir, "normalized"))).rejects.toThrow();
+      await expect(fs.stat(path.join(outputDir, "previews"))).rejects.toThrow();
+      await expect(fs.stat(path.join(runDirA, "manifest.json"))).resolves.toBeTruthy();
+      await expect(fs.stat(path.join(runDirB, "manifest.json"))).resolves.toBeTruthy();
+    },
+    PIPELINE_TEST_TIMEOUT_MS
+  );
 
-    const manifestA = JSON.parse(await fs.readFile(getRunManifestPath(runDirA), "utf-8")) as {
-      runId?: string;
-    };
-    const manifestB = JSON.parse(await fs.readFile(getRunManifestPath(runDirB), "utf-8")) as {
-      runId?: string;
-    };
-    expect(manifestA.runId).toBe(runIdA);
-    expect(manifestB.runId).toBe(runIdB);
-  }, PIPELINE_TEST_TIMEOUT_MS);
+  it(
+    "cancels mid-run and writes parseable report + manifest",
+    async () => {
+      const outputDir = await fs.mkdtemp(path.join(os.tmpdir(), "asteria-cancel-"));
+      const controller = new globalThis.AbortController();
+      let waitCalls = 0;
+      let releasePause: (() => void) | undefined;
+      const waitIfPaused = (): Promise<void> => {
+        waitCalls += 1;
+        if (waitCalls === 2) {
+          return new Promise<void>((resolve) => {
+            releasePause = resolve;
+          });
+        }
+        return Promise.resolve();
+      };
 
-  it("runPipeline applies second-pass corrections for low-acceptance pages", async () => {
-    const testDir = await fs.mkdtemp(path.join(os.tmpdir(), "asteria-second-pass-"));
-    const filenames = ["low-mask.jpg", "low-skew.jpg", "shadow.jpg", "body.jpg"];
-    await Promise.all(
-      filenames.map((name) => fs.writeFile(path.join(testDir, name), Buffer.alloc(100)))
-    );
+      const runPromise = runPipeline({
+        projectRoot,
+        projectId: "cancel-test",
+        outputDir,
+        signal: controller.signal,
+        waitIfPaused,
+      });
 
-    const result = await runPipeline({
-      projectRoot: testDir,
-      projectId: "second-pass-test",
-    });
+      const waitStart = Date.now();
+      while (!releasePause && Date.now() - waitStart < 10_000) {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
 
-    expect(result.success).toBe(true);
-    const normalizationMetrics = (
-      result.pipelineResult.metrics as { normalization?: Record<string, number> }
-    ).normalization;
-    expect(normalizationMetrics?.secondPassCount).toBeGreaterThan(0);
+      if (!releasePause) {
+        throw new Error(
+          `Expected pipeline to reach pause gate for cancellation test (waitIfPaused calls: ${waitCalls})`
+        );
+      }
 
-    await fs.rm(testDir, { recursive: true, force: true });
-  }, PIPELINE_TEST_TIMEOUT_MS);
+      controller.abort();
+      releasePause();
 
-  it("runPipeline records per-page normalization failures without aborting", async () => {
-    const testDir = await fs.mkdtemp(path.join(os.tmpdir(), "asteria-normalize-fallback-"));
-    const filenames = ["throw-normalize.jpg", "body.jpg"];
-    await Promise.all(
-      filenames.map((name) => fs.writeFile(path.join(testDir, name), Buffer.alloc(100)))
-    );
+      const result = await runPromise;
+      expect(result.success).toBe(false);
+      expect(result.pipelineResult.status).toBe("cancelled");
 
-    const result = await runPipeline({
-      projectRoot: testDir,
-      projectId: "normalize-fallback",
-    });
+      const runDir = getRunDir(outputDir, result.runId);
+      const reportRaw = await fs.readFile(path.join(runDir, "report.json"), "utf-8");
+      const manifestRaw = await fs.readFile(getRunManifestPath(runDir), "utf-8");
+      const report = JSON.parse(reportRaw) as { status?: string };
+      const manifest = JSON.parse(manifestRaw) as { status?: string };
+      expect(report.status).toBe("cancelled");
+      expect(manifest.status).toBe("cancelled");
+    },
+    PIPELINE_TEST_TIMEOUT_MS
+  );
 
-    expect(result.success).toBe(true);
-    expect(result.pipelineResult.status).toBe("success");
-    expect(result.errors.some((e) => e.phase === "normalization")).toBe(false);
+  it(
+    "routes low semantic confidence to review queue",
+    async () => {
+      const outputDir = await fs.mkdtemp(path.join(os.tmpdir(), "asteria-output-"));
+      const semanticPagePath = path.join(projectRoot, "semantic-low.jpg");
+      await fs.writeFile(semanticPagePath, Buffer.from([0xff, 0xd8, 0xff, 0xc0]));
 
-    await fs.rm(testDir, { recursive: true, force: true });
-  }, PIPELINE_TEST_TIMEOUT_MS);
+      const result = await runPipeline({
+        projectRoot,
+        projectId: "semantic-review",
+        outputDir,
+      });
 
-  it("runPipeline handles layout profiles and quality gate branches", async () => {
-    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "asteria-layout-"));
-    const files = [
-      "cover.jpg",
-      "title.jpg",
-      "chapter.jpg",
-      "body.jpg",
-      "low-mask.jpg",
-      "low-skew.jpg",
-      "shadow.jpg",
-      "noise.jpg",
-    ];
+      expect(result.success).toBe(true);
+      const reviewPath = path.join(outputDir, "runs", result.runId, "review-queue.json");
+      const raw = await fs.readFile(reviewPath, "utf-8");
+      const queue = JSON.parse(raw) as { items?: Array<Record<string, unknown>> };
+      expect(queue.items?.some((item) => item.reason === "semantic-layout")).toBe(true);
+      const semanticItem = queue.items?.find((item) => item.reason === "semantic-layout") as
+        | { qualityGate?: { accepted?: boolean } }
+        | undefined;
+      expect(semanticItem?.qualityGate?.accepted).toBe(true);
+    },
+    PIPELINE_TEST_TIMEOUT_MS
+  );
 
-    await Promise.all(
-      files.map((file) => fs.writeFile(path.join(tmpDir, file), Buffer.from([0xff, 0xd8, 0xff])))
-    );
+  it(
+    "splits two-page spreads when enabled",
+    async () => {
+      const spreadDir = await fs.mkdtemp(path.join(os.tmpdir(), "asteria-spread-"));
+      await createSpreadImage(spreadDir, "spread.png", { gutter: true });
 
-    const outputDir = await fs.mkdtemp(path.join(os.tmpdir(), "asteria-layout-out-"));
-    const result = await runPipeline({
-      projectRoot: tmpDir,
-      projectId: "layout-test",
-      outputDir,
-    });
+      const outputDir = await fs.mkdtemp(path.join(os.tmpdir(), "asteria-spread-out-"));
+      const result = await runPipeline({
+        projectRoot: spreadDir,
+        projectId: "spread-test",
+        enableSpreadSplit: true,
+        spreadSplitConfidence: 0.6,
+        outputDir,
+      });
 
-    expect(result.success).toBe(true);
-    const normalizationMetrics = (
-      result.pipelineResult.metrics as { normalization?: Record<string, number> }
-    ).normalization;
-    expect(normalizationMetrics?.reviewQueueCount).toBeGreaterThan(0);
-  }, PIPELINE_TEST_TIMEOUT_MS);
+      expect(result.success).toBe(true);
+      expect(result.scanConfig.pages.length).toBe(2);
+    },
+    PIPELINE_TEST_TIMEOUT_MS
+  );
 
-  it("uses config-driven QA thresholds", async () => {
-    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "asteria-qa-config-"));
-    await fs.writeFile(path.join(tmpDir, "body.jpg"), Buffer.from([0xff, 0xd8, 0xff]));
+  it(
+    "does not split when spread detection fails",
+    async () => {
+      const spreadDir = await fs.mkdtemp(path.join(os.tmpdir(), "asteria-no-split-"));
+      await createSpreadImage(spreadDir, "single.png", { gutter: false });
 
-    const result = await runPipeline({
-      projectRoot: tmpDir,
-      projectId: "qa-config",
-      pipelineConfigOverrides: {
-        steps: {
-          qa: {
-            mask_coverage_min: 0.95,
+      const result = await runPipeline({
+        projectRoot: spreadDir,
+        projectId: "no-split-detect",
+        enableSpreadSplit: true,
+        spreadSplitConfidence: 0.6,
+      });
+
+      expect(result.success).toBe(true);
+      expect(result.scanConfig.pages.length).toBe(1);
+    },
+    PIPELINE_TEST_TIMEOUT_MS
+  );
+
+  it(
+    "fails closed when spread confidence is low",
+    async () => {
+      const spreadDir = await fs.mkdtemp(path.join(os.tmpdir(), "asteria-nospread-"));
+      await createSpreadImage(spreadDir, "single.png", { gutter: true });
+
+      const result = await runPipeline({
+        projectRoot: spreadDir,
+        projectId: "no-split",
+        enableSpreadSplit: true,
+        spreadSplitConfidence: 1.1,
+      });
+
+      expect(result.success).toBe(true);
+      expect(result.scanConfig.pages.length).toBe(1);
+    },
+    PIPELINE_TEST_TIMEOUT_MS
+  );
+
+  it(
+    "writes spread metadata to manifest and review queue",
+    async () => {
+      const spreadDir = await fs.mkdtemp(path.join(os.tmpdir(), "asteria-spread-meta-"));
+      await createSpreadImage(spreadDir, "spread.png", { gutter: true });
+
+      const outputDir = await fs.mkdtemp(path.join(os.tmpdir(), "asteria-spread-meta-out-"));
+      const result = await runPipeline({
+        projectRoot: spreadDir,
+        projectId: "spread-meta",
+        enableSpreadSplit: true,
+        spreadSplitConfidence: 0.6,
+        outputDir,
+        pipelineConfigOverrides: {
+          steps: {
+            qa: {
+              mask_coverage_min: 0.95,
+            },
           },
-        },
-      } as Partial<PipelineConfig>,
-    });
+        } as Partial<PipelineConfig>,
+      });
 
-    expect(result.success).toBe(true);
-    const normalizationMetrics = (
-      result.pipelineResult.metrics as { normalization?: Record<string, number> }
-    ).normalization;
-    expect(normalizationMetrics?.reviewQueueCount).toBeGreaterThan(0);
-  }, PIPELINE_TEST_TIMEOUT_MS);
+      expect(result.success).toBe(true);
+      const runDir = getRunDir(outputDir, result.runId);
+      const manifestRaw = await fs.readFile(getRunManifestPath(runDir), "utf-8");
+      const manifest = JSON.parse(manifestRaw) as {
+        pages?: Array<{
+          pageId: string;
+          spread?: { sourcePageId?: string; side?: string };
+        }>;
+      };
+      const manifestSpreads = manifest.pages?.map((page) => page.spread).filter(Boolean) ?? [];
+      expect(manifestSpreads.length).toBe(2);
+      manifest.pages?.forEach((page) => {
+        if (!page.spread) return;
+        const baseId = page.pageId.slice(0, -2);
+        expect(page.spread.sourcePageId).toBe(baseId);
+        expect(["left", "right"]).toContain(page.spread.side);
+      });
 
-  it("runPipeline returns error result for invalid root", async () => {
-    const tempFile = path.join(projectRoot, "not-a-dir.txt");
-    await fs.writeFile(tempFile, "invalid");
+      const reviewRaw = await fs.readFile(path.join(runDir, "review-queue.json"), "utf-8");
+      const reviewQueue = JSON.parse(reviewRaw) as {
+        items?: Array<{ spread?: { sourcePageId?: string; side?: string }; pageId: string }>;
+      };
+      const reviewSpreads = reviewQueue.items?.map((item) => item.spread).filter(Boolean) ?? [];
+      expect(reviewSpreads.length).toBe(2);
+      reviewQueue.items?.forEach((item) => {
+        if (!item.spread) return;
+        const baseId = item.pageId.slice(0, -2);
+        expect(item.spread.sourcePageId).toBe(baseId);
+        expect(["left", "right"]).toContain(item.spread.side);
+      });
+    },
+    PIPELINE_TEST_TIMEOUT_MS
+  );
 
-    const result = await runPipeline({
-      projectRoot: tempFile,
-      projectId: "bad-root",
-    });
+  it(
+    "runPipeline cleans stale normalized exports when checksums change",
+    async () => {
+      const outputDir = await fs.mkdtemp(path.join(os.tmpdir(), "asteria-cleanup-"));
+      const nowSpy = vi.spyOn(Date, "now").mockReturnValue(1700000000000);
+      const runId = `run-${Date.now()}`;
+      const runDir = getRunDir(outputDir, runId);
+      const normalizedDir = path.join(runDir, "normalized");
+      const previewDir = path.join(runDir, "previews");
+      await fs.mkdir(normalizedDir, { recursive: true });
+      await fs.mkdir(previewDir, { recursive: true });
 
-    expect(result.success).toBe(false);
-    expect(result.errors.length).toBeGreaterThan(0);
-  }, PIPELINE_TEST_TIMEOUT_MS);
+      const staleFile = path.join(normalizedDir, "stale.png");
+      const stalePreview = path.join(previewDir, "stale-preview.png");
+      await fs.writeFile(staleFile, Buffer.alloc(10));
+      await fs.writeFile(stalePreview, Buffer.alloc(10));
+
+      const manifest = {
+        pages: [
+          {
+            pageId: "page-0",
+            checksum: "old-checksum",
+            normalizedFile: "stale.png",
+            previews: ["stale-preview.png"],
+          },
+        ],
+      };
+      await fs.writeFile(getRunManifestPath(runDir), JSON.stringify(manifest, null, 2));
+
+      try {
+        const result = await runPipeline({
+          projectRoot,
+          projectId: "cleanup-test",
+          outputDir,
+          sampleCount: 1,
+          runId,
+        });
+
+        expect(result.success).toBe(true);
+        await expect(fs.stat(staleFile)).rejects.toThrow();
+        await expect(fs.stat(stalePreview)).rejects.toThrow();
+      } finally {
+        nowSpy.mockRestore();
+      }
+    },
+    PIPELINE_TEST_TIMEOUT_MS
+  );
+
+  it(
+    "writes run-scoped artifacts and avoids global folders",
+    async () => {
+      const outputDir = await fs.mkdtemp(path.join(os.tmpdir(), "asteria-run-scope-"));
+      const result = await runPipeline({
+        projectRoot,
+        projectId: "run-scope",
+        outputDir,
+        sampleCount: 2,
+      });
+
+      expect(result.success).toBe(true);
+      const runDir = getRunDir(outputDir, result.runId);
+      await expect(fs.stat(path.join(runDir, "sidecars"))).resolves.toBeTruthy();
+      await expect(fs.stat(path.join(runDir, "normalized"))).resolves.toBeTruthy();
+      await expect(fs.stat(path.join(runDir, "previews"))).resolves.toBeTruthy();
+      await expect(fs.stat(path.join(runDir, "overlays"))).resolves.toBeTruthy();
+      await expect(fs.stat(getRunManifestPath(runDir))).resolves.toBeTruthy();
+
+      await expect(fs.stat(path.join(outputDir, "sidecars"))).rejects.toThrow();
+      await expect(fs.stat(path.join(outputDir, "normalized"))).rejects.toThrow();
+      await expect(fs.stat(path.join(outputDir, "previews"))).rejects.toThrow();
+      await expect(fs.stat(path.join(outputDir, "overlays"))).rejects.toThrow();
+    },
+    PIPELINE_TEST_TIMEOUT_MS
+  );
+
+  it(
+    "runs two pipelines in parallel without output collisions",
+    async () => {
+      const outputDir = await fs.mkdtemp(path.join(os.tmpdir(), "asteria-parallel-"));
+      const runIdA = "run-parallel-a";
+      const runIdB = "run-parallel-b";
+
+      const [resultA, resultB] = await Promise.all([
+        runPipeline({
+          projectRoot,
+          projectId: "parallel-a",
+          outputDir,
+          sampleCount: 1,
+          runId: runIdA,
+        }),
+        runPipeline({
+          projectRoot,
+          projectId: "parallel-b",
+          outputDir,
+          sampleCount: 1,
+          runId: runIdB,
+        }),
+      ]);
+
+      expect(resultA.success).toBe(true);
+      expect(resultB.success).toBe(true);
+
+      const runDirA = getRunDir(outputDir, runIdA);
+      const runDirB = getRunDir(outputDir, runIdB);
+      expect(runDirA).not.toBe(runDirB);
+
+      await expect(fs.stat(getRunManifestPath(runDirA))).resolves.toBeTruthy();
+      await expect(fs.stat(getRunManifestPath(runDirB))).resolves.toBeTruthy();
+      await expect(fs.stat(path.join(runDirA, "review-queue.json"))).resolves.toBeTruthy();
+      await expect(fs.stat(path.join(runDirB, "review-queue.json"))).resolves.toBeTruthy();
+
+      const manifestA = JSON.parse(await fs.readFile(getRunManifestPath(runDirA), "utf-8")) as {
+        runId?: string;
+      };
+      const manifestB = JSON.parse(await fs.readFile(getRunManifestPath(runDirB), "utf-8")) as {
+        runId?: string;
+      };
+      expect(manifestA.runId).toBe(runIdA);
+      expect(manifestB.runId).toBe(runIdB);
+    },
+    PIPELINE_TEST_TIMEOUT_MS
+  );
+
+  it(
+    "runPipeline applies second-pass corrections for low-acceptance pages",
+    async () => {
+      const testDir = await fs.mkdtemp(path.join(os.tmpdir(), "asteria-second-pass-"));
+      const filenames = ["low-mask.jpg", "low-skew.jpg", "shadow.jpg", "body.jpg"];
+      await Promise.all(
+        filenames.map((name) => fs.writeFile(path.join(testDir, name), Buffer.alloc(100)))
+      );
+
+      const result = await runPipeline({
+        projectRoot: testDir,
+        projectId: "second-pass-test",
+      });
+
+      expect(result.success).toBe(true);
+      const normalizationMetrics = (
+        result.pipelineResult.metrics as { normalization?: Record<string, number> }
+      ).normalization;
+      expect(normalizationMetrics?.secondPassCount).toBeGreaterThan(0);
+
+      await fs.rm(testDir, { recursive: true, force: true });
+    },
+    PIPELINE_TEST_TIMEOUT_MS
+  );
+
+  it(
+    "runPipeline records per-page normalization failures without aborting",
+    async () => {
+      const testDir = await fs.mkdtemp(path.join(os.tmpdir(), "asteria-normalize-fallback-"));
+      const filenames = ["throw-normalize.jpg", "body.jpg"];
+      await Promise.all(
+        filenames.map((name) => fs.writeFile(path.join(testDir, name), Buffer.alloc(100)))
+      );
+
+      const result = await runPipeline({
+        projectRoot: testDir,
+        projectId: "normalize-fallback",
+      });
+
+      expect(result.success).toBe(true);
+      expect(result.pipelineResult.status).toBe("success");
+      expect(result.errors.some((e) => e.phase === "normalization")).toBe(false);
+
+      await fs.rm(testDir, { recursive: true, force: true });
+    },
+    PIPELINE_TEST_TIMEOUT_MS
+  );
+
+  it(
+    "runPipeline handles layout profiles and quality gate branches",
+    async () => {
+      const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "asteria-layout-"));
+      const files = [
+        "cover.jpg",
+        "title.jpg",
+        "chapter.jpg",
+        "body.jpg",
+        "low-mask.jpg",
+        "low-skew.jpg",
+        "shadow.jpg",
+        "noise.jpg",
+      ];
+
+      await Promise.all(
+        files.map((file) => fs.writeFile(path.join(tmpDir, file), Buffer.from([0xff, 0xd8, 0xff])))
+      );
+
+      const outputDir = await fs.mkdtemp(path.join(os.tmpdir(), "asteria-layout-out-"));
+      const result = await runPipeline({
+        projectRoot: tmpDir,
+        projectId: "layout-test",
+        outputDir,
+      });
+
+      expect(result.success).toBe(true);
+      const normalizationMetrics = (
+        result.pipelineResult.metrics as { normalization?: Record<string, number> }
+      ).normalization;
+      expect(normalizationMetrics?.reviewQueueCount).toBeGreaterThan(0);
+    },
+    PIPELINE_TEST_TIMEOUT_MS
+  );
+
+  it(
+    "uses config-driven QA thresholds",
+    async () => {
+      const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "asteria-qa-config-"));
+      await fs.writeFile(path.join(tmpDir, "body.jpg"), Buffer.from([0xff, 0xd8, 0xff]));
+
+      const result = await runPipeline({
+        projectRoot: tmpDir,
+        projectId: "qa-config",
+        pipelineConfigOverrides: {
+          steps: {
+            qa: {
+              mask_coverage_min: 0.95,
+            },
+          },
+        } as Partial<PipelineConfig>,
+      });
+
+      expect(result.success).toBe(true);
+      const normalizationMetrics = (
+        result.pipelineResult.metrics as { normalization?: Record<string, number> }
+      ).normalization;
+      expect(normalizationMetrics?.reviewQueueCount).toBeGreaterThan(0);
+    },
+    PIPELINE_TEST_TIMEOUT_MS
+  );
+
+  it(
+    "runPipeline returns error result for invalid root",
+    async () => {
+      const tempFile = path.join(projectRoot, "not-a-dir.txt");
+      await fs.writeFile(tempFile, "invalid");
+
+      const result = await runPipeline({
+        projectRoot: tempFile,
+        projectId: "bad-root",
+      });
+
+      expect(result.success).toBe(false);
+      expect(result.errors.length).toBeGreaterThan(0);
+    },
+    PIPELINE_TEST_TIMEOUT_MS
+  );
 
   it("evaluateResults provides observations and recommendations", () => {
     const mockResult: PipelineRunnerResult = {
@@ -1040,41 +1120,45 @@ describe("Pipeline Runner", () => {
     );
   });
 
-  it("covers layout classification and baseline validation branches", async () => {
-    const testDir = await fs.mkdtemp(path.join(os.tmpdir(), "asteria-layout-profiles-"));
-    const filenames = [
-      "000-cover.jpg",
-      "010-title.jpg",
-      "020-toc.jpg",
-      "030-preface.jpg",
-      "040-appendix.jpg",
-      "050-index.jpg",
-      "060-glossary.jpg",
-      "070-plate.jpg",
-      "080-table.jpg",
-      "090-chapter.jpg",
-      "100-blank.jpg",
-      "110-very-low-art.jpg",
-      "120-body.jpg",
-      "130-residual-body.jpg",
-      "140-low-skew-noise-body.jpg",
-      "005-low-mask-prologue.jpg",
-      "900-low-mask-epilogue.jpg",
-    ];
+  it(
+    "covers layout classification and baseline validation branches",
+    async () => {
+      const testDir = await fs.mkdtemp(path.join(os.tmpdir(), "asteria-layout-profiles-"));
+      const filenames = [
+        "000-cover.jpg",
+        "010-title.jpg",
+        "020-toc.jpg",
+        "030-preface.jpg",
+        "040-appendix.jpg",
+        "050-index.jpg",
+        "060-glossary.jpg",
+        "070-plate.jpg",
+        "080-table.jpg",
+        "090-chapter.jpg",
+        "100-blank.jpg",
+        "110-very-low-art.jpg",
+        "120-body.jpg",
+        "130-residual-body.jpg",
+        "140-low-skew-noise-body.jpg",
+        "005-low-mask-prologue.jpg",
+        "900-low-mask-epilogue.jpg",
+      ];
 
-    await Promise.all(
-      filenames.map((name) => fs.writeFile(path.join(testDir, name), Buffer.alloc(100)))
-    );
+      await Promise.all(
+        filenames.map((name) => fs.writeFile(path.join(testDir, name), Buffer.alloc(100)))
+      );
 
-    const result = await runPipeline({
-      projectRoot: testDir,
-      projectId: "layout-profiles",
-    });
+      const result = await runPipeline({
+        projectRoot: testDir,
+        projectId: "layout-profiles",
+      });
 
-    expect(result.success).toBe(true);
-    expect(result.pageCount).toBe(filenames.length);
-    expect(result.pipelineResult.metrics).toBeDefined();
+      expect(result.success).toBe(true);
+      expect(result.pageCount).toBe(filenames.length);
+      expect(result.pipelineResult.metrics).toBeDefined();
 
-    await fs.rm(testDir, { recursive: true, force: true });
-  }, PIPELINE_TEST_TIMEOUT_MS);
+      await fs.rm(testDir, { recursive: true, force: true });
+    },
+    PIPELINE_TEST_TIMEOUT_MS
+  );
 });

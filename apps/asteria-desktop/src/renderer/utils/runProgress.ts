@@ -43,10 +43,7 @@ export const formatStageLabel = (stage: string): string =>
     })
     .join(" ");
 
-export const getStageProgressPercent = (
-  event: RunProgressEvent,
-  isActiveStage = false
-): number => {
+export const getStageProgressPercent = (event: RunProgressEvent, isActiveStage = false): number => {
   if (event.stage === "complete") return 100;
   if (event.stage === "review") {
     // Review includes queue synthesis, overlay generation, and post-processing.
@@ -79,4 +76,3 @@ export const getOverallProgressPercent = (event: RunProgressEvent): number => {
   const progress = ((stageIndex + inStageRatio) / denominator) * 100;
   return Math.min(99, Math.max(0, Math.round(progress)));
 };
-

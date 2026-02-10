@@ -33,12 +33,17 @@ export function ProjectsScreen({
   const isImporting = importState?.status === "working";
   const importMessage = importState?.message;
   const runBlocked = Boolean(activeRunId);
-  const [runsByProject, setRunsByProject] = useState<Record<string, Array<{
-    runId: string;
-    projectId: string;
-    generatedAt?: string;
-    status?: string;
-  }>>>({});
+  const [runsByProject, setRunsByProject] = useState<
+    Record<
+      string,
+      Array<{
+        runId: string;
+        projectId: string;
+        generatedAt?: string;
+        status?: string;
+      }>
+    >
+  >({});
   const [runsError, setRunsError] = useState<string | null>(null);
   const [runsLoading, setRunsLoading] = useState(false);
   const [runOperationByProject, setRunOperationByProject] = useState<Record<string, string>>({});
@@ -60,7 +65,7 @@ export function ProjectsScreen({
       : importState?.status === "success"
         ? "success"
         : importState?.status === "working"
-        ? "working"
+          ? "working"
           : "info";
 
   const loadRuns = useCallback(async (): Promise<void> => {
@@ -68,9 +73,11 @@ export function ProjectsScreen({
       asteria?: { ipc?: Record<string, unknown> };
     } = globalThis;
     const listRuns = windowRef.asteria?.ipc?.["asteria:list-runs"] as
-      | (() => Promise<import("../../ipc/contracts.js").IpcResult<
-          Array<{ runId: string; projectId: string; generatedAt?: string; status?: string }>
-        >>)
+      | (() => Promise<
+          import("../../ipc/contracts.js").IpcResult<
+            Array<{ runId: string; projectId: string; generatedAt?: string; status?: string }>
+          >
+        >)
       | undefined;
     if (!listRuns) {
       setRunsByProject({});
@@ -81,7 +88,10 @@ export function ProjectsScreen({
       const result = await listRuns();
       if (!result.ok) throw new Error(result.error.message);
       const grouped = result.value.reduce<
-        Record<string, Array<{ runId: string; projectId: string; generatedAt?: string; status?: string }>>
+        Record<
+          string,
+          Array<{ runId: string; projectId: string; generatedAt?: string; status?: string }>
+        >
       >((acc, run) => {
         const group = acc[run.projectId] ?? [];
         group.push({
@@ -95,8 +105,7 @@ export function ProjectsScreen({
       }, {});
       Object.values(grouped).forEach((group) =>
         group.sort(
-          (a, b) =>
-            new Date(b.generatedAt ?? 0).getTime() - new Date(a.generatedAt ?? 0).getTime()
+          (a, b) => new Date(b.generatedAt ?? 0).getTime() - new Date(a.generatedAt ?? 0).getTime()
         )
       );
       setRunsByProject(grouped);
@@ -347,109 +356,122 @@ export function ProjectsScreen({
                   : ""
               }`;
           return (
-          <div key={project.id} className="card">
-            <div
-              style={{
-                display: "flex",
-                alignItems: "flex-start",
-                justifyContent: "space-between",
-                gap: "16px",
-              }}
-            >
-              <div style={{ flex: 1 }}>
-                <h3 className="card-title">{project.name}</h3>
-                <p style={{ margin: "0 0 8px", fontSize: "12px", color: "var(--text-secondary)" }}>
-                  {project.inputPath}
-                </p>
-                <div style={{ display: "flex", gap: "12px", fontSize: "13px" }}>
-                  <span>
-                    <strong>{project.pageCount?.toLocaleString() ?? "—"}</strong> pages
-                    {recentPages.length > 0 && activeRunProgress?.projectId === project.id && (
-                      <div className="run-progress-activity" style={{ marginTop: "10px" }}>
-                        <div className="run-progress-activity-title">Live page stream</div>
-                        <div className="run-progress-activity-stream" role="list">
-                          {recentPages.map((pageId) => (
-                            <div
-                              key={`project-run-${pageId}`}
-                              className={`run-progress-chip${pageId === currentPageId ? " active" : ""}`}
-                              role="listitem"
-                            >
-                              <span>{pageId}</span>
-                              <span>{formatStageLabel(activeRunProgress?.stage ?? "")}</span>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                  </span>
-                  {project.lastRun && (
-                    <span style={{ color: "var(--text-secondary)" }}>
-                      Last run: {new Date(project.lastRun).toLocaleDateString()}
-                    </span>
-                  )}
-                </div>
-                <div style={{ marginTop: "8px", fontSize: "12px", color: "var(--text-secondary)" }}>
-                  {runSummaryText}
-                </div>
-                {runOperationByProject[project.id] && (
-                  <div style={{ marginTop: "6px", fontSize: "12px", color: "var(--text-secondary)" }}>
-                    {runOperationByProject[project.id]}
-                  </div>
-                )}
-              </div>
+            <div key={project.id} className="card">
               <div
                 style={{
                   display: "flex",
-                  flexDirection: "column",
-                  alignItems: "flex-end",
-                  gap: "8px",
+                  alignItems: "flex-start",
+                  justifyContent: "space-between",
+                  gap: "16px",
                 }}
               >
-                {project.status === "completed" && (
-                  <span className="badge badge-success">Completed</span>
-                )}
-                {project.status === "processing" && (
-                  <span className="badge badge-info">Processing</span>
-                )}
-                {project.status === "error" && <span className="badge badge-error">Error</span>}
-                <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", justifyContent: "flex-end" }}>
-                  <button
-                    className="btn btn-secondary btn-sm"
-                    onClick={() => onOpenProject(project.id)}
+                <div style={{ flex: 1 }}>
+                  <h3 className="card-title">{project.name}</h3>
+                  <p
+                    style={{ margin: "0 0 8px", fontSize: "12px", color: "var(--text-secondary)" }}
                   >
-                    Run history
-                  </button>
-                  <button
-                    className="btn btn-secondary btn-sm"
-                    onClick={() => void handleDeleteProjectRuns(project.id, true)}
-                    disabled={
-                      projectMeta?.staleCount === 0 ||
-                      Boolean(activeRunId && activeRunProgress?.projectId === project.id)
-                    }
+                    {project.inputPath}
+                  </p>
+                  <div style={{ display: "flex", gap: "12px", fontSize: "13px" }}>
+                    <span>
+                      <strong>{project.pageCount?.toLocaleString() ?? "—"}</strong> pages
+                      {recentPages.length > 0 && activeRunProgress?.projectId === project.id && (
+                        <div className="run-progress-activity" style={{ marginTop: "10px" }}>
+                          <div className="run-progress-activity-title">Live page stream</div>
+                          <div className="run-progress-activity-stream" role="list">
+                            {recentPages.map((pageId) => (
+                              <div
+                                key={`project-run-${pageId}`}
+                                className={`run-progress-chip${pageId === currentPageId ? " active" : ""}`}
+                                role="listitem"
+                              >
+                                <span>{pageId}</span>
+                                <span>{formatStageLabel(activeRunProgress?.stage ?? "")}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </span>
+                    {project.lastRun && (
+                      <span style={{ color: "var(--text-secondary)" }}>
+                        Last run: {new Date(project.lastRun).toLocaleDateString()}
+                      </span>
+                    )}
+                  </div>
+                  <div
+                    style={{ marginTop: "8px", fontSize: "12px", color: "var(--text-secondary)" }}
                   >
-                    Delete stale
-                  </button>
-                  <button
-                    className="btn btn-secondary btn-sm"
-                    onClick={() => void handleDeleteProjectRuns(project.id, false)}
-                    disabled={
-                      projectMeta?.count === 0 ||
-                      Boolean(activeRunId && activeRunProgress?.projectId === project.id)
-                    }
+                    {runSummaryText}
+                  </div>
+                  {runOperationByProject[project.id] && (
+                    <div
+                      style={{ marginTop: "6px", fontSize: "12px", color: "var(--text-secondary)" }}
+                    >
+                      {runOperationByProject[project.id]}
+                    </div>
+                  )}
+                </div>
+                <div
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "flex-end",
+                    gap: "8px",
+                  }}
+                >
+                  {project.status === "completed" && (
+                    <span className="badge badge-success">Completed</span>
+                  )}
+                  {project.status === "processing" && (
+                    <span className="badge badge-info">Processing</span>
+                  )}
+                  {project.status === "error" && <span className="badge badge-error">Error</span>}
+                  <div
+                    style={{
+                      display: "flex",
+                      gap: "8px",
+                      flexWrap: "wrap",
+                      justifyContent: "flex-end",
+                    }}
                   >
-                    Delete runs
-                  </button>
-                  <button
-                    className="btn btn-primary btn-sm"
-                    onClick={() => onStartRun(project)}
-                    disabled={runBlocked}
-                  >
-                    Start Run
-                  </button>
+                    <button
+                      className="btn btn-secondary btn-sm"
+                      onClick={() => onOpenProject(project.id)}
+                    >
+                      Run history
+                    </button>
+                    <button
+                      className="btn btn-secondary btn-sm"
+                      onClick={() => void handleDeleteProjectRuns(project.id, true)}
+                      disabled={
+                        projectMeta?.staleCount === 0 ||
+                        Boolean(activeRunId && activeRunProgress?.projectId === project.id)
+                      }
+                    >
+                      Delete stale
+                    </button>
+                    <button
+                      className="btn btn-secondary btn-sm"
+                      onClick={() => void handleDeleteProjectRuns(project.id, false)}
+                      disabled={
+                        projectMeta?.count === 0 ||
+                        Boolean(activeRunId && activeRunProgress?.projectId === project.id)
+                      }
+                    >
+                      Delete runs
+                    </button>
+                    <button
+                      className="btn btn-primary btn-sm"
+                      onClick={() => onStartRun(project)}
+                      disabled={runBlocked}
+                    >
+                      Start Run
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
           );
         })}
       </div>
