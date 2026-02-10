@@ -1,0 +1,13 @@
+{
+  "$schema": "../node_modules/nx/schemas/project-schema.json",
+  "name": "workspace-tools",
+  "projectType": "application",
+  "targets": {
+    "dead-code-quarantine-check": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "node tools/quality/check-dead-code-quarantine.mjs"
+      }
+    }
+  }
+}

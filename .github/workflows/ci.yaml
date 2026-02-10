@@ -72,6 +72,9 @@ jobs:
       - name: Format check (affected)
         run: pnpm exec nx format:check --base=$NX_BASE --head=$NX_HEAD
 
+      - name: Dead code quarantine check
+        run: pnpm ci:quarantine
+
       - name: Lint (affected)
         run: pnpm ci:lint
 
