@@ -12,7 +12,9 @@ import {
   validateProjectId,
   validatePipelineRunConfig,
   validateRunHistoryCleanupOptions,
+  sanitizeReviewQueue,
   validateReviewDecisions,
+  validateReviewQueue,
   validateRunId,
   validateRunDir,
   validateTemplateTrainingSignal,
@@ -157,6 +159,91 @@ describe("IPC validation", () => {
         { pageId: "p1", decision: "accept", overrides: { fn: (): null => null } },
       ])
     ).toThrow(/JSON-safe/);
+  });
+
+
+  it("validates review queue payload shape", () => {
+    const queue = {
+      runId: "run-1",
+      projectId: "proj-1",
+      generatedAt: "2026-01-01T00:00:00.000Z",
+      items: [
+        {
+          pageId: "p1",
+          filename: "p1.png",
+          layoutProfile: "body",
+          layoutConfidence: 0.95,
+          qualityGate: { accepted: true, reasons: ["ok"] },
+          reason: "quality-gate",
+          previews: [{ kind: "normalized", path: "normalized/p1.png", width: 100, height: 120 }],
+          suggestedAction: "confirm",
+          spread: {
+            sourcePageId: "p0",
+            side: "left",
+            gutter: { startRatio: 0.45, endRatio: 0.55 },
+          },
+        },
+      ],
+    };
+
+    expect(() => validateReviewQueue(queue)).not.toThrow();
+  });
+
+  it("rejects invalid review queue preview kind", () => {
+    const queue = {
+      runId: "run-1",
+      projectId: "proj-1",
+      generatedAt: "2026-01-01T00:00:00.000Z",
+      items: [
+        {
+          pageId: "p1",
+          filename: "p1.png",
+          layoutProfile: "body",
+          layoutConfidence: 0.95,
+          qualityGate: { accepted: true, reasons: ["ok"] },
+          reason: "quality-gate",
+          previews: [{ kind: "thumb", path: "normalized/p1.png", width: 100, height: 120 }],
+          suggestedAction: "confirm",
+        },
+      ],
+    };
+
+    expect(() => validateReviewQueue(queue)).toThrow(/kind is unsupported/);
+  });
+
+  it("sanitizes malformed review queue items", () => {
+    const queue = {
+      runId: "run-1",
+      projectId: "proj-1",
+      generatedAt: "2026-01-01T00:00:00.000Z",
+      items: [
+        {
+          pageId: "",
+          filename: "bad.png",
+          layoutProfile: "body",
+          layoutConfidence: 0.9,
+          qualityGate: { accepted: true, reasons: ["ok"] },
+          reason: "quality-gate",
+          previews: [{ kind: "normalized", path: "normalized/bad.png", width: 100, height: 120 }],
+          suggestedAction: "confirm",
+        },
+        {
+          pageId: "p2",
+          filename: "p2.png",
+          layoutProfile: "body",
+          layoutConfidence: 0.9,
+          qualityGate: { accepted: true, reasons: ["ok"] },
+          reason: "quality-gate",
+          previews: [{ kind: "normalized", path: "normalized/p2.png", width: 100, height: 120 }],
+          suggestedAction: "confirm",
+        },
+      ],
+    };
+
+    const sanitized = sanitizeReviewQueue(queue);
+    expect(sanitized.rejectedItems).toBe(1);
+    expect(sanitized.queue.items).toHaveLength(1);
+    expect(sanitized.queue.items[0]?.pageId).toBe("p2");
   });
 
   it("accepts valid page layout sidecars", () => {

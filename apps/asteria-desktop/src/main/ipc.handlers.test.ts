@@ -612,7 +612,9 @@ describe("IPC handler registration", () => {
     registerIpcHandlers();
     const handler = handlers.get("asteria:fetch-sidecar");
     expect(handler).toBeDefined();
-    readFile.mockResolvedValueOnce(JSON.stringify({ pageId: "p9" }));
+    readFile.mockResolvedValueOnce(
+      JSON.stringify({ pageId: "p9", normalization: {}, metrics: {} })
+    );
 
     const runDir = getRunDir(path.join(process.cwd(), "pipeline-results"), "run-9");
     const result = unwrap(
@@ -649,7 +651,11 @@ describe("IPC handler registration", () => {
     const handler = handlers.get("asteria:fetch-sidecar");
     expect(handler).toBeDefined();
     readFile.mockResolvedValueOnce(
-      JSON.stringify({ pageId: "p1", normalization: { cropBox: [0, 0, 10, 10] } })
+      JSON.stringify({
+        pageId: "p1",
+        normalization: {},
+        metrics: {},
+      })
     );
 
     const runDir = getRunDir(path.join(process.cwd(), "pipeline-results"), "run-9");
@@ -663,6 +669,27 @@ describe("IPC handler registration", () => {
 
     expect(result).toMatchObject({ pageId: "p1" });
     expect(readFile).toHaveBeenCalledWith(getRunSidecarPath(runDir, "p1"), "utf-8");
+  });
+
+  it("fetch-sidecar rejects invalid sidecar schema safely", async () => {
+    registerIpcHandlers();
+    const handler = handlers.get("asteria:fetch-sidecar");
+    expect(handler).toBeDefined();
+    readFile.mockResolvedValueOnce(JSON.stringify({ pageId: "p1", normalization: {} }));
+
+    const result = unwrap(
+      await (handler as (event: unknown, runId: string, pageId: string) => Promise<unknown>)(
+        {},
+        "run-9",
+        "p1"
+      )
+    );
+
+    expect(result).toBeNull();
+    expect(warnSpy).toHaveBeenCalledWith(
+      "[ipc] fetch-sidecar invalid-or-missing",
+      expect.objectContaining({ runId: "run-9", pageId: "p1", reason: expect.any(String) })
+    );
   });
 
   it("fetch-sidecar returns null when missing", async () => {
@@ -969,7 +996,20 @@ describe("IPC handler registration", () => {
         runId: "run-1",
         projectId: "proj",
         generatedAt: "2026-01-01",
-        items: [],
+        items: [
+          {
+            pageId: "p1",
+            filename: "p1.png",
+            layoutProfile: "body",
+            layoutConfidence: 0.95,
+            qualityGate: { accepted: true, reasons: ["ok"] },
+            reason: "quality-gate",
+            previews: [
+              { kind: "normalized", path: "normalized/p1.png", width: 100, height: 120 },
+            ],
+            suggestedAction: "confirm",
+          },
+        ],
       })
     );
 
@@ -979,8 +1019,69 @@ describe("IPC handler registration", () => {
       await (handler as (event: unknown, runId: string) => Promise<unknown>)({}, "run-1")
     );
 
-    expect(result).toMatchObject({ runId: "run-1", projectId: "proj" });
+    expect(result).toMatchObject({
+      runId: "run-1",
+      projectId: "proj",
+      items: [
+        expect.objectContaining({
+          pageId: "p1",
+          previews: [
+            expect.objectContaining({ path: path.join(runDir, "normalized/p1.png") }),
+          ],
+        }),
+      ],
+    });
     expect(readFile).toHaveBeenCalledWith(getRunReviewQueuePath(runDir), "utf-8");
+  });
+
+  it("fetch-review-queue deterministically rejects malformed items", async () => {
+    registerIpcHandlers();
+    const handler = handlers.get("asteria:fetch-review-queue");
+    expect(handler).toBeDefined();
+    readFile.mockResolvedValueOnce(
+      JSON.stringify({
+        runId: "run-1",
+        projectId: "proj",
+        generatedAt: "2026-01-01",
+        items: [
+          {
+            pageId: "",
+            filename: "bad.png",
+            layoutProfile: "body",
+            layoutConfidence: 0.8,
+            qualityGate: { accepted: true, reasons: ["ok"] },
+            reason: "quality-gate",
+            previews: [
+              { kind: "normalized", path: "normalized/bad.png", width: 100, height: 100 },
+            ],
+            suggestedAction: "confirm",
+          },
+          {
+            pageId: "p2",
+            filename: "p2.png",
+            layoutProfile: "body",
+            layoutConfidence: 0.9,
+            qualityGate: { accepted: true, reasons: ["ok"] },
+            reason: "quality-gate",
+            previews: [
+              { kind: "normalized", path: "normalized/p2.png", width: 100, height: 100 },
+            ],
+            suggestedAction: "confirm",
+          },
+        ],
+      })
+    );
+
+    const result = unwrap(
+      await (handler as (event: unknown, runId: string) => Promise<unknown>)({}, "run-1")
+    ) as { items: Array<{ pageId: string }> };
+
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0]?.pageId).toBe("p2");
+    expect(warnSpy).toHaveBeenCalledWith(
+      "[ipc] fetch-review-queue sanitized-items",
+      expect.objectContaining({ runId: "run-1", rejectedItems: 1, originalCount: 2 })
+    );
   });
 
   it("fetch-review-queue uses run directory when index lacks path", async () => {

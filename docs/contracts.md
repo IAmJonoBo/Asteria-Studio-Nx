@@ -33,3 +33,20 @@
 
 - Snapping follows the InDesign mental model: baseline grid participates in **Snap To Guides**.
 - Provenance is visible in tooltips and guide styling.
+
+## Runtime validation guarantees
+
+### `asteria:fetch-sidecar`
+
+- Sidecar payloads are parsed as JSON and validated against `PageLayoutSidecar` runtime requirements before returning to the renderer.
+- Invalid JSON, schema violations, and missing files all follow one consistent contract: the handler logs a structured warning and returns `null`.
+- This ensures renderer consumers can treat a missing sidecar and an invalid sidecar identically (`null`) without risking partially-trusted payload usage.
+
+### `asteria:fetch-review-queue`
+
+- Review queue payloads are parsed and validated before any preview path rebasing occurs.
+- Top-level queue fields (`runId`, `projectId`, `generatedAt`, `items`) and each item shape are checked at runtime.
+- Each item requires non-empty identifiers (`pageId`, `filename`) and required review metadata (`layoutProfile`, `layoutConfidence`, `qualityGate`, `reason`, `suggestedAction`, `previews`).
+- Preview entries are validated for supported `kind` (`source`, `normalized`, `overlay`), non-empty `path`, and positive `width`/`height`.
+- Malformed review queue items are deterministically dropped (sanitized) and the IPC handler emits a structured warning that includes rejected item count.
+- Valid items pass through unchanged except for the expected relative preview-path rebasing to run-scoped absolute paths.
