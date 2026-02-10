@@ -483,25 +483,108 @@ const joinNormalizedPath = (runDir: string, relativePath: string): string => {
  */
 const hasUrlScheme = (value: string): boolean => /^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(value);
 
-const resolvePreviewSrc = (preview?: PreviewRef, runDir?: string): string | undefined => {
-  if (!preview?.path) return undefined;
-  if (preview.path.startsWith("asteria://")) return preview.path;
-  const sanitized = preview.path.startsWith("file://") ? preview.path.slice(7) : preview.path;
+type PreviewCapability = "protocol" | "file" | "data";
+
+type RuntimePreviewSupport = {
+  hasIpc: boolean;
+  protocolAvailable: boolean;
+  assetUrlResolver?: (path: string) => string | undefined;
+};
+
+const sanitizePreviewPath = (value: string): string =>
+  value
+    .replace(/^file:\/\//, "")
+    .replace(/\0/g, "")
+    .trim();
+
+const isPathSafeForFileUrl = (value: string): boolean => {
+  if (!value || !isAbsoluteFilePath(value)) return false;
+  const normalized = normalizeSeparators(value);
+  if (!normalized.startsWith("/") && !/^[A-Za-z]:\//.test(normalized)) return false;
+  if (normalized.includes("../") || normalized.includes("/..")) return false;
+  return !/[\r\n]/.test(normalized);
+};
+
+const toVettedFileUrl = (value: string): string | undefined => {
+  if (!isPathSafeForFileUrl(value)) return undefined;
+  const normalized = normalizeSeparators(value);
+  if (/^[A-Za-z]:\//.test(normalized)) {
+    return `file:///${encodeURI(normalized)}`;
+  }
+  return `file://${encodeURI(normalized)}`;
+};
+
+const detectRuntimePreviewSupport = (): RuntimePreviewSupport => {
+  const windowRef = globalThis as typeof globalThis & {
+    asteria?: {
+      ipc?: Record<string, unknown>;
+      resolveAssetUrl?: (path: string) => string;
+    };
+    location?: { protocol?: string };
+  };
+  const hasIpc = Boolean(windowRef.asteria?.ipc);
+  const protocolAvailable =
+    hasIpc && windowRef.location?.protocol !== "http:" && windowRef.location?.protocol !== "https:";
+  return {
+    hasIpc,
+    protocolAvailable,
+    assetUrlResolver:
+      typeof windowRef.asteria?.resolveAssetUrl === "function"
+        ? windowRef.asteria.resolveAssetUrl
+        : undefined,
+  };
+};
+
+const resolvePreviewSrc = (
+  preview: PreviewRef | undefined,
+  runDir: string | undefined,
+  runtimeSupport: RuntimePreviewSupport = detectRuntimePreviewSupport()
+): { src?: string; capability?: PreviewCapability } => {
+  if (!preview?.path) return {};
+  if (preview.path.startsWith("data:")) {
+    return { src: preview.path, capability: "data" };
+  }
+  if (preview.path.startsWith("asteria://") && runtimeSupport.protocolAvailable) {
+    return { src: preview.path, capability: "protocol" };
+  }
+
+  const sanitized = sanitizePreviewPath(preview.path);
   const rebased = tryRebasePreviewPath(sanitized, runDir);
-  if (rebased) {
-    return `asteria://asset?path=${encodeURIComponent(rebased)}`;
+  const runDirJoined =
+    runDir && sanitized && !hasUrlScheme(sanitized) && !isAbsoluteFilePath(sanitized)
+      ? joinNormalizedPath(runDir, sanitized)
+      : null;
+  const candidates = [rebased, runDirJoined, sanitized].filter((candidate): candidate is string =>
+    Boolean(candidate)
+  );
+
+  for (const candidate of candidates) {
+    if (hasUrlScheme(candidate) && !candidate.startsWith("file:")) {
+      continue;
+    }
+    if (runtimeSupport.protocolAvailable && isAbsoluteFilePath(candidate)) {
+      return {
+        src: `asteria://asset?path=${encodeURIComponent(candidate)}`,
+        capability: "protocol",
+      };
+    }
+    if (runtimeSupport.assetUrlResolver && isAbsoluteFilePath(candidate)) {
+      const resolved = runtimeSupport.assetUrlResolver(candidate);
+      if (resolved) {
+        return { src: resolved, capability: "protocol" };
+      }
+    }
+    const fileUrl = toVettedFileUrl(candidate);
+    if (fileUrl) {
+      return { src: fileUrl, capability: "file" };
+    }
   }
-  if (isAbsoluteFilePath(sanitized)) {
-    return `asteria://asset?path=${encodeURIComponent(sanitized)}`;
+
+  if (preview.path.startsWith("data:")) {
+    return { src: preview.path, capability: "data" };
   }
-  if (hasUrlScheme(sanitized)) {
-    return sanitized;
-  }
-  if (runDir) {
-    const joinedPath = joinNormalizedPath(runDir, sanitized);
-    return `asteria://asset?path=${encodeURIComponent(joinedPath)}`;
-  }
-  return sanitized;
+
+  return {};
 };
 
 const createToggleSelected =
@@ -1834,7 +1917,10 @@ type ReviewQueueLayoutProps = {
   sidecarError: string | null;
   isSidecarLoading: boolean;
   normalizedSrc?: string;
+  normalizedCapability?: PreviewCapability;
   sourceSrc?: string;
+  sourceCapability?: PreviewCapability;
+  runtimePreviewSupport: RuntimePreviewSupport;
   overlaySvg: JSX.Element | null;
   isSubmitting: boolean;
   submitError: string | null;
@@ -1942,7 +2028,10 @@ const ReviewQueueLayout = ({
   sidecarError,
   isSidecarLoading,
   normalizedSrc,
+  normalizedCapability,
   sourceSrc,
+  sourceCapability,
+  runtimePreviewSupport,
   overlaySvg,
   isSubmitting,
   submitError,
@@ -2362,9 +2451,11 @@ const ReviewQueueLayout = ({
             <div className="review-queue-panel-row">
               <span className="review-queue-panel-muted">
                 Normalized preview: {normalizedSrc ? normalizedStatus : "unavailable"}
+                {normalizedCapability ? ` (${normalizedCapability})` : ""}
               </span>
               <span className="review-queue-panel-muted">
                 Source preview: {sourceSrc ? sourceStatus : "hidden"}
+                {sourceCapability ? ` (${sourceCapability})` : ""}
               </span>
               <span className="review-queue-panel-muted">
                 Inspector: {inspectorOpen ? "open" : "collapsed"}
@@ -2859,7 +2950,11 @@ const ReviewQueueLayout = ({
                   {representativePages.map((page) => {
                     const preview =
                       page.previews.overlay ?? page.previews.normalized ?? page.previews.source;
-                    const previewSrc = resolvePreviewSrc(preview, runDir);
+                    const previewSrc = resolvePreviewSrc(
+                      preview,
+                      runDir,
+                      runtimePreviewSupport
+                    ).src;
                     return (
                       <div key={page.id} className="review-queue-thumb">
                         {previewSrc ? (
@@ -3079,6 +3174,7 @@ export function ReviewQueueScreen({
   const panOriginRef = useRef<{ x: number; y: number } | null>(null);
   const [isPanning, setIsPanning] = useState(false);
   const currentPage = queuePages[selectedIndex];
+  const runtimePreviewSupport = useMemo(() => detectRuntimePreviewSupport(), []);
   const { sidecar, sidecarError, isLoading: isSidecarLoading } = useSidecarData(runId, currentPage);
   const derivedDimensions = useMemo(() => derivePreviewDimensions(sidecar), [sidecar]);
   const fallbackNormalizedPreview = useMemo((): PreviewRef | undefined => {
@@ -4197,30 +4293,46 @@ export function ReviewQueueScreen({
 
   const hasDecisions = decisions.size > 0;
   const canSubmit = Boolean(runId) && hasDecisions && !isSubmitting;
-  const normalizedSrc =
-    resolvePreviewSrc(normalizedPreview, runDir) ||
-    (runDir && currentPage
-      ? resolvePreviewSrc(
-          {
-            path: buildRunPreviewPath(runDir, currentPage.id, "normalized"),
-            width: 0,
-            height: 0,
-          },
-          runDir
-        )
-      : undefined);
-  const sourceSrc =
-    resolvePreviewSrc(sourcePreview, runDir) ||
-    (runDir && currentPage
-      ? resolvePreviewSrc(
-          {
-            path: buildRunPreviewPath(runDir, currentPage.id, "source"),
-            width: 0,
-            height: 0,
-          },
-          runDir
-        )
-      : undefined);
+
+  const normalizedCandidates: PreviewRef[] = [];
+  if (currentPage?.previews.normalized) {
+    normalizedCandidates.push(currentPage.previews.normalized);
+  }
+  if (runDir && currentPage) {
+    normalizedCandidates.push({
+      path: buildRunPreviewPath(runDir, currentPage.id, "normalized"),
+      width: 0,
+      height: 0,
+    });
+  }
+
+  let normalizedResolved: { src?: string; capability?: PreviewCapability } = {};
+  for (const candidate of normalizedCandidates) {
+    normalizedResolved = resolvePreviewSrc(candidate, runDir, runtimePreviewSupport);
+    if (normalizedResolved.src) break;
+  }
+  const normalizedSrc = normalizedResolved.src;
+  const normalizedCapability = normalizedResolved.capability;
+
+  const sourceCandidates: PreviewRef[] = [];
+  if (currentPage?.previews.source) {
+    sourceCandidates.push(currentPage.previews.source);
+  }
+  if (runDir && currentPage) {
+    sourceCandidates.push({
+      path: buildRunPreviewPath(runDir, currentPage.id, "source"),
+      width: 0,
+      height: 0,
+    });
+  }
+
+  let sourceResolved: { src?: string; capability?: PreviewCapability } = {};
+  for (const candidate of sourceCandidates) {
+    sourceResolved = resolvePreviewSrc(candidate, runDir, runtimePreviewSupport);
+    if (sourceResolved.src) break;
+  }
+  const sourceSrc = sourceResolved.src;
+  const sourceCapability = sourceResolved.capability;
   const activeCropBox = cropBox ?? sidecar?.normalization?.cropBox ?? null;
   const activeTrimBox = trimBox ?? null;
   const overlayScale = calculateOverlayScale(
@@ -4288,7 +4400,10 @@ export function ReviewQueueScreen({
       sidecarError={sidecarError}
       isSidecarLoading={isSidecarLoading}
       normalizedSrc={normalizedSrc}
+      normalizedCapability={normalizedCapability}
       sourceSrc={sourceSrc}
+      sourceCapability={sourceCapability}
+      runtimePreviewSupport={runtimePreviewSupport}
       overlaySvg={overlaySvg}
       isSubmitting={isSubmitting}
       submitError={submitError}

@@ -11,6 +11,25 @@ const resetAsteria = (): void => {
   delete (globalThis as typeof globalThis & { asteria?: unknown }).asteria;
 };
 
+type MutableLocation = Omit<Location, "protocol"> & { protocol: string };
+
+const setLocationProtocol = (protocol: string): (() => void) => {
+  const original = globalThis.location;
+  const nextLocation = {
+    ...original,
+    protocol,
+  } as MutableLocation;
+  Object.defineProperty(globalThis, "location", {
+    configurable: true,
+    value: nextLocation,
+  });
+  return () => {
+    Object.defineProperty(globalThis, "location", {
+      configurable: true,
+      value: original,
+    });
+  };
+};
 describe("ReviewQueueScreen", () => {
   afterEach(() => {
     cleanup();
@@ -179,7 +198,6 @@ describe("ReviewQueueScreen", () => {
     await user.click(screen.getByRole("button", { name: /submit review/i }));
     expect(submitReview).toHaveBeenCalledWith(
       "run-3",
-      "/tmp/runs/run-3",
       expect.arrayContaining([{ pageId: "page-1", decision: "accept" }])
     );
   }, 10000);
@@ -319,5 +337,129 @@ describe("ReviewQueueScreen", () => {
     await user.click(screen.getByRole("button", { name: /confirm template cluster/i }));
 
     expect(await screen.findByText(/IPC unavailable/i)).toBeInTheDocument();
+  });
+  it("uses asteria protocol preview capability in electron-like runtime", async () => {
+    const restoreLocation = setLocationProtocol("file:");
+    (globalThis as typeof globalThis & { asteria?: unknown }).asteria = {
+      ipc: {
+        "asteria:fetch-review-queue": vi.fn().mockResolvedValue(
+          ok({
+            runId: "run-protocol",
+            projectId: "proj",
+            generatedAt: "2024-01-01",
+            items: [
+              {
+                pageId: "page-1",
+                filename: "page-1.png",
+                layoutProfile: "body",
+                layoutConfidence: 0.7,
+                reason: "semantic-layout",
+                qualityGate: { accepted: false, reasons: [] },
+                previews: [{ kind: "normalized", path: "/tmp/norm.png", width: 16, height: 16 }],
+              },
+            ],
+          })
+        ),
+        "asteria:fetch-sidecar": vi.fn().mockResolvedValue(err("no sidecar")),
+      },
+    };
+
+    render(<ReviewQueueScreen runId="run-protocol" runDir="/tmp/runs/run-protocol" />);
+
+    const image = await screen.findByAltText(/Normalized preview for page-1\.png/i);
+    expect(image).toHaveAttribute("src", "asteria://asset?path=%2Ftmp%2Fnorm.png");
+    expect(
+      await screen.findByText(/Normalized preview:\s*loading\s*\(protocol\)/i)
+    ).toBeInTheDocument();
+
+    restoreLocation();
+  });
+
+  it("uses safe preview fallbacks without asteria protocol", async () => {
+    const dataUrl = "data:image/png;base64,AAAA";
+    (globalThis as typeof globalThis & { asteria?: unknown }).asteria = {
+      ipc: {
+        "asteria:fetch-review-queue": vi.fn().mockResolvedValue(
+          ok({
+            runId: "run-browser",
+            projectId: "proj",
+            generatedAt: "2024-01-01",
+            items: [
+              {
+                pageId: "page-1",
+                filename: "page-1.png",
+                layoutProfile: "body",
+                layoutConfidence: 0.7,
+                reason: "semantic-layout",
+                qualityGate: { accepted: false, reasons: [] },
+                previews: [
+                  { kind: "normalized", path: dataUrl, width: 16, height: 16 },
+                  { kind: "source", path: "/tmp/source.png", width: 16, height: 16 },
+                ],
+              },
+            ],
+          })
+        ),
+        "asteria:fetch-sidecar": vi.fn().mockResolvedValue(err("no sidecar")),
+      },
+    };
+
+    const user = userEvent.setup();
+    render(<ReviewQueueScreen runId="run-browser" runDir="/tmp/runs/run-browser" />);
+
+    const normalizedImage = await screen.findByAltText(/Normalized preview for page-1\.png/i);
+    expect(normalizedImage).toHaveAttribute("src", dataUrl);
+    expect(
+      await screen.findByText(/Normalized preview:\s*loading\s*\(data\)/i)
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /show source/i }));
+    const sourceImage = await screen.findByAltText(/Source preview for page-1\.png/i);
+    expect(sourceImage).toHaveAttribute("src", "file:///tmp/source.png");
+    expect(screen.getByText(/Source preview:\s*loading\s*\(file\)/i)).toBeInTheDocument();
+  });
+
+  it("falls back to generated run preview path and transitions loaded state", async () => {
+    (globalThis as typeof globalThis & { asteria?: unknown }).asteria = {
+      ipc: {
+        "asteria:fetch-review-queue": vi.fn().mockResolvedValue(
+          ok({
+            runId: "run-fallback",
+            projectId: "proj",
+            generatedAt: "2024-01-01",
+            items: [
+              {
+                pageId: "page-1",
+                filename: "page-1.png",
+                layoutProfile: "body",
+                layoutConfidence: 0.7,
+                reason: "semantic-layout",
+                qualityGate: { accepted: false, reasons: [] },
+                previews: [
+                  { kind: "normalized", path: "../bad/preview.png", width: 16, height: 16 },
+                ],
+              },
+            ],
+          })
+        ),
+        "asteria:fetch-sidecar": vi.fn().mockResolvedValue(err("no sidecar")),
+      },
+    };
+
+    render(<ReviewQueueScreen runId="run-fallback" runDir="/tmp/runs/run-fallback" />);
+
+    const image = await screen.findByAltText(/Normalized preview for page-1\.png/i);
+    expect(image).toBeInTheDocument();
+    expect(image).toHaveAttribute(
+      "src",
+      "file:///tmp/runs/run-fallback/previews/page-1-normalized.png"
+    );
+    expect(
+      await screen.findByText(/Normalized preview:\s*loading\s*\(file\)/i)
+    ).toBeInTheDocument();
+
+    fireEvent.load(image);
+
+    expect(await screen.findByText(/Normalized preview:\s*loaded\s*\(file\)/i)).toBeInTheDocument();
   });
 });
