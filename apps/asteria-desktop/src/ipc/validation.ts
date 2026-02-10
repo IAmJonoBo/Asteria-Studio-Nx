@@ -1,4 +1,11 @@
-import type { PageLayoutSidecar, PipelineRunConfig, TemplateTrainingSignal } from "./contracts.js";
+import type {
+  PageLayoutSidecar,
+  PipelineRunConfig,
+  ReviewItem,
+  ReviewPreview,
+  ReviewQueue,
+  TemplateTrainingSignal,
+} from "./contracts.js";
 
 const isNonEmptyString = (value: unknown): value is string =>
   typeof value === "string" && value.trim().length > 0;
@@ -506,6 +513,13 @@ export const validatePipelineRunConfig = (config: PipelineRunConfig): void => {
 };
 
 const ALLOWED_REVIEW_DECISIONS = new Set(["accept", "reject", "adjust"]);
+const ALLOWED_REVIEW_PREVIEW_KINDS = new Set<ReviewPreview["kind"]>([
+  "source",
+  "normalized",
+  "overlay",
+]);
+const ALLOWED_REVIEW_REASONS = new Set<ReviewItem["reason"]>(["quality-gate", "semantic-layout"]);
+const ALLOWED_REVIEW_ACTIONS = new Set<ReviewItem["suggestedAction"]>(["confirm", "adjust"]);
 
 export const validateReviewDecisions = (decisions: unknown): void => {
   if (!Array.isArray(decisions) || decisions.length === 0) {
@@ -536,6 +550,151 @@ export const validateReviewDecisions = (decisions: unknown): void => {
       }
     }
   });
+};
+
+const validateReviewPreview = (preview: unknown, itemIndex: number, previewIndex: number): void => {
+  requirePlainObject(
+    preview,
+    `Invalid review queue item ${itemIndex}: preview ${previewIndex} must be an object`
+  );
+  const record = preview as Record<string, unknown>;
+  requireNonEmptyString(
+    record.kind,
+    `Invalid review queue item ${itemIndex}: preview ${previewIndex} kind required`
+  );
+  if (!ALLOWED_REVIEW_PREVIEW_KINDS.has(record.kind as ReviewPreview["kind"])) {
+    throwTypeError(
+      `Invalid review queue item ${itemIndex}: preview ${previewIndex} kind is unsupported`
+    );
+  }
+  requireNonEmptyString(
+    record.path,
+    `Invalid review queue item ${itemIndex}: preview ${previewIndex} path required`
+  );
+  if (!isFiniteNumber(record.width) || record.width <= 0) {
+    throwTypeError(
+      `Invalid review queue item ${itemIndex}: preview ${previewIndex} width must be > 0`
+    );
+  }
+  if (!isFiniteNumber(record.height) || record.height <= 0) {
+    throwTypeError(
+      `Invalid review queue item ${itemIndex}: preview ${previewIndex} height must be > 0`
+    );
+  }
+};
+
+const validateReviewItem = (item: unknown, index: number): void => {
+  requirePlainObject(item, `Invalid review queue item ${index}: expected object`);
+  const record = item as Record<string, unknown>;
+  requireNonEmptyString(record.pageId, `Invalid review queue item ${index}: pageId required`);
+  requireNonEmptyString(record.filename, `Invalid review queue item ${index}: filename required`);
+  requireNonEmptyString(
+    record.layoutProfile,
+    `Invalid review queue item ${index}: layoutProfile required`
+  );
+  if (!isFiniteNumber(record.layoutConfidence)) {
+    throwTypeError(`Invalid review queue item ${index}: layoutConfidence must be numeric`);
+  }
+  requirePlainObject(record.qualityGate, `Invalid review queue item ${index}: qualityGate required`);
+  const qualityGate = record.qualityGate as Record<string, unknown>;
+  if (typeof qualityGate.accepted !== "boolean") {
+    throwTypeError(`Invalid review queue item ${index}: qualityGate.accepted must be boolean`);
+  }
+  if (!Array.isArray(qualityGate.reasons)) {
+    throwTypeError(`Invalid review queue item ${index}: qualityGate.reasons must be an array`);
+  }
+  qualityGate.reasons.forEach((reason, reasonIndex) => {
+    requireNonEmptyString(
+      reason,
+      `Invalid review queue item ${index}: qualityGate.reasons[${reasonIndex}] required`
+    );
+  });
+
+  if (!ALLOWED_REVIEW_REASONS.has(record.reason as ReviewItem["reason"])) {
+    throwTypeError(`Invalid review queue item ${index}: reason is unsupported`);
+  }
+  if (!ALLOWED_REVIEW_ACTIONS.has(record.suggestedAction as ReviewItem["suggestedAction"])) {
+    throwTypeError(`Invalid review queue item ${index}: suggestedAction is unsupported`);
+  }
+
+  if (!Array.isArray(record.previews)) {
+    throwTypeError(`Invalid review queue item ${index}: previews must be an array`);
+  }
+  (record.previews as unknown[]).forEach((preview, previewIndex) => {
+    validateReviewPreview(preview, index, previewIndex);
+  });
+
+  if (record.spread !== undefined) {
+    requirePlainObject(record.spread, `Invalid review queue item ${index}: spread must be an object`);
+    const spread = record.spread as Record<string, unknown>;
+    requireNonEmptyString(
+      spread.sourcePageId,
+      `Invalid review queue item ${index}: spread.sourcePageId required`
+    );
+    if (spread.side !== "left" && spread.side !== "right") {
+      throwTypeError(`Invalid review queue item ${index}: spread.side must be left or right`);
+    }
+    if (spread.gutter !== undefined) {
+      requirePlainObject(
+        spread.gutter,
+        `Invalid review queue item ${index}: spread.gutter must be an object`
+      );
+      const gutter = spread.gutter as Record<string, unknown>;
+      if (!isFiniteNumber(gutter.startRatio) || !isFiniteNumber(gutter.endRatio)) {
+        throwTypeError(
+          `Invalid review queue item ${index}: spread.gutter startRatio/endRatio must be numeric`
+        );
+      }
+    }
+  }
+};
+
+export const validateReviewQueue = (queue: unknown): void => {
+  requirePlainObject(queue, "Invalid review queue: expected object");
+  const record = queue as Record<string, unknown>;
+  requireNonEmptyString(record.runId, "Invalid review queue: runId required");
+  requireNonEmptyString(record.projectId, "Invalid review queue: projectId required");
+  requireNonEmptyString(record.generatedAt, "Invalid review queue: generatedAt required");
+  if (!Array.isArray(record.items)) {
+    throwTypeError("Invalid review queue: items must be an array");
+  }
+  (record.items as unknown[]).forEach((item, index) => {
+    validateReviewItem(item, index);
+  });
+};
+
+export const sanitizeReviewQueue = (
+  queue: unknown
+): { queue: ReviewQueue; rejectedItems: number } => {
+  requirePlainObject(queue, "Invalid review queue: expected object");
+  const record = queue as Record<string, unknown>;
+  requireNonEmptyString(record.runId, "Invalid review queue: runId required");
+  requireNonEmptyString(record.projectId, "Invalid review queue: projectId required");
+  requireNonEmptyString(record.generatedAt, "Invalid review queue: generatedAt required");
+  if (!Array.isArray(record.items)) {
+    throwTypeError("Invalid review queue: items must be an array");
+  }
+
+  const validItems: ReviewItem[] = [];
+  let rejectedItems = 0;
+  (record.items as unknown[]).forEach((item, index) => {
+    try {
+      validateReviewItem(item, index);
+      validItems.push(item as ReviewItem);
+    } catch {
+      rejectedItems += 1;
+    }
+  });
+
+  return {
+    queue: {
+      runId: record.runId as string,
+      projectId: record.projectId as string,
+      generatedAt: record.generatedAt as string,
+      items: validItems,
+    },
+    rejectedItems,
+  };
 };
 
 export const validatePageLayoutSidecar = (layout: PageLayoutSidecar): void => {

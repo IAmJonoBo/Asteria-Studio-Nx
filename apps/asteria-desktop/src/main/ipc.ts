@@ -5,6 +5,7 @@ import type {
   PipelineRunResult,
   ReviewDecision,
   ReviewQueue,
+  PageLayoutSidecar,
   PageData,
   RunSummary,
   PipelineConfigOverrides,
@@ -34,6 +35,8 @@ import {
   validatePipelineRunConfig,
   validateProjectId,
   validateReviewDecisions,
+  validatePageLayoutSidecar,
+  sanitizeReviewQueue,
   validateRevealPath,
   validateRunHistoryCleanupOptions,
   validateRunId,
@@ -898,9 +901,15 @@ export function registerIpcHandlers(): void {
         const runSidecarPath = getRunSidecarPath(runDir, pageId);
         try {
           const raw = await fs.readFile(runSidecarPath, "utf-8");
-          return JSON.parse(raw);
+          const parsed = JSON.parse(raw);
+          validatePageLayoutSidecar(parsed as PageLayoutSidecar);
+          return parsed;
         } catch (error) {
-          console.warn("[ipc] fetch-sidecar missing", { runId, pageId, error });
+          console.warn("[ipc] fetch-sidecar invalid-or-missing", {
+            runId,
+            pageId,
+            reason: error instanceof Error ? error.message : "unknown",
+          });
           return null;
         }
       }
@@ -1246,13 +1255,23 @@ export function registerIpcHandlers(): void {
         const reviewPath = getRunReviewQueuePath(runDir);
         try {
           const data = await fs.readFile(reviewPath, "utf-8");
-          const queue = JSON.parse(data) as ReviewQueue;
+          const parsed = JSON.parse(data);
+          const { queue, rejectedItems } = sanitizeReviewQueue(parsed);
+          if (rejectedItems > 0) {
+            console.warn("[ipc] fetch-review-queue sanitized-items", {
+              runId,
+              rejectedItems,
+              originalCount: Array.isArray((parsed as { items?: unknown[] }).items)
+                ? ((parsed as { items: unknown[] }).items.length ?? 0)
+                : 0,
+            });
+          }
           return {
             ...queue,
             items: queue.items.map((item) => ({
               ...item,
-              previews: item.previews?.map((preview) => {
-                if (!preview.path || path.isAbsolute(preview.path)) return preview;
+              previews: item.previews.map((preview) => {
+                if (path.isAbsolute(preview.path)) return preview;
                 return {
                   ...preview,
                   path: path.join(runDir, preview.path),
