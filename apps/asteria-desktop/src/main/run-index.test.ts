@@ -109,4 +109,54 @@ describe("run-index", () => {
     const parsed = JSON.parse(String(raw)) as { runs?: unknown[] };
     expect(parsed.runs).toEqual([]);
   });
+
+  it("serializes concurrent updateRunIndex calls to prevent data loss", async () => {
+    // Simulate two concurrent updates to the same file.
+    // The first read returns one entry, both updates should be present in the final result.
+    let readCount = 0;
+    readFile.mockImplementation(async () => {
+      readCount += 1;
+      if (readCount === 1) {
+        return JSON.stringify({ runs: [] });
+      }
+      // On subsequent reads, return whatever was last written
+      const lastWrite = writeFile.mock.calls[writeFile.mock.calls.length - 1];
+      return String(lastWrite?.[1] ?? JSON.stringify({ runs: [] }));
+    });
+
+    const update1 = updateRunIndex("/tmp/output", {
+      runId: "run-a",
+      projectId: "proj",
+      status: "queued",
+    });
+    const update2 = updateRunIndex("/tmp/output", {
+      runId: "run-b",
+      projectId: "proj",
+      status: "running",
+    });
+
+    await Promise.all([update1, update2]);
+
+    // With serialization, the second write should include both entries
+    expect(writeFile.mock.calls.length).toBe(2);
+    const lastWrite = writeFile.mock.calls[1];
+    const parsed = JSON.parse(String(lastWrite[1])) as { runs: Array<{ runId: string }> };
+    const runIds = parsed.runs.map((r) => r.runId);
+    expect(runIds).toContain("run-a");
+    expect(runIds).toContain("run-b");
+  });
+
+  it("readRunIndex suppresses ENOENT without warning", async () => {
+    const enoent = new Error("ENOENT") as NodeJS.ErrnoException;
+    enoent.code = "ENOENT";
+    readFile.mockRejectedValueOnce(enoent);
+
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+
+    const result = await readRunIndex("/tmp/output");
+
+    expect(result).toEqual([]);
+    expect(warnSpy).not.toHaveBeenCalled();
+    warnSpy.mockRestore();
+  });
 });

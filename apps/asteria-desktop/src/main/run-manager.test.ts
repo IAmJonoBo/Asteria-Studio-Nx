@@ -22,7 +22,13 @@ vi.mock("./pipeline-runner", () => ({ runPipeline }));
 const updateRunIndex = vi.hoisted(() => vi.fn());
 const clearRunIndex = vi.hoisted(() => vi.fn());
 const readRunIndex = vi.hoisted(() => vi.fn());
-vi.mock("./run-index", () => ({ updateRunIndex, clearRunIndex, readRunIndex }));
+const removeRunFromIndex = vi.hoisted(() => vi.fn());
+vi.mock("./run-index", () => ({
+  updateRunIndex,
+  clearRunIndex,
+  readRunIndex,
+  removeRunFromIndex,
+}));
 
 const emitRunProgress = vi.hoisted(() => vi.fn());
 const clearRunProgress = vi.hoisted(() => vi.fn());
@@ -52,6 +58,7 @@ describe("run-manager", () => {
     updateRunIndex.mockReset();
     clearRunIndex.mockReset();
     readRunIndex.mockReset();
+    removeRunFromIndex.mockReset();
     emitRunProgress.mockReset();
     clearRunProgress.mockReset();
   });
@@ -319,5 +326,47 @@ describe("run-manager", () => {
     });
     expect(clearRunIndex).toHaveBeenCalledWith("/tmp/output");
     expect(result).toEqual({ removedRuns: 1, removedArtifacts: true });
+  });
+
+  it("cancelRunAndDelete logs unexpected non-abort errors", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2024-01-01T00:00:04.000Z"));
+
+    // Use a controllable promise that rejects with a non-abort error once resolved
+    let rejectPipeline: ((error: Error) => void) | undefined;
+    const pipelinePromise = new Promise<void>((_resolve, reject) => {
+      rejectPipeline = reject;
+    });
+    runPipeline.mockReturnValueOnce(pipelinePromise);
+    readFile.mockRejectedValue(new Error("missing"));
+
+    const config: PipelineRunConfig = {
+      projectId: "proj",
+      pages: [
+        { id: "p1", filename: "page.png", originalPath: "/tmp/page.png", confidenceScores: {} },
+      ],
+      targetDpi: 300,
+      targetDimensionsMm: { width: 210, height: 297 },
+    };
+
+    const runId = await startRun(config, "/tmp/project", "/tmp/output");
+
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+
+    // Reject the pipeline with a non-abort error before calling cancelRunAndDelete
+    if (rejectPipeline) {
+      rejectPipeline(new Error("disk I/O failure"));
+    }
+    // Let microtasks settle but keep run active (cancelRunAndDelete awaits the task)
+    await cancelRunAndDelete(runId);
+
+    // The "disk I/O failure" error is NOT abort-related, so it should be logged
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining("Unexpected error"),
+      expect.stringContaining("disk I/O failure")
+    );
+
+    warnSpy.mockRestore();
+    vi.useRealTimers();
   });
 });
