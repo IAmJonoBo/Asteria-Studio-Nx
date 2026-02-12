@@ -242,6 +242,8 @@ describe("IPC validation", () => {
 
     const sanitized = sanitizeReviewQueue(queue);
     expect(sanitized.rejectedItems).toBe(1);
+    expect(sanitized.rejectionReasons).toHaveLength(1);
+    expect(sanitized.rejectionReasons[0]).toMatch(/pageId/);
     expect(sanitized.queue.items).toHaveLength(1);
     expect(sanitized.queue.items[0]?.pageId).toBe("p2");
   });

@@ -26,7 +26,10 @@ const hashFile = async (filePath: string): Promise<string> => {
   await new Promise<void>((resolve, reject) => {
     const stream = createReadStream(filePath);
     stream.on("data", (chunk) => hash.update(chunk as Buffer));
-    stream.on("error", reject);
+    stream.on("error", (error) => {
+      stream.destroy();
+      reject(error);
+    });
     stream.on("end", () => resolve());
   });
   return hash.digest("hex");

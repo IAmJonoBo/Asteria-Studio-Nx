@@ -193,12 +193,13 @@ export const estimatePageBounds = async (
 
   const bounds: PageBoundsEstimate[] = [];
   for (const page of pages) {
+    let probedDimensions: { width: number; height: number } | null = null;
     if (shouldProbe(page.originalPath)) {
-      await _dimensionProvider(page.originalPath);
+      probedDimensions = await _dimensionProvider(page.originalPath);
     }
 
-    const pageWidth = targetPx.width;
-    const pageHeight = targetPx.height;
+    const pageWidth = probedDimensions?.width ?? targetPx.width;
+    const pageHeight = probedDimensions?.height ?? targetPx.height;
 
     const pageBounds: [number, number, number, number] = [0, 0, pageWidth, pageHeight];
     const inset = bleedPx + trimPx;

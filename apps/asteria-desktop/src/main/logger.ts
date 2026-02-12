@@ -38,8 +38,12 @@ const safeStringify = (payload: unknown): string => {
   try {
     return JSON.stringify(payload);
   } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : "unknown error";
     console.warn("Failed to serialize log payload", error);
-    return JSON.stringify({ message: "Failed to serialize log payload" });
+    return JSON.stringify({
+      message: "Failed to serialize log payload",
+      serializationError: errorMessage,
+    });
   }
 };
 

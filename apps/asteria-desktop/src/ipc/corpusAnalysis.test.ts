@@ -155,8 +155,9 @@ describe("corpusAnalysis", () => {
     config.pages[0].originalPath = jpegPath;
 
     const { bounds } = await estimatePageBounds(config);
-    expect(bounds[0].widthPx).toBeGreaterThan(3000);
-    expect(bounds[0].heightPx).toBeGreaterThan(3000);
+    // Probed JPEG dimensions (32x16) are now used for per-page bounds
+    expect(bounds[0].widthPx).toBe(32);
+    expect(bounds[0].heightPx).toBe(16);
   });
 
   it("falls back when JPEG is unreadable", async () => {
