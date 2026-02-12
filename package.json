@@ -55,7 +55,7 @@
     "hooks:setup": "git config core.hooksPath .githooks",
     "ci:quarantine": "node tools/nx/run.mjs run workspace-tools:dead-code-quarantine-check"
   },
-  "packageManager": "pnpm@10.29.2",
+  "packageManager": "pnpm@10.29.3",
   "engines": {
     "node": "24.13.0"
   },
