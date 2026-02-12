@@ -3174,7 +3174,7 @@ export function ReviewQueueScreen({
   }, [currentPage, derivedDimensions, runDir]);
   const normalizedPreview =
     currentPage?.previews.normalized ?? fallbackNormalizedPreview ?? undefined;
-  const sourcePreview = currentPage?.previews.source;
+  const _sourcePreview = currentPage?.previews.source;
   const [adjustmentMode, setAdjustmentMode] = useState<AdjustmentMode>(null);
   const [cropBox, setCropBox] = useState<Box | null>(null);
   const [trimBox, setTrimBox] = useState<Box | null>(null);

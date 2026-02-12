@@ -603,7 +603,7 @@ const validateReviewItem = (item: unknown, index: number): void => {
   if (!Array.isArray(qualityGate.reasons)) {
     throwTypeError(`Invalid review queue item ${index}: qualityGate.reasons must be an array`);
   }
-  qualityGate.reasons.forEach((reason, reasonIndex) => {
+  (qualityGate.reasons as unknown[]).forEach((reason: unknown, reasonIndex: number) => {
     requireNonEmptyString(
       reason,
       `Invalid review queue item ${index}: qualityGate.reasons[${reasonIndex}] required`

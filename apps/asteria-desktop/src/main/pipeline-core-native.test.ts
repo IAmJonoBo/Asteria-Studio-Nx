@@ -75,6 +75,37 @@ describe("pipeline-core native loader", () => {
     expect(hash).not.toBe("0");
   });
 
+  it("fallback returns zero results for invalid dimensions", async () => {
+    vi.resetModules();
+    createRequireMock.mockReset();
+    createRequireMock.mockReturnValue(() => {
+      throw new Error("missing native module");
+    });
+
+    const { getPipelineCoreNative } = await import("./pipeline-core-native.js");
+    const fallback = getPipelineCoreNative();
+
+    // Zero-width image
+    const skew0 = fallback.estimateSkewAngle(Buffer.alloc(0), 0, 10);
+    expect(skew0.angle).toBe(0);
+    expect(skew0.confidence).toBe(0);
+
+    const baseline0 = fallback.baselineMetrics(Buffer.alloc(0), 0, 10);
+    expect(baseline0.textLineCount).toBe(0);
+    expect(baseline0.lineConsistency).toBe(0);
+
+    const col0 = fallback.columnMetrics(Buffer.alloc(0), 0, 10);
+    expect(col0.columnCount).toBe(0);
+
+    // Uniform image produces too few edge points for skew estimation
+    const w = 64;
+    const h = 64;
+    const uniform = Buffer.alloc(w * h, 128);
+    const skewUniform = fallback.estimateSkewAngle(uniform, w, h);
+    expect(skewUniform.angle).toBe(0);
+    expect(skewUniform.confidence).toBe(0);
+  });
+
   it("returns native module when exports are present", async () => {
     vi.resetModules();
     createRequireMock.mockReset();
