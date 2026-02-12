@@ -53,4 +53,83 @@ describe("applyGuideOverrides", () => {
     expect(margins?.guides.some((guide) => guide.position === 12)).toBe(true);
     expect(margins?.guides.some((guide) => guide.position === 6)).toBe(true);
   });
+
+  it("applies column overrides with finite values", () => {
+    const base: GuideLayout = {
+      layers: [
+        {
+          id: "column-guides",
+          guides: [
+            { id: "c1", axis: "x", position: 80, kind: "major" },
+            { id: "c2", axis: "x", position: 120, kind: "major" },
+          ],
+        },
+      ],
+    };
+
+    const layout = applyGuideOverrides({
+      guideLayout: base,
+      overrides: { columns: { leftPx: 90, rightPx: 110 } },
+      canvasWidth: 200,
+      canvasHeight: 200,
+    });
+
+    const columns = layout?.layers.find((layer) => layer.id === "column-guides");
+    expect(columns).toBeTruthy();
+    expect(columns?.guides.some((guide) => guide.position === 90)).toBe(true);
+    expect(columns?.guides.some((guide) => guide.position === 110)).toBe(true);
+  });
+
+  it("removes column layer when overrides nullify both positions", () => {
+    const base: GuideLayout = {
+      layers: [],
+    };
+
+    const layout = applyGuideOverrides({
+      guideLayout: base,
+      overrides: { columns: { leftPx: null, rightPx: null } },
+      canvasWidth: 200,
+      canvasHeight: 200,
+    });
+
+    const columns = layout?.layers.find((layer) => layer.id === "column-guides");
+    expect(columns).toBeUndefined();
+  });
+
+  it("applies header/footer band overrides", () => {
+    const base: GuideLayout = {
+      layers: [
+        {
+          id: "header-footer-bands",
+          guides: [
+            { id: "h1", axis: "y", position: 10, kind: "major" },
+            { id: "h2", axis: "y", position: 190, kind: "major" },
+          ],
+        },
+      ],
+    };
+
+    const layout = applyGuideOverrides({
+      guideLayout: base,
+      overrides: { headerBand: { startPx: 5, endPx: 15 } },
+      canvasWidth: 200,
+      canvasHeight: 200,
+    });
+
+    const bands = layout?.layers.find((layer) => layer.id === "header-footer-bands");
+    expect(bands).toBeTruthy();
+    expect(bands?.guides.some((guide) => guide.position === 5)).toBe(true);
+    expect(bands?.guides.some((guide) => guide.position === 15)).toBe(true);
+  });
+
+  it("returns undefined when no layout and no overrides", () => {
+    const layout = applyGuideOverrides({
+      guideLayout: undefined,
+      overrides: undefined,
+      canvasWidth: 200,
+      canvasHeight: 200,
+    });
+
+    expect(layout).toBeUndefined();
+  });
 });

@@ -69,4 +69,23 @@ describe("run logger", () => {
     logger.page("page-1", "info", "noop");
     await logger.finalize();
   });
+
+  it("handles circular references in log payloads gracefully", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "asteria-log-"));
+    const runDir = path.join(tempDir, "runs", "run-4");
+    await fs.mkdir(runDir, { recursive: true });
+
+    const logger = createRunLogger(runDir, { level: "info", keep_logs: true });
+    // Create a circular reference that will cause JSON.stringify to throw
+    const circular: Record<string, unknown> = {};
+    circular.self = circular;
+    logger.info("circular-test", circular);
+
+    await waitForWrites();
+
+    const logDir = getRunLogDir(runDir);
+    const runLog = await fs.readFile(path.join(logDir, "run.log"), "utf-8");
+    // The fallback serialization should include the error message
+    expect(runLog).toContain("serializationError");
+  });
 });

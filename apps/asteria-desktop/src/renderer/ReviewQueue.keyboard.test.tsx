@@ -385,9 +385,9 @@ describe("ReviewQueueScreen - Keyboard Navigation", () => {
     ) as SVGCircleElement | null;
     expect(rightHandle).not.toBeNull();
     fireEvent.pointerDown(rightHandle as SVGCircleElement, { pointerId: 1, clientX: 99, clientY: 50 });
-    fireEvent.pointerMove(globalThis, { pointerId: 1, clientX: 59, clientY: 50 });
+    fireEvent.pointerMove(window, { pointerId: 1, clientX: 59, clientY: 50 });
 
-    fireEvent.pointerUp(globalThis, { pointerId: 1 });
+    fireEvent.pointerUp(window, { pointerId: 1 });
 
     await user.click(screen.getByRole("button", { name: /⟳/ }));
     await user.click(screen.getAllByRole("button", { name: /apply override/i })[0]);

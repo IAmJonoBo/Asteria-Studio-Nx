@@ -1256,11 +1256,12 @@ export function registerIpcHandlers(): void {
         try {
           const data = await fs.readFile(reviewPath, "utf-8");
           const parsed = JSON.parse(data);
-          const { queue, rejectedItems } = sanitizeReviewQueue(parsed);
+          const { queue, rejectedItems, rejectionReasons } = sanitizeReviewQueue(parsed);
           if (rejectedItems > 0) {
             console.warn("[ipc] fetch-review-queue sanitized-items", {
               runId,
               rejectedItems,
+              rejectionReasons,
               originalCount: Array.isArray((parsed as { items?: unknown[] }).items)
                 ? ((parsed as { items: unknown[] }).items.length ?? 0)
                 : 0,

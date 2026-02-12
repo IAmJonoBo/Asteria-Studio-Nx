@@ -603,7 +603,7 @@ const validateReviewItem = (item: unknown, index: number): void => {
   if (!Array.isArray(qualityGate.reasons)) {
     throwTypeError(`Invalid review queue item ${index}: qualityGate.reasons must be an array`);
   }
-  qualityGate.reasons.forEach((reason, reasonIndex) => {
+  (qualityGate.reasons as unknown[]).forEach((reason: unknown, reasonIndex: number) => {
     requireNonEmptyString(
       reason,
       `Invalid review queue item ${index}: qualityGate.reasons[${reasonIndex}] required`
@@ -665,7 +665,7 @@ export const validateReviewQueue = (queue: unknown): void => {
 
 export const sanitizeReviewQueue = (
   queue: unknown
-): { queue: ReviewQueue; rejectedItems: number } => {
+): { queue: ReviewQueue; rejectedItems: number; rejectionReasons: string[] } => {
   requirePlainObject(queue, "Invalid review queue: expected object");
   const record = queue as Record<string, unknown>;
   requireNonEmptyString(record.runId, "Invalid review queue: runId required");
@@ -677,12 +677,16 @@ export const sanitizeReviewQueue = (
 
   const validItems: ReviewItem[] = [];
   let rejectedItems = 0;
+  const rejectionReasons: string[] = [];
   (record.items as unknown[]).forEach((item, index) => {
     try {
       validateReviewItem(item, index);
       validItems.push(item as ReviewItem);
-    } catch {
+    } catch (error) {
       rejectedItems += 1;
+      const reason =
+        error instanceof Error ? error.message : `Unknown validation error at item ${index}`;
+      rejectionReasons.push(reason);
     }
   });
 
@@ -694,6 +698,7 @@ export const sanitizeReviewQueue = (
       items: validItems,
     },
     rejectedItems,
+    rejectionReasons,
   };
 };
 

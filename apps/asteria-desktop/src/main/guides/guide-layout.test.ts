@@ -74,4 +74,99 @@ describe("createGuideLayout", () => {
     const peakGuides = diagnosticLayer?.guides.filter((guide) => guide.kind === "minor") ?? [];
     expect(peakGuides.length).toBeGreaterThan(0);
   });
+
+  it("builds column guides for multi-column layout", () => {
+    const elements: PageLayoutElement[] = [];
+    const baselineGrid: BaselineGridGuide = {
+      spacingPx: 10,
+      offsetPx: 0,
+      angleDeg: 0,
+      confidence: 0.8,
+      source: "auto",
+    };
+
+    const layout = createGuideLayout({
+      outputWidth: 200,
+      outputHeight: 100,
+      elements,
+      textFeatures: {
+        headBandRatio: 0,
+        footerBandRatio: 0,
+        columnCount: 2,
+        columnValleyRatio: 0.1,
+        contentBox: [10, 0, 190, 100],
+      },
+      baselineGrid,
+    });
+
+    const columnLayer = layout.layers.find((layer) => layer.id === "column-guides");
+    expect(columnLayer).toBeTruthy();
+    expect(columnLayer?.guides.length).toBe(2);
+  });
+
+  it("skips column guides when valleyRatio is zero", () => {
+    const elements: PageLayoutElement[] = [];
+    const baselineGrid: BaselineGridGuide = {
+      spacingPx: 10,
+      offsetPx: 0,
+      angleDeg: 0,
+      confidence: 0.8,
+      source: "auto",
+    };
+
+    const layout = createGuideLayout({
+      outputWidth: 200,
+      outputHeight: 100,
+      elements,
+      textFeatures: {
+        headBandRatio: 0,
+        footerBandRatio: 0,
+        columnCount: 2,
+        columnValleyRatio: 0,
+        contentBox: [10, 0, 190, 100],
+      },
+      baselineGrid,
+    });
+
+    const columnLayer = layout.layers.find((layer) => layer.id === "column-guides");
+    expect(columnLayer).toBeUndefined();
+  });
+
+  it("uses template columns when available", () => {
+    const elements: PageLayoutElement[] = [];
+    const baselineGrid: BaselineGridGuide = {
+      spacingPx: 10,
+      offsetPx: 0,
+      angleDeg: 0,
+      confidence: 0.8,
+      source: "auto",
+    };
+
+    const layout = createGuideLayout({
+      outputWidth: 200,
+      outputHeight: 100,
+      elements,
+      textFeatures: {
+        headBandRatio: 0,
+        footerBandRatio: 0,
+        columnCount: 1,
+        columnValleyRatio: 0,
+        contentBox: [10, 0, 190, 100],
+      },
+      baselineGrid,
+      template: {
+        id: "t1",
+        pageType: "body",
+        pageIds: ["p1"],
+        confidence: 0.9,
+        margins: { top: 0, bottom: 100, left: 10, right: 190 },
+        columns: { count: 2, valleyRatio: 0.08 },
+      },
+    });
+
+    const columnLayer = layout.layers.find((layer) => layer.id === "column-guides");
+    expect(columnLayer).toBeTruthy();
+    expect(columnLayer?.guides.length).toBe(2);
+    expect(columnLayer?.guides[0]?.source).toBe("template");
+  });
 });

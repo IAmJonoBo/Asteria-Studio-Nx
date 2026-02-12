@@ -272,4 +272,38 @@ describe("requestRemoteLayout", () => {
 
     statSpy.mockRestore();
   });
+
+  it("allows http://localhost for local development", async () => {
+    process.env.ASTERIA_REMOTE_LAYOUT_ENDPOINT = "http://localhost:8080/layout";
+
+    const fetchSpy = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        elements: [{ type: "title", bbox: [0, 0, 10, 10], confidence: 0.8 }],
+      }),
+    });
+    globalThis.fetch = fetchSpy as unknown as typeof globalThis.fetch;
+
+    const imagePath = await createTempImage();
+    const result = await requestRemoteLayout("page-local", imagePath, 200, 300);
+
+    expect(result?.length).toBe(1);
+    expect(fetchSpy).toHaveBeenCalledWith(
+      "http://localhost:8080/layout",
+      expect.any(Object)
+    );
+  });
+
+  it("rejects non-localhost http:// endpoints", async () => {
+    process.env.ASTERIA_REMOTE_LAYOUT_ENDPOINT = "http://evil.com/layout";
+
+    const fetchSpy = vi.fn();
+    globalThis.fetch = fetchSpy as unknown as typeof globalThis.fetch;
+
+    const imagePath = await createTempImage();
+    const result = await requestRemoteLayout("page-evil", imagePath, 200, 300);
+
+    expect(result).toBeNull();
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
 });

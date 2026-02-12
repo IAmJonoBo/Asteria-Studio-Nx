@@ -76,7 +76,15 @@ export const requestRemoteLayout = async (
   } catch {
     return null;
   }
-  if (endpointUrl.protocol !== "https:") {
+  if (endpointUrl.protocol !== "https:" && endpointUrl.protocol !== "http:") {
+    return null;
+  }
+  if (
+    endpointUrl.protocol === "http:" &&
+    endpointUrl.hostname !== "localhost" &&
+    endpointUrl.hostname !== "127.0.0.1" &&
+    endpointUrl.hostname !== "::1"
+  ) {
     return null;
   }
 
@@ -251,8 +259,10 @@ const findExistingPath = async (paths: string[]): Promise<string | null> => {
   return null;
 };
 
+const escapeRegex = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
 const readYamlScalar = (raw: string, key: string): string | null => {
-  const pattern = new RegExp(String.raw`^\s*${key}:\s*(.+)$`, "m");
+  const pattern = new RegExp(String.raw`^\s*${escapeRegex(key)}:\s*(.+)$`, "m");
   const match = pattern.exec(raw);
   if (!match) return null;
   const value = match[1].split("#")[0].trim();

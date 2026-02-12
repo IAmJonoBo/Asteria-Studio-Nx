@@ -265,8 +265,16 @@ export const cancelRunAndDelete = async (runId: string): Promise<void> => {
   );
   try {
     await active.task;
-  } catch {
-    // Ignore pipeline errors after abort.
+  } catch (error) {
+    // Only suppress abort-related pipeline errors; log unexpected ones.
+    const message = error instanceof Error ? error.message : String(error);
+    const isAbortRelated =
+      message.includes("abort") ||
+      message.includes("cancel") ||
+      (error instanceof Error && error.name === "AbortError");
+    if (!isAbortRelated) {
+      console.warn(`[run-manager] Unexpected error during cancel of ${runId}:`, message);
+    }
   }
   await fs.rm(active.runDir, { recursive: true, force: true });
   await removeRunFromIndex(active.outputDir, runId);
